@@ -49,7 +49,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     [self.view addSubview:share];
     self.commandInput = [[UITextField alloc] init];
     self.commandInput.attributedPlaceholder = [[NSAttributedString alloc]
-        initWithString:@"source_fs_selftest"
+        initWithString:@"source_app_selftest"
         attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.7 alpha:1]}];
     self.commandInput.textColor = UIColor.whiteColor;
     self.commandInput.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.9];
@@ -123,7 +123,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · core + filesystem\nVFileSystem022 · VPK v1/v2\nSource self-tests: 14 PASS\nFull engine host: pending";
+    self.status.text = @"Source 1 iOS · progress ~12%\nCore · filesystem · appframework\nSource self-tests: 19 PASS\nFull engine host: pending";
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)
@@ -179,7 +179,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source core + filesystem active\nFull engine host: pending\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source core + filesystem + appframework\nFull engine host: pending\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

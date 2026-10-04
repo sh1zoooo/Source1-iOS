@@ -127,5 +127,10 @@
     "tier2/tier2.cpp",
     "tier2/fileutils.cpp",
     "tier2/utlstreambuffer.cpp"
+  ],
+  "appframework": [
+    "appframework/AppSystemGroup.cpp",
+    "public/filesystem_init.cpp",
+    "appframework/posixapp.cpp"
   ]
 }

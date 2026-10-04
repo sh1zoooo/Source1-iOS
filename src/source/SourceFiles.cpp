@@ -8,9 +8,6 @@
 #include "tier1/KeyValues.h"
 #include "tier2/tier2.h"
 
-// Defined in the prepared upstream stdio module, retaining its real registry.
-extern CreateInterfaceFn SourceFileSystem_GetFactory();
-
 namespace {
 void report(const char* name, bool passed) {
     Msg("Source filesystem self-test %s: %s\n", name, passed ? "PASS" : "FAIL");
@@ -43,7 +40,7 @@ std::vector<unsigned char> fixture(const char* payload, unsigned version) {
 }
 
 namespace source1ios {
-bool SourceFiles::start(const std::filesystem::path& root) {
+bool SourceFiles::start(const std::filesystem::path& root, void* filesystem) {
     if (interface_) return false;
     root_ = root;
     std::error_code error;
@@ -51,16 +48,10 @@ bool SourceFiles::start(const std::filesystem::path& root) {
     if (error) return false;
     std::filesystem::create_directories(root_ / "selftest", error);
     if (error) return false;
-    auto factory = SourceFileSystem_GetFactory();
-    int result = IFACE_FAILED;
-    auto* fs = static_cast<IFileSystem*>(factory(FILESYSTEM_INTERFACE_VERSION, &result));
-    if (!fs || result != IFACE_OK) return false;
+    auto* fs = static_cast<IFileSystem*>(filesystem);
+    if (!fs) return false;
     interface_ = fs;
-    connected_ = fs->Connect(factory);
-    if (!connected_) { stop(); return false; }
-    initialized_ = fs->Init() == INIT_OK;
-    if (!initialized_) { stop(); return false; }
-    ConnectTier2Libraries(&factory, 1);
+    initialized_ = true; // Lifecycle is owned by the original CAppSystemGroup.
     fs->AddSearchPath((root_ / "game").c_str(), "GAME");
     fs->AddSearchPath((root_ / "game").c_str(), "DEFAULT_WRITE_PATH");
     fs->AddSearchPath((root_ / "selftest").c_str(), "PORT_TEST");
@@ -78,13 +69,10 @@ void SourceFiles::stop() {
     if (initialized_) {
         fs->AsyncFinishAll();
         fs->RemoveAllSearchPaths();
-        fs->Shutdown();
-        DisconnectTier2Libraries();
-        Msg("Source filesystem shutdown\n");
+        Msg("Source filesystem search paths removed\n");
     }
-    if (connected_) fs->Disconnect();
     interface_ = nullptr;
-    connected_ = initialized_ = false;
+    initialized_ = false;
 }
 bool SourceFiles::selfTest() {
     if (!initialized_) return false;

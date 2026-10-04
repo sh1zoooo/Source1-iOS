@@ -2,6 +2,7 @@
 #include <array>
 #include <string>
 #include "SourceFiles.hpp"
+#include "SourceAppSystems.hpp"
 
 namespace source1ios {
 struct SourceVertex { float position[4]; float color[4]; };
@@ -18,6 +19,7 @@ public:
 private:
     bool ready_ = false;
     bool ownsCore_ = false;
+    SourceAppSystems systems_;
     SourceFiles files_;
     double elapsed_ = 0;
 };

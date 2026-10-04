@@ -29,7 +29,7 @@ SpewRetval_t sourceSpew(SpewType_t type, const char* message) {
     return type == SPEW_ERROR ? SPEW_ABORT : SPEW_CONTINUE;
 }
 void statusCommand(const CCommand&) {
-    Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib; tier2 filesystem helpers.\n");
+    Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib, appframework; tier2 filesystem helpers.\n");
     Msg("Full engine host and Source materialsystem are not linked yet.\n");
 }
 ConCommand status("source_status", statusCommand, "Report the actual port scope");
@@ -49,20 +49,14 @@ bool SourceBridge::start(Logger output, void* context, const std::filesystem::pa
     DeclareCurrentThreadIsMainThread();
     Plat_SetCommandLine("source1-ios -nowatchdog");
     CommandLine()->CreateCmdLine("source1-ios -nowatchdog");
-    // Exercise Source's real static CreateInterface registry and IAppSystem lifecycle.
-    auto factory = VStdLib_GetICVarFactory();
-    int result = IFACE_FAILED;
-    console = static_cast<ICvar*>(factory(CVAR_INTERFACE_VERSION, &result));
-    if (!console || result != IFACE_OK || !console->Connect(factory) || console->Init() != INIT_OK) {
-        stop();
-        return false;
-    }
+    if (!systems_.start()) { stop(); return false; }
+    console = static_cast<ICvar*>(systems_.find(CVAR_INTERFACE_VERSION));
+    if (!console) { stop(); return false; }
     // Source normally registers once per DLL load. Static iOS modules stay loaded
     // across host restarts, so restore our commands after a disconnect/reconnect.
     if (!console->FindVar("ios_rotation_speed")) console->RegisterConCommand(&rotationSpeed);
     if (!console->FindCommand("source_status")) console->RegisterConCommand(&status);
     rotationSpeed.SetValue(30.0f);
-    MathLib_Init(2.2f, 2.2f, 0, 2);
     elapsed_ = 0;
     ready_ = true;
     const auto* cpu = GetCPUInformation();
@@ -71,7 +65,7 @@ bool SourceBridge::start(Logger output, void* context, const std::filesystem::pa
         cpu->m_szProcessorID, cpu->m_nLogicalProcessors, unsigned(sizeof(void*) * 8));
     Msg("Source factory: %s initialized\n", CVAR_INTERFACE_VERSION);
     if (!selfTest()) { stop(); return false; }
-    if (!files_.start(root)) { stop(); return false; }
+    if (!files_.start(root, systems_.find("VFileSystem022"))) { stop(); return false; }
     execute("source_status");
     Msg("Source core initialized: tier0/tier1/mathlib/vstdlib\n");
     return true;
@@ -79,11 +73,8 @@ bool SourceBridge::start(Logger output, void* context, const std::filesystem::pa
 void SourceBridge::stop() {
     if (!ownsCore_) return;
     files_.stop();
-    if (console) {
-        console->Shutdown();
-        console->Disconnect();
-        console = nullptr;
-    }
+    systems_.stop();
+    console = nullptr;
     if (ready_) Msg("Source core shutdown\n");
     ready_ = false;
     bridgeInUse = false;
@@ -141,7 +132,8 @@ bool SourceBridge::execute(const std::string& input) {
     if (!ready_ || input.size() > 255) return false;
     CCommand args;
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
-    if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest();
+    if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest();
+    if (!std::strcmp(args[0], "source_app_selftest")) return systems_.selfTest();
     if (!std::strcmp(args[0], "source_fs_selftest")) return files_.selfTest();
     if (auto* command = console->FindCommand(args[0])) {
         command->Dispatch(args);
