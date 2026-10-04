@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.24)
-project(Source1IOS LANGUAGES CXX)
+project(Source1IOS LANGUAGES C CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
@@ -7,12 +7,18 @@ set(CMAKE_OBJCXX_STANDARD 17)
 set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
-add_library(port_runtime STATIC src/runtime/Runtime.cpp)
+include(cmake/SourceModules.cmake)
+add_library(port_runtime STATIC src/runtime/Runtime.cpp src/source/SourceBridge.cpp)
 target_include_directories(port_runtime PUBLIC src/runtime)
+target_include_directories(port_runtime PUBLIC src/source)
+target_link_libraries(port_runtime PRIVATE source_modules)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   enable_language(OBJCXX)
   add_executable(Source1IOS MACOSX_BUNDLE src/ios/main.mm)
+  set(SOURCE_NOTICES third_party/SOURCE1_LICENSE.txt third_party/SOURCE1_THIRD_PARTY_NOTICES.txt)
+  set_source_files_properties(${SOURCE_NOTICES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
+  target_sources(Source1IOS PRIVATE ${SOURCE_NOTICES})
   target_link_libraries(Source1IOS PRIVATE port_runtime
     "-framework UIKit" "-framework Foundation" "-framework CoreGraphics"
     "-framework QuartzCore" "-framework Metal" "-framework MetalKit")

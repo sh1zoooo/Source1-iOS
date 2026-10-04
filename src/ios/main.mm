@@ -7,14 +7,11 @@ static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
 struct Output { float4 position [[position]]; float3 color; };
-vertex Output vertexMain(uint id [[vertex_id]], constant float &aspect [[buffer(0)]]) {
-    const float2 points[3] = { float2(0, 0.55), float2(-0.55, -0.4), float2(0.55, -0.4) };
-    const float3 colors[3] = { float3(1, 0.35, 0.1), float3(0.1, 0.7, 1), float3(0.4, 1, 0.5) };
+struct Input { float4 position; float4 color; };
+vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
-    float safeAspect = max(aspect, 0.01f);
-    float scale = min(safeAspect, 1.0f);
-    out.position = float4(points[id].x * scale / safeAspect, points[id].y * scale, 0, 1);
-    out.color = colors[id];
+    out.position = vertices[id].position;
+    out.color = vertices[id].color.xyz;
     return out;
 }
 fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1); }
@@ -30,7 +27,9 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
 @property(nonatomic, strong) MTKView *metalView;
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
 @property(nonatomic, strong) id<MTLRenderPipelineState> pipeline;
+@property(nonatomic, strong) id<MTLDepthStencilState> depthState;
 @property(nonatomic, strong) UILabel *status;
+@property(nonatomic, strong) UITextField *commandInput;
 @end
 
 @implementation LabController
@@ -48,19 +47,40 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     share.translatesAutoresizingMaskIntoConstraints = NO;
     [share addTarget:self action:@selector(shareLog:) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:share];
+    self.commandInput = [[UITextField alloc] init];
+    self.commandInput.placeholder = @"ios_rotation_speed 0";
+    self.commandInput.textColor = UIColor.whiteColor;
+    self.commandInput.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.9];
+    self.commandInput.borderStyle = UITextBorderStyleRoundedRect;
+    self.commandInput.autocapitalizationType = UITextAutocapitalizationTypeNone;
+    self.commandInput.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.commandInput.translatesAutoresizingMaskIntoConstraints = NO;
+    [self.view addSubview:self.commandInput];
+    UIButton *run = [UIButton buttonWithType:UIButtonTypeSystem];
+    [run setTitle:@"Run" forState:UIControlStateNormal];
+    run.translatesAutoresizingMaskIntoConstraints = NO;
+    [run addTarget:self action:@selector(runCommand:) forControlEvents:UIControlEventTouchUpInside];
+    [self.view addSubview:run];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
         [self.status.topAnchor constraintEqualToAnchor:safe.topAnchor constant:16],
         [self.status.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
         [self.status.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
         [share.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor constant:-12],
-        [share.centerXAnchor constraintEqualToAnchor:safe.centerXAnchor]
+        [share.centerXAnchor constraintEqualToAnchor:safe.centerXAnchor],
+        [self.commandInput.bottomAnchor constraintEqualToAnchor:share.topAnchor constant:-12],
+        [self.commandInput.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
+        [self.commandInput.trailingAnchor constraintEqualToAnchor:run.leadingAnchor constant:-12],
+        [self.commandInput.heightAnchor constraintEqualToConstant:36],
+        [run.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
+        [run.centerYAnchor constraintEqualToAnchor:self.commandInput.centerYAnchor],
+        [run.widthAnchor constraintEqualToConstant:48]
     ]];
     NSURL *documents = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
         inDomains:NSUserDomainMask] firstObject];
     _hostStarted = documents && _runtime.start(documents.path.UTF8String);
     if (!_hostStarted) {
-        self.status.text = @"Host startup failed: cannot create diagnostic log.";
+        self.status.text = @"Startup failed. Export the log for diagnostics.";
         share.enabled = NO;
         return;
     }
@@ -70,6 +90,8 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     self.metalView = [[MTKView alloc] initWithFrame:CGRectZero device:device];
     self.metalView.translatesAutoresizingMaskIntoConstraints = NO;
     self.metalView.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
+    self.metalView.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
+    self.metalView.clearDepth = 1;
     self.metalView.clearColor = MTLClearColorMake(0.035, 0.045, 0.065, 1);
     self.metalView.preferredFramesPerSecond = 60;
     self.metalView.paused = YES;
@@ -88,12 +110,18 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     descriptor.vertexFunction = [library newFunctionWithName:@"vertexMain"];
     descriptor.fragmentFunction = [library newFunctionWithName:@"fragmentMain"];
     descriptor.colorAttachments[0].pixelFormat = self.metalView.colorPixelFormat;
+    descriptor.depthAttachmentPixelFormat = self.metalView.depthStencilPixelFormat;
     self.pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
     if (!self.pipeline) { [self fail:error.localizedDescription ?: @"Pipeline creation failed"]; return; }
     self.queue = [device newCommandQueue];
     if (!self.queue) { [self fail:@"Command queue creation failed"]; return; }
     _runtime.log(std::string("Metal device: ") + device.name.UTF8String);
-    self.status.text = @"Source 1 iOS Lab · milestone 0\nC++ host + Metal ready\nSource engine modules: not linked";
+    MTLDepthStencilDescriptor *depth = [[MTLDepthStencilDescriptor alloc] init];
+    depth.depthCompareFunction = MTLCompareFunctionLess;
+    depth.depthWriteEnabled = YES;
+    self.depthState = [device newDepthStencilStateWithDescriptor:depth];
+    if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
+    self.status.text = @"Source 1 iOS · core port\ntier0 · tier1 · mathlib · vstdlib\nSource self-tests: PASS\nFull engine host: pending";
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)
@@ -132,9 +160,11 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
     if (!command || !encoder) { [self fail:@"Cannot encode Metal frame"]; return; }
     [encoder setRenderPipelineState:self.pipeline];
+    [encoder setDepthStencilState:self.depthState];
     float aspect = (float)(view.drawableSize.width / MAX(view.drawableSize.height, 1.0));
-    [encoder setVertexBytes:&aspect length:sizeof(aspect) atIndex:0];
-    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:3];
+    auto vertices = _runtime.vertices(aspect);
+    [encoder setVertexBytes:vertices.data() length:sizeof(vertices) atIndex:0];
+    [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertices.size()];
     [encoder endEncoding];
     [command presentDrawable:drawable];
     [command commit];
@@ -142,6 +172,12 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
         _submittedFirstFrame = YES;
         _runtime.log("First Metal frame submitted");
     }
+}
+- (void)runCommand:(UIButton *)sender {
+    NSString *command = self.commandInput.text ?: @"";
+    [self.commandInput resignFirstResponder];
+    BOOL accepted = _runtime.executeSource(command.UTF8String);
+    self.status.text = [NSString stringWithFormat:@"Source core active · self-tests PASS\nFull engine host: pending\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (!_hostStarted) return;

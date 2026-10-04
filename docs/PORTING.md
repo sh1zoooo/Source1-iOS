@@ -1,55 +1,68 @@
-# Source 1 → iOS
+# Source 1 → iOS: current status
 
-## Milestone 0: host foundation
+## Upstream and reproducibility
 
-This repository contains our own C++ host services and an Objective-C++ UIKit/Metal
-application. **It does not contain or run the Source engine yet.** The triangle
-validates the iOS graphics path, not Source's material system.
+Baseline: [nillerusr/source-engine](https://github.com/nillerusr/source-engine),
+commit `ed8209cc35c61fbd8ddff8480962a01c981eef2f`. The upstream README states that
+this fork originates from the TF2 2018 leak; it is not an official Valve iOS port.
+The official Source SDK 2013 does not include the complete standalone engine.
 
-The host has a sandboxed document directory, flushed logs, a monotonic frame timer,
-and foreground/background handling. No game assets, Steam login, networking,
-dynamic plugin loading, or upstream Valve code are bundled.
+The dependency is a pinned, non-recursive git submodule. `cmake/source-files.json`
+contains the 101 source files compiled into four static libraries. Preparation
+copies the selected source directories into the build tree, verifies the commit,
+and checks each patch anchor before applying it. Upstream files remain unchanged.
+Source license and third-party notices are bundled in the IPA.
 
-## Source baseline decision
+## Implemented / executed
 
-The official [Source SDK 2013](https://github.com/ValveSoftware/source-sdk-2013)
-is a reference for shared code and game-side interfaces. Its README describes HL2,
-HL2:DM and TF2 game code; it is **not a complete engine-source release**.
-It cannot supply every engine module needed for a standalone port.
+- Real tier0 allocator, command line, CPU information, monotonic clock and threading code.
+- Real tier1 interface registry, CRC32, bitbuf, KeyValues and ConVar/ConCommand.
+- Real mathlib initialization, AngleMatrix and VectorTransform.
+- Real vstdlib CVar IAppSystem acquired as `VEngineCvar004`, connected, initialized,
+  disconnected and shut down. KeyValues' vstdlib backend is also exercised.
+- Native UIKit lifecycle and a custom Metal test backend with a depth buffer.
+- Generated rotating cube; CPU transforms use Source mathlib every frame.
+- In-app console with real Source command tokenization, dispatch and variable updates.
 
-Before adding upstream code, choose a repository and pin a commit. Preserve its
-license and record the included modules. Review `tier0`, `tier1`, `mathlib`,
-`filesystem`, `engine`, `materialsystem` and `shaderapidx9` availability.
-Start with a small static module before attempting an engine boot.
+All four static libraries compile their manifest entries. Only the features above
+are exercised. This is a **partial core-library port**, not a running engine host.
+No fabricated CreateInterface or substitute CRC / KeyValues implementation is used.
 
-Initial review of SDK `src/public/tier0/platform.h`:
+## Platform changes
 
-- ARM architecture detection exists, but the initial 64-bit macro checks x86_64
-  and Windows 64-bit. iOS ARM64 needs a consistent pointer-width audit.
-- POSIX / OSX selection does not model iOS explicitly. macOS APIs cannot all be
-  enabled on iOS simply by defining OSX.
-- Desktop DLL loading assumptions need static linking / interface registration.
-- Source rendering interfaces and shaders require separate integration work.
+- Enable Darwin/POSIX compatibility plus an explicit `SOURCE_IOS` target marker.
+- Preserve ARM64 pointer width and SSE-to-NEON support already present upstream.
+- Remove the legacy nullptr macro for modern C++.
+- Add the missing execinfo include for backtrace declarations.
+- Use CLOCK_MONOTONIC for the ARM nanosecond counter; report its actual 1 GHz counter
+  frequency on iOS rather than treating unavailable CPU frequency as timer frequency.
+- Correct fractional-second subtraction in the Linux timer.
+- Statically link modules, disable desktop malloc hooks and replacement global new/delete.
+- Restore host-owned console commands after static module disconnect/reconnect.
 
-## Next milestones
+## Validation
 
-1. Select and pin upstream; compile a real shared Source module on iOS ARM64.
-2. Static module registry, platform services, file access and module startup.
-3. Engine initialization and clean shutdown without a game client.
-4. Material / renderer integration, generated test scene and camera input.
-5. Audio, input and optional user-provided game resources.
+Linux tests exercise known-answer CRC32, a mixed-width bitbuf round trip, KeyValues
+parsing, a 90-degree vector transform, allocation, monotonic time, real console
+variable registration/update, host restart and foreground/background behavior.
 
-Track code compiled, simulator behavior and physical iPhone behavior separately.
-Simulator graphics does not prove correctness or performance on the iPhone 16e.
+Actions must compile both iPhone ARM64 and the simulator. The simulator smoke
+requires `Source core initialized: tier0/tier1/mathlib/vstdlib` and the first Metal
+frame, with no failed Source self-tests. A screenshot and runtime log are saved.
+A passing simulator does not prove that this new module integration works on A18.
 
-## Device test for milestone 0
+## Physical-device check
 
-After externally signing and installing the IPA:
+1. Install the newly signed IPA. Expect a rotating cube and core self-tests PASS.
+2. Execute `source_selftest`, then `ios_rotation_speed 0` and `ios_rotation_speed 30`.
+3. Rotate the device, background it for 20 seconds and resume.
+4. Export the diagnostic log. It must include the Source upstream revision,
+   VEngineCvar004 initialization and PASS for all seven checks.
 
-1. Launch: expect a colored triangle and `C++ host + Metal ready`.
-2. Rotate the device: geometry should retain its proportions.
-3. Background for 20 seconds, then reopen: drawing should resume.
-4. Tap **Share diagnostic log**, and send the log with the iOS version and any
-   crash details. The log should contain pause/resume entries.
+## Remaining engine work
 
-Logs are overwritten on launch; export the current session before restarting.
+The `engine` module, original filesystem, materialsystem / shaderapi, BSP world
+loading, audio, networking and a game client/server are not linked.
+Next: port the original filesystem and app-system dependency graph, then attempt
+headless engine startup. Materialsystem integration is a separate stage; the Metal
+cube is not evidence that original Source materials or maps can render.

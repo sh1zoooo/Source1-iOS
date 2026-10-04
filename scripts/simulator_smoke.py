@@ -27,7 +27,9 @@ try:
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""
-        if "First Metal frame submitted" in text:
+        if "First Metal frame submitted" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text:
+            if "FAIL" in text:
+                raise RuntimeError(f"Source core self-test failed:\n{text}")
             Path("artifacts").mkdir(exist_ok=True)
             Path("artifacts/simulator-runtime.log").write_text(text)
             simctl("io", udid, "screenshot", "artifacts/simulator.png")

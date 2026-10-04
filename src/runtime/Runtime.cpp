@@ -16,8 +16,15 @@ bool Runtime::start(const std::filesystem::path& documents) {
     frames_ = 0;
     elapsed_ = 0;
     running_ = active_ = true;
-    log("Host started; Source engine modules are not linked.");
+    log("Host started; initializing real Source core libraries.");
     log("Pointer width: " + std::to_string(sizeof(void*) * 8));
+    if (!source_.start([](void* context, const char* message) {
+            static_cast<Runtime*>(context)->log(message);
+        }, this)) {
+        log("Source core initialization failed");
+        stop();
+        return false;
+    }
     return true;
 }
 void Runtime::setActive(bool active) {
@@ -29,6 +36,7 @@ void Runtime::frame(double seconds) {
     if (!running_ || !active_ || !std::isfinite(seconds) || seconds < 0) return;
     // Do not replay a long background interval as a simulation step.
     elapsed_ += std::min(seconds, 0.1);
+    source_.frame(seconds);
     ++frames_;
 }
 void Runtime::log(const std::string& message) {
@@ -41,6 +49,7 @@ void Runtime::log(const std::string& message) {
 void Runtime::stop() {
     if (!running_) return;
     log("Host stopped after " + std::to_string(frames_) + " frames");
+    source_.stop();
     running_ = active_ = false;
     log_.close();
 }
