@@ -20,7 +20,7 @@ target_include_directories(source_settings SYSTEM INTERFACE
 target_compile_definitions(source_settings INTERFACE
   POSIX=1 _POSIX=1 PLATFORM_POSIX=1 GNUC PLATFORM_64BITS=1
   NO_HOOK_MALLOC NO_MEMOVERRIDE_NEW_DELETE _STATIC_LINKED
-  TIER0_DLL_EXPORT=1 TIER1_STATIC_LIB=1 VSTDLIB_DLL_EXPORT=1 MATHLIB_LIB=1 SUPPORT_PACKED_STORE=1 FILESYSTEM_STDIO_EXPORTS=1 DONT_PROTECT_FILEIO_FUNCTIONS=1
+  TIER1_STATIC_LIB=1 SOURCE_ENGINE_PORT=1 MATHLIB_LIB=1 SUPPORT_PACKED_STORE=1 FILESYSTEM_STDIO_EXPORTS=1 DONT_PROTECT_FILEIO_FUNCTIONS=1
   WAF_CFLAGS="CMake-iOS-port" WAF_LDFLAGS="static")
 target_compile_options(source_settings INTERFACE -fno-strict-aliasing)
 if(APPLE)
@@ -34,7 +34,7 @@ else()
   endif()
   target_compile_definitions(source_settings INTERFACE LINUX=1 _LINUX=1 PLATFORM_GLIBC=1 _DLL_EXT=.so)
 endif()
-foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem appframework)
+foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem appframework tier3 bitmap engine)
   string(JSON count LENGTH "${SOURCE_MANIFEST}" "${module}")
   math(EXPR last "${count} - 1")
   set(sources)
@@ -44,16 +44,31 @@ foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem appf
   endforeach()
   add_library(source_${module} STATIC ${sources})
   target_link_libraries(source_${module} PUBLIC source_settings)
+  if(module STREQUAL "tier0")
+    target_compile_definitions(source_tier0 PRIVATE TIER0_DLL_EXPORT=1)
+  elseif(module STREQUAL "vstdlib")
+    target_compile_definitions(source_vstdlib PRIVATE VSTDLIB_DLL_EXPORT=1)
+  elseif(module STREQUAL "engine")
+    set_target_properties(source_engine PROPERTIES CXX_STANDARD 14)
+    target_compile_definitions(source_engine PRIVATE DEDICATED=1 SWDS=1 NO_STEAM=1 ENGINE_DLL=1
+      VERSION_SAFE_STEAM_API_INTERFACES USE_BREAKPAD_HANDLER USE_CONVARS VOICE_OVER_IP __USEA3D _ADD_EAX_)
+    target_include_directories(source_engine PRIVATE "${SOURCE_ROOT}/engine" "${SOURCE_ROOT}/engine/audio" "${SOURCE_ROOT}/public/engine/audio")
+  elseif(module STREQUAL "bitmap")
+    target_include_directories(source_bitmap PRIVATE "${SOURCE_ROOT}/thirdparty/stb")
+  endif()
   if(module STREQUAL "appframework")
     target_compile_definitions(source_appframework PRIVATE DEDICATED=1 NO_STEAM=1)
   endif()
   # Retain upstream code; suppress its legacy warnings without weakening host checks.
   target_compile_options(source_${module} PRIVATE -w)
 endforeach()
+add_library(source_offline STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/source/SteamOffline.cpp")
+target_link_libraries(source_offline PUBLIC source_settings)
 add_library(source_modules INTERFACE)
 if(APPLE)
-  target_link_libraries(source_modules INTERFACE source_appframework source_filesystem source_vpklib source_tier2 source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
+  target_link_options(source_modules INTERFACE "LINKER:-force_load,$<TARGET_FILE:source_engine>")
+  target_link_libraries(source_modules INTERFACE source_engine source_offline source_tier3 source_bitmap source_appframework source_filesystem source_vpklib source_tier2 source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
 else()
   target_link_libraries(source_modules INTERFACE
-    "$<LINK_GROUP:RESCAN,source_appframework,source_filesystem,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
+    "$<LINK_GROUP:RESCAN,$<LINK_LIBRARY:WHOLE_ARCHIVE,source_engine>,source_offline,source_tier3,source_bitmap,source_appframework,source_filesystem,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
 endif()

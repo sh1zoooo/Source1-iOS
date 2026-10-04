@@ -18,8 +18,10 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Initialize pinned Source dependencies
+        run: git -C third_party/source submodule update --init --depth 1 thirdparty ivp
       - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
-      - run: cmake --build build --parallel
+      - run: cmake --build build --parallel 4
       - run: ctest --test-dir build --output-on-failure
   ios:
     name: iOS ARM64 IPA and simulator smoke
@@ -29,6 +31,8 @@ jobs:
       - uses: actions/checkout@v4
         with:
           submodules: true
+      - name: Initialize pinned Source dependencies
+        run: git -C third_party/source submodule update --init --depth 1 thirdparty ivp
       - name: Toolchain
         run: |
           xcodebuild -version

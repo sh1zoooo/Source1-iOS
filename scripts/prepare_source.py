@@ -15,15 +15,15 @@ actual = subprocess.check_output(["git", "-C", str(args.upstream), "rev-parse", 
 if actual != PIN:
     parser.error(f"Source revision mismatch: expected {PIN}, got {actual}")
 args.output.mkdir(parents=True, exist_ok=True)
-for folder in ("public", "common", "tier0", "tier1", "mathlib", "vstdlib", "filesystem", "vpklib", "tier2", "appframework", "utils/lzma/C"):
+for folder in ("public", "common", "tier0", "tier1", "mathlib", "vstdlib", "filesystem", "vpklib", "tier2", "appframework", "engine", "tier3", "bitmap", "utils/lzma/C"):
     shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
 
 def replace(path, old, new):
     file = args.output / path
-    text = file.read_text()
+    text = file.read_text(errors="surrogateescape")
     if text.count(old) != 1:
         raise RuntimeError(f"Patch context changed: {path}: {old[:70]}")
-    file.write_text(text.replace(old, new))
+    file.write_text(text.replace(old, new), errors="surrogateescape")
 
 # C++11 and later have a real nullptr keyword. Do not redefine it to integer 0.
 replace("public/tier0/basetypes.h", "#if !defined(PLATFORM_GLIBC) && defined(LINUX)",
@@ -58,5 +58,31 @@ replace("appframework/AppSystemGroup.cpp", "for (int i = m_Systems.Count(); --i 
 replace("appframework/AppSystemGroup.cpp", "case PREINITIALIZATION:\n\tcase INITIALIZATION:\n\t\tgoto disconnect;", "case INITIALIZATION:\n\t\tbreak;\n\tcase PREINITIALIZATION:\n\t\tgoto disconnect;")
 replace("appframework/AppSystemGroup.cpp", "case CREATION:\n\tcase CONNECTION:\n\t\tgoto destroy;", "case CONNECTION:\n\t\tgoto disconnect;\n\tcase CREATION:\n\t\tgoto destroy;")
 replace("appframework/AppSystemGroup.cpp", "\tDestroy();\n}", "\tDestroy();\n\ts_pCurrentAppSystem = GetParent();\n}")
-(args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": 20}, indent=2))
+# A single static executable owns these shared implementations exactly once.
+replace("tier0/commandline.cpp", "static CCommandLine g_CmdLine;\nICommandLine *CommandLine()\n{", "ICommandLine *CommandLine()\n{\n\tstatic CCommandLine g_CmdLine; // Initialize before engine global constructors use it.")
+# Independent bounds-only partitions have no models or query callbacks. Preserve
+# the mandatory MDL lock for the global world and every callback-bearing index.
+replace("engine/spatialpartition.cpp", "class CVoxelTree;", """class PortSpatialModelLock {
+public:
+    PortSpatialModelLock(IMDLCache* cache, bool independent) : cache_(cache) {
+        if (!cache_ && !independent) Error("Spatial query requires the model cache");
+        if (cache_) cache_->BeginLock();
+    }
+    ~PortSpatialModelLock() { if (cache_) cache_->EndLock(); }
+private:
+    IMDLCache* cache_;
+};
+class CVoxelTree;""")
+spatial = args.output / "engine/spatialpartition.cpp"
+text = spatial.read_text(errors="surrogateescape")
+anchor = "MDLCACHE_CRITICAL_SECTION_(g_pMDLCache);\n\tCVoxelTree *pTree"
+if text.count(anchor) != 4:
+    raise RuntimeError("Spatial partition query patch context changed")
+spatial.write_text(text.replace(anchor, "PortSpatialModelLock cacheLock(g_pMDLCache, this != &g_SpatialPartition && m_nQueryCallbackCount == 0);\n\tCVoxelTree *pTree"), errors="surrogateescape")
+replace("public/collisionutils.cpp", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB)", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB) || defined(SOURCE_ENGINE_PORT)")
+replace("public/dt_recv.cpp", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL)", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL) || defined(SOURCE_ENGINE_PORT)")
+replace("public/dt_send.cpp", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL)", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL) || defined(SOURCE_ENGINE_PORT)")
+replace("mathlib/IceKey.cpp", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB)", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB) || defined(SOURCE_ENGINE_PORT)")
+shutil.copytree(args.upstream / "thirdparty/stb", args.output / "thirdparty/stb", dirs_exist_ok=True)
+(args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": 27}, indent=2))
 print(f"Prepared real Source modules from {PIN}")

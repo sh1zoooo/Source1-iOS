@@ -8,9 +8,10 @@ set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 include(cmake/SourceModules.cmake)
-add_library(port_runtime STATIC src/runtime/Runtime.cpp src/source/SourceBridge.cpp src/source/SourceFiles.cpp src/source/SourceAppSystems.cpp)
+add_library(port_runtime STATIC src/runtime/Runtime.cpp src/source/SourceBridge.cpp src/source/SourceFiles.cpp src/source/SourceAppSystems.cpp src/source/SourceEngine.cpp)
 target_include_directories(port_runtime PUBLIC src/runtime)
 target_include_directories(port_runtime PUBLIC src/source)
+target_include_directories(port_runtime PRIVATE "${SOURCE_ROOT}/engine")
 target_link_libraries(port_runtime PRIVATE source_modules)
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
