@@ -3,6 +3,9 @@ project(Source1IOS LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
+set(CMAKE_OBJCXX_STANDARD 17)
+set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
+set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 add_library(port_runtime STATIC src/runtime/Runtime.cpp)
 target_include_directories(port_runtime PUBLIC src/runtime)
@@ -11,7 +14,8 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   enable_language(OBJCXX)
   add_executable(Source1IOS MACOSX_BUNDLE src/ios/main.mm)
   target_link_libraries(Source1IOS PRIVATE port_runtime
-    "-framework UIKit" "-framework Foundation" "-framework Metal" "-framework MetalKit")
+    "-framework UIKit" "-framework Foundation" "-framework CoreGraphics"
+    "-framework QuartzCore" "-framework Metal" "-framework MetalKit")
   target_compile_options(Source1IOS PRIVATE -fobjc-arc)
   set_target_properties(Source1IOS PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/ios/Info.plist"
