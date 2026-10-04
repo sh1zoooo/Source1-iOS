@@ -30,6 +30,8 @@ replace("public/tier0/basetypes.h", "#if !defined(PLATFORM_GLIBC) && defined(LIN
         "#if !defined(PLATFORM_GLIBC) && defined(LINUX) && (!defined(__cplusplus) || __cplusplus < 201103L)")
 replace("tier0/assert_dialog.cpp", '#include "pch_tier0.h"',
         '#include "pch_tier0.h"\n#ifdef POSIX\n#include <execinfo.h>\n#endif')
+replace("tier1/checksum_md5.cpp", "register unsigned int a, b, c, d;",
+        "unsigned int a, b, c, d;")
 # On ARM the fast counter counts nanoseconds, not variable CPU clock cycles.
 replace("public/tier0/platform.h", "clock_gettime( CLOCK_REALTIME, &t);",
         "clock_gettime( CLOCK_MONOTONIC, &t);")
@@ -40,5 +42,5 @@ replace("tier0/cpu.cpp", "#elif defined ( __arm__ )",
 # Correct the baseline Linux timer's fractional subtraction as well.
 replace("tier0/platform_posix.cpp", "( now.tv_nsec * 1e-9 )",
         "( (now.tv_nsec - start_time.tv_nsec) * 1e-9 )")
-(args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": 6}, indent=2))
+(args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": 7}, indent=2))
 print(f"Prepared real Source modules from {PIN}")
