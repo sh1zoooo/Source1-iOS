@@ -3,6 +3,7 @@
 #include <filesystem>
 #include <fstream>
 #include <string>
+#include <mutex>
 #include "SourceBridge.hpp"
 
 namespace source1ios {
@@ -23,6 +24,7 @@ public:
     double elapsed() const { return elapsed_; }
     const std::filesystem::path& logPath() const { return logPath_; }
 private:
+    std::mutex logMutex_;
     std::ofstream log_;
     std::filesystem::path logPath_;
     bool running_ = false;

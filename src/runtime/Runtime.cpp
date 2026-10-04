@@ -20,7 +20,7 @@ bool Runtime::start(const std::filesystem::path& documents) {
     log("Pointer width: " + std::to_string(sizeof(void*) * 8));
     if (!source_.start([](void* context, const char* message) {
             static_cast<Runtime*>(context)->log(message);
-        }, this)) {
+        }, this, documents / "Source1IOS")) {
         log("Source core initialization failed");
         stop();
         return false;
@@ -40,6 +40,7 @@ void Runtime::frame(double seconds) {
     ++frames_;
 }
 void Runtime::log(const std::string& message) {
+    std::lock_guard<std::mutex> lock(logMutex_);
     std::clog << "[Source1IOS] " << message << '\n';
     if (log_.is_open()) {
         log_ << message << '\n';

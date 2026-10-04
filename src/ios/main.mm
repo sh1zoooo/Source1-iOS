@@ -48,7 +48,9 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     [share addTarget:self action:@selector(shareLog:) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:share];
     self.commandInput = [[UITextField alloc] init];
-    self.commandInput.placeholder = @"ios_rotation_speed 0";
+    self.commandInput.attributedPlaceholder = [[NSAttributedString alloc]
+        initWithString:@"source_fs_selftest"
+        attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.7 alpha:1]}];
     self.commandInput.textColor = UIColor.whiteColor;
     self.commandInput.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.9];
     self.commandInput.borderStyle = UITextBorderStyleRoundedRect;
@@ -81,7 +83,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     _hostStarted = documents && _runtime.start(documents.path.UTF8String);
     if (!_hostStarted) {
         self.status.text = @"Startup failed. Export the log for diagnostics.";
-        share.enabled = NO;
+        share.enabled = !_runtime.logPath().empty();
         return;
     }
     _runtime.log(std::string("iOS ") + UIDevice.currentDevice.systemVersion.UTF8String);
@@ -121,7 +123,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · core port\ntier0 · tier1 · mathlib · vstdlib\nSource self-tests: PASS\nFull engine host: pending";
+    self.status.text = @"Source 1 iOS · core + filesystem\nVFileSystem022 · VPK v1/v2\nSource self-tests: 14 PASS\nFull engine host: pending";
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)
@@ -177,10 +179,10 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source core active · self-tests PASS\nFull engine host: pending\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source core + filesystem active\nFull engine host: pending\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
-    if (!_hostStarted) return;
+    if (_runtime.logPath().empty()) return;
     _runtime.log("Diagnostic log exported at frame " + std::to_string(_runtime.frames()));
     NSString *path = [NSString stringWithUTF8String:_runtime.logPath().string().c_str()];
     UIActivityViewController *activity = [[UIActivityViewController alloc]

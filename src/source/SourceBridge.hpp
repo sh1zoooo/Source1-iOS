@@ -1,13 +1,14 @@
 #pragma once
 #include <array>
 #include <string>
+#include "SourceFiles.hpp"
 
 namespace source1ios {
 struct SourceVertex { float position[4]; float color[4]; };
 class SourceBridge final {
 public:
     using Logger = void (*)(void*, const char*);
-    bool start(Logger logger, void* context);
+    bool start(Logger logger, void* context, const std::filesystem::path& root);
     void stop();
     bool selfTest();
     bool execute(const std::string& command);
@@ -17,6 +18,7 @@ public:
 private:
     bool ready_ = false;
     bool ownsCore_ = false;
+    SourceFiles files_;
     double elapsed_ = 0;
 };
 }

@@ -15,11 +15,12 @@ add_library(source_settings INTERFACE)
 target_include_directories(source_settings SYSTEM INTERFACE
   "${SOURCE_ROOT}" "${SOURCE_ROOT}/public" "${SOURCE_ROOT}/public/tier0"
   "${SOURCE_ROOT}/public/tier1" "${SOURCE_ROOT}/public/mathlib"
+  "${SOURCE_ROOT}/filesystem" "${SOURCE_ROOT}/vpklib" "${SOURCE_ROOT}/public/tier2"
   "${SOURCE_ROOT}/common" "${SOURCE_ROOT}/tier0" "${SOURCE_ROOT}/tier1")
 target_compile_definitions(source_settings INTERFACE
   POSIX=1 _POSIX=1 PLATFORM_POSIX=1 GNUC PLATFORM_64BITS=1
   NO_HOOK_MALLOC NO_MEMOVERRIDE_NEW_DELETE _STATIC_LINKED
-  TIER0_DLL_EXPORT=1 TIER1_STATIC_LIB=1 VSTDLIB_DLL_EXPORT=1 MATHLIB_LIB=1
+  TIER0_DLL_EXPORT=1 TIER1_STATIC_LIB=1 VSTDLIB_DLL_EXPORT=1 MATHLIB_LIB=1 SUPPORT_PACKED_STORE=1 FILESYSTEM_STDIO_EXPORTS=1 DONT_PROTECT_FILEIO_FUNCTIONS=1
   WAF_CFLAGS="CMake-iOS-port" WAF_LDFLAGS="static")
 target_compile_options(source_settings INTERFACE -fno-strict-aliasing)
 if(APPLE)
@@ -28,9 +29,12 @@ if(APPLE)
     target_compile_definitions(source_settings INTERFACE SOURCE_IOS=1)
   endif()
 else()
+  if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(x86_64|AMD64)$")
+    target_compile_options(source_settings INTERFACE -mcx16)
+  endif()
   target_compile_definitions(source_settings INTERFACE LINUX=1 _LINUX=1 PLATFORM_GLIBC=1 _DLL_EXT=.so)
 endif()
-foreach(module IN ITEMS tier0 tier1 mathlib vstdlib)
+foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem)
   string(JSON count LENGTH "${SOURCE_MANIFEST}" "${module}")
   math(EXPR last "${count} - 1")
   set(sources)
@@ -45,8 +49,8 @@ foreach(module IN ITEMS tier0 tier1 mathlib vstdlib)
 endforeach()
 add_library(source_modules INTERFACE)
 if(APPLE)
-  target_link_libraries(source_modules INTERFACE source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
+  target_link_libraries(source_modules INTERFACE source_filesystem source_vpklib source_tier2 source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
 else()
   target_link_libraries(source_modules INTERFACE
-    "$<LINK_GROUP:RESCAN,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
+    "$<LINK_GROUP:RESCAN,source_filesystem,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
 endif()

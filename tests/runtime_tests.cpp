@@ -19,6 +19,7 @@ int main() {
         check(host.frames() == 0, "Stopped host accepted a frame");
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
+        check(host.executeSource("source_fs_selftest"), "Original filesystem contracts failed");
         check(host.executeSource("source_selftest"), "Source contracts failed");
         check(host.executeSource("ios_rotation_speed 0"), "Source ConVar command failed");
         const auto before = host.vertices(1);

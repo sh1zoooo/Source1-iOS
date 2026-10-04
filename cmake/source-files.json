@@ -107,5 +107,25 @@
     "vstdlib/random.cpp",
     "vstdlib/vcover.cpp",
     "vstdlib/../public/tier0/memoverride.cpp"
+  ],
+  "filesystem": [
+    "filesystem/basefilesystem.cpp",
+    "filesystem/packfile.cpp",
+    "filesystem/filetracker.cpp",
+    "filesystem/filesystem_async.cpp",
+    "filesystem/filesystem_stdio.cpp",
+    "filesystem/QueuedLoader.cpp",
+    "filesystem/linux_support.cpp",
+    "public/kevvaluescompiler.cpp",
+    "public/zip_utils.cpp"
+  ],
+  "vpklib": [
+    "vpklib/packedstore.cpp",
+    "common/simplebitstring.cpp"
+  ],
+  "tier2": [
+    "tier2/tier2.cpp",
+    "tier2/fileutils.cpp",
+    "tier2/utlstreambuffer.cpp"
   ]
 }
