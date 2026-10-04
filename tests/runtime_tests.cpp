@@ -1,0 +1,55 @@
+#include "Runtime.hpp"
+#include <cmath>
+#include <filesystem>
+#include <fstream>
+#include <iostream>
+#include <limits>
+#include <stdexcept>
+#include <string>
+static void check(bool condition, const char* message) {
+    if (!condition) throw std::runtime_error(message);
+}
+int main() {
+    const auto directory = std::filesystem::temp_directory_path() /
+        ("source1ios-test-" + std::to_string(
+            std::filesystem::file_time_type::clock::now().time_since_epoch().count()));
+    try {
+        source1ios::Runtime host;
+        host.frame(0.016);
+        check(host.frames() == 0, "Stopped host accepted a frame");
+        check(host.start(directory), "Could not start host");
+        check(!host.start(directory), "Duplicate start accepted");
+        host.frame(0.016);
+        host.setActive(false);
+        host.frame(1);
+        check(host.frames() == 1, "Background host advanced simulation");
+        host.setActive(true);
+        host.frame(30);
+        check(std::abs(host.elapsed() - 0.116) < 1e-9, "Background interval was not clamped");
+        host.frame(std::numeric_limits<double>::quiet_NaN());
+        host.frame(std::numeric_limits<double>::infinity());
+        host.frame(-1);
+        check(host.frames() == 2, "Invalid delta was accepted");
+        const auto logPath = host.logPath();
+        host.stop();
+        host.stop();
+        std::ifstream file(logPath);
+        std::string contents((std::istreambuf_iterator<char>(file)), {});
+        check(contents.find("Host paused") != std::string::npos, "Pause log missing");
+        check(contents.find("Host stopped after 2 frames") != std::string::npos, "Shutdown log missing");
+        check(host.start(directory), "Restart failed");
+        check(host.frames() == 0 && host.elapsed() == 0, "Restart retained simulation state");
+        host.stop();
+        const auto badPath = directory / "regular-file";
+        std::ofstream(badPath) << "not a directory";
+        check(!host.start(badPath), "Invalid document directory accepted");
+        check(!host.running(), "Failed startup left host running");
+        std::filesystem::remove_all(directory);
+        std::cout << "Runtime contracts passed\n";
+        return 0;
+    } catch (const std::exception& error) {
+        std::filesystem::remove_all(directory);
+        std::cerr << error.what() << '\n';
+        return 1;
+    }
+}

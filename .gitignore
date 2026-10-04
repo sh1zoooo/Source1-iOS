@@ -1,0 +1,7 @@
+/build*/
+/artifacts/
+__pycache__/
+.DS_Store
+*.ipa
+*.p12
+*.mobileprovision

@@ -1,0 +1,63 @@
+name: iOS host build
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+permissions:
+  contents: read
+concurrency:
+  group: ios-${{ github.ref }}
+  cancel-in-progress: true
+jobs:
+  runtime:
+    name: C++ runtime contracts
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug
+      - run: cmake --build build --parallel
+      - run: ctest --test-dir build --output-on-failure
+  ios:
+    name: iOS ARM64 IPA and simulator smoke
+    runs-on: macos-15
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          cmake --version
+      - name: Configure device build
+        run: >-
+          cmake -S . -B build-ios -G Xcode
+          -DCMAKE_SYSTEM_NAME=iOS
+          -DCMAKE_OSX_SYSROOT=iphoneos
+          -DCMAKE_OSX_ARCHITECTURES=arm64
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+      - name: Build device app
+        run: cmake --build build-ios --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
+      - name: Package unsigned IPA
+        run: |
+          python3 scripts/package_ipa.py build-ios/Release-iphoneos/Source1IOS.app artifacts/Source1IOS-unsigned.ipa
+          shasum -a 256 artifacts/Source1IOS-unsigned.ipa > artifacts/SHA256SUMS.txt
+      - name: Configure simulator build
+        run: >-
+          cmake -S . -B build-sim -G Xcode
+          -DCMAKE_SYSTEM_NAME=iOS
+          -DCMAKE_OSX_SYSROOT=iphonesimulator
+          -DCMAKE_OSX_ARCHITECTURES=$(uname -m)
+          -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+      - name: Build simulator app
+        run: cmake --build build-sim --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
+      - name: Verify simulator startup
+        run: python3 scripts/simulator_smoke.py build-sim/Release-iphonesimulator/Source1IOS.app
+      - name: Upload IPA and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: Source1IOS-${{ github.sha }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 14
