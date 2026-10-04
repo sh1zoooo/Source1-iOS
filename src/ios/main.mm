@@ -11,7 +11,9 @@ vertex Output vertexMain(uint id [[vertex_id]], constant float &aspect [[buffer(
     const float2 points[3] = { float2(0, 0.55), float2(-0.55, -0.4), float2(0.55, -0.4) };
     const float3 colors[3] = { float3(1, 0.35, 0.1), float3(0.1, 0.7, 1), float3(0.4, 1, 0.5) };
     Output out;
-    out.position = float4(points[id].x / max(aspect, 0.01f), points[id].y, 0, 1);
+    float safeAspect = max(aspect, 0.01f);
+    float scale = min(safeAspect, 1.0f);
+    out.position = float4(points[id].x * scale / safeAspect, points[id].y * scale, 0, 1);
     out.color = colors[id];
     return out;
 }
