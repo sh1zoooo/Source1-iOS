@@ -63,7 +63,9 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Проверенная сборка: [0.9.2, build 12 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37273528606/artifacts/11328698833).
+Проверенная автоматическими тестами сборка: [0.11.0, build 14 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37300762083/artifacts/11341058893).
+55 стартовых проверок; симулятор повторяет их и проверяет GPU, загрузку terrain и
+background/resume (111 PASS). На физическом iPhone эта версия ещё не проверена.
 Enter / Go в консоли теперь выполняет команду и закрывает клавиатуру, как Run.
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 

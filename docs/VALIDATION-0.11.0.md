@@ -24,6 +24,11 @@ original Source ray + hull hits at a 32-unit summit. End-to-end imported terrain
 adds exactly 90 draw vertices; invalid power 31 is rejected without replacing it.
 Compressed BSP import and lifecycle/physics/camera regression checks still pass.
 
+Additional local soak: 30,000 frames across three restarts and 300 switches
+between the room and terrain exited 0. Every returned draw coordinate was finite.
+There were 606 IVP contact-rescue warnings. Maximum RSS was 17,444 → 18,212 →
+18,852 KiB; this does not establish leak-free operation or stable contact physics.
+
 ## Boundaries and open defects
 
 The test quad uses Source's clockwise displacement parent ordering. Geometry
@@ -36,7 +41,16 @@ using Source's specialized displacement tree. Dynamic IVP bodies on terrain are
 not validated; no claim of working terrain ragdolls is made. Contact-rescue
 warnings and restart RSS growth recorded in VALIDATION-0.10.0 remain open.
 
-GitHub full Debug / iOS ARM64 / simulator GPU terrain checks: pending.
+GitHub run `37300762083`, code `426e774029f18a010edbc5db889121daab6ac140`:
+full Linux Debug runtime contracts passed in 5.08 seconds. iOS ARM64 and simulator
+builds passed. Simulator log contains exactly 111 PASS entries, no FAIL, GPU frame
+completion, terrain import (114 triangles), and pause/resume. Simulator screenshot
+was visually inspected: checker geometry and both yellow physics spheres render.
+
+Artifact `11341058893` was downloaded and inspected: Info.plist is 0.11.0 / 14;
+the IPA SHA256 agrees with the included checksum:
+`526bc2579454ebe0ecacddeaed6cce6bb694f61cdf6fbc49006d55ff1228e135`.
+
 Physical iPhone validation: pending; user is currently unavailable to test.
 
 Full CS:S is not running: client host, graphical shaders/materials, models,

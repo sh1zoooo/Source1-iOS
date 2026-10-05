@@ -82,7 +82,9 @@ then background for 20 seconds and resume. Export the log after these actions.
 ## Remaining engine work
 
 Original graphical shaderapi/materialsystem, map materials/lightmaps/PVS,
-displacements, studio model drawing/animation, audio and a genuine game DLL remain.
+original graphical displacement LOD/material integration, studio model drawing/animation,
+audio and a genuine game DLL remain. Full-resolution displacement geometry and specialized
+Source ray/hull camera collision are covered by the v0.11 preview, not by a running game.
 The dedicated host runs without a fabricated server interface. The Metal adapter
 is separate from the original Source rendering pipeline.
 
