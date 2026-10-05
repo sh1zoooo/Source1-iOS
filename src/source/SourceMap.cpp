@@ -33,23 +33,27 @@ using Collision = std::shared_ptr<CPhysCollide>;
 struct PhysicsScene {
     IPhysics* physics=nullptr;IPhysicsEnvironment* environment=nullptr;
     IPhysicsObject* level=nullptr;IPhysicsObject* anchor=nullptr;IPhysicsObject* body=nullptr;
-    IPhysicsConstraint* joint=nullptr;Collision levelShape,bodyShape;
+    IPhysicsConstraint* joint=nullptr;Collision levelShape;
     ~PhysicsScene(){
         if(environment){if(joint)environment->DestroyConstraint(joint);if(body)environment->DestroyObject(body);
             if(anchor)environment->DestroyObject(anchor);if(level)environment->DestroyObject(level);physics->DestroyEnvironment(environment);}
     }
 };
 std::unique_ptr<PhysicsScene> physicsScene(Collision shape){
+    auto* surfaces=static_cast<IPhysicsSurfaceProps*>(Sys_GetFactoryThis()(VPHYSICS_SURFACEPROPS_INTERFACE_VERSION,nullptr));
+    if(!surfaces)return nullptr;
+    if(surfaces->GetSurfaceIndex("default")<0)
+        surfaces->ParseSurfaceData("source1ios_surface_defaults", "\"default\" { \"density\" \"1000\" \"elasticity\" \"0.2\" \"friction\" \"0.8\" }");
+    const int material=surfaces->GetSurfaceIndex("default");if(material<0)return nullptr;
     auto scene=std::make_unique<PhysicsScene>();scene->levelShape=std::move(shape);
     scene->physics=static_cast<IPhysics*>(Sys_GetFactoryThis()(VPHYSICS_INTERFACE_VERSION,nullptr));
     scene->environment=scene->physics?scene->physics->CreateEnvironment():nullptr;if(!scene->environment)return nullptr;
     scene->environment->SetGravity(Vector(0,0,-600));
     objectparams_t params{nullptr,5,1,0,0,.05f,"Source iOS scene",nullptr,0,1,true};
-    scene->level=scene->environment->CreatePolyObjectStatic(scene->levelShape.get(),0,Vector(0,0,0),QAngle(0,0,0),&params);
-    scene->bodyShape=Collision(g_pPhysicsCollision->BBoxToCollide(Vector(-8,-8,-8),Vector(8,8,8)),CollisionDelete{});
-    if(!scene->level || !scene->bodyShape)return nullptr;
-    scene->anchor=scene->environment->CreatePolyObjectStatic(scene->bodyShape.get(),0,Vector(-32,64,144),QAngle(0,0,0),&params);
-    scene->body=scene->environment->CreatePolyObject(scene->bodyShape.get(),0,Vector(-32,64,96),QAngle(0,0,0),&params);
+    scene->level=scene->environment->CreatePolyObjectStatic(scene->levelShape.get(),material,Vector(0,0,0),QAngle(0,0,0),&params);
+    if(!scene->level)return nullptr;
+    scene->anchor=scene->environment->CreateSphereObject(8,material,Vector(-32,64,144),QAngle(0,0,0),&params,true);
+    scene->body=scene->environment->CreateSphereObject(8,material,Vector(-32,64,96),QAngle(0,0,0),&params,false);
     if(!scene->anchor || !scene->body)return nullptr;
     constraint_ragdollparams_t joint;joint.Defaults();
     MatrixSetColumn(Vector(0,0,-24),3,joint.constraintToReference);MatrixSetColumn(Vector(0,0,24),3,joint.constraintToAttached);
@@ -169,6 +173,7 @@ bool SourceMap::start(const std::filesystem::path& root) {
     Msg("Source BSP preview ready: original lump loader + polygon collision + Metal adapter. Engine brush world loaded; original graphical materialsystem and game remain pending.\n");return true;
 }
 void SourceMap::stop(){impl_.reset();}
+bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);}
 bool SourceMap::load(const char* filename,const char* pathID) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
     auto file=g_pFullFileSystem->Open(filename,"rb",pathID);if(!file){Warning("Source BSP: file not found: %s\n",filename);return false;}
@@ -212,7 +217,16 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
-void SourceMap::resetCamera(){if(impl_){impl_->camera=Vector(-190,-160,80);impl_->angles=QAngle(8,35,0);}}
+void SourceMap::resetCamera(){if(impl_){impl_->camera=Vector(-190,-160,80);impl_->angles=QAngle(8,45,0);}}
+bool SourceMap::resetPhysics(){
+    if(!impl_)return false;auto scene=physicsScene(impl_->collision);if(!scene)return false;
+    impl_->scene=std::move(scene);Msg("Source live physics scene reset: two bodies and original ragdoll joint\n");return true;
+}
+bool SourceMap::impulsePhysics(){
+    if(!impl_ || !impl_->scene)return false;
+    impl_->scene->body->Wake();impl_->scene->body->ApplyForceCenter(Vector(6000,2000,0));
+    Msg("Source live physics: impulse applied to constrained body\n");return true;
+}
 void SourceMap::look(float yaw,float pitch){if(impl_ && std::isfinite(yaw)&&std::isfinite(pitch)){impl_->angles.y=std::remainder(impl_->angles.y+yaw,360.f);impl_->angles.x=std::max(-85.f,std::min(85.f,impl_->angles.x+pitch));}}
 void SourceMap::move(float forward,float right,float seconds){
     if(!impl_ || !std::isfinite(forward)||!std::isfinite(right)||!std::isfinite(seconds)||seconds<=0)return;
@@ -232,10 +246,18 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
         out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1},{v.uv[0],v.uv[1]}});};
     for(const auto& v:impl_->mesh)append(v);
     if(impl_->scene){
-        const Vector corners[]={ {-8,-8,-8},{8,-8,-8},{8,8,-8},{-8,8,-8},{-8,-8,8},{8,-8,8},{8,8,8},{-8,8,8} };
-        const int indices[]={0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,3,7,6,3,6,2,0,4,7,0,7,3,1,2,6,1,6,5};
+        constexpr int rings=6,slices=12;
+        constexpr float pi=3.14159265358979323846f;
+        auto point=[&](int ring,int slice){float latitude=pi*ring/rings,longitude=2*pi*slice/slices;
+            return Vector(8*std::sin(latitude)*std::cos(longitude),8*std::sin(latitude)*std::sin(longitude),8*std::cos(latitude));};
         for(auto* object:{impl_->scene->anchor,impl_->scene->body}){matrix3x4_t pose;object->GetPositionMatrix(&pose);
-            for(int index:indices){Vector point;VectorTransform(corners[index],pose,point);append({point,{1,.8f,.2f},{float(index%2),float((index/2)%2)}});}}
+            for(int ring=0;ring<rings;++ring)for(int slice=0;slice<slices;++slice){
+                const Vector quad[]={point(ring,slice),point(ring+1,slice),point(ring+1,slice+1),point(ring,slice+1)};
+                for(int index:{0,1,2,0,2,3}){Vector p;VectorTransform(quad[index],pose,p);
+                    const float shade=.55f+.45f*(quad[index].z/8+1)/2;
+                    append({p,{shade,.8f*shade,.2f*shade},{float(slice)/slices,float(ring)/rings}});}
+            }
+        }
     }
     return out;
 }

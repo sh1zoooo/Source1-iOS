@@ -21,15 +21,26 @@ try:
         simctl("boot", udid)
     simctl("bootstatus", udid, "-b")
     simctl("install", udid, sys.argv[1])
-    simctl("launch", udid, bundle)
+    simctl("launch", udid, bundle, "--port-smoke")
     container = Path(simctl("get_app_container", udid, bundle, "data"))
     log = container / "Documents" / "Source1IOS" / "runtime.log"
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""
-        if "First Metal frame submitted" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text and "Source Host_Init completed: dedicated idle host" in text and "Source host self-test Host_RunFrame idle ticks: PASS" in text and "Source assets/physics self-test physics ragdoll joint under impulse: PASS" in text and "Source BSP preview ready" in text and "Source VTF preview texture uploaded to Metal" in text:
+        if "First Metal frame completed on GPU" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text and "Source Host_Init completed: dedicated idle host" in text and "Source host self-test Host_RunFrame idle ticks: PASS" in text and "Source assets/physics self-test physics ragdoll joint under impulse: PASS" in text and "Source BSP preview ready" in text and "Source VTF preview texture uploaded to Metal" in text and "Source simulator runtime contracts: PASS" in text:
             if "FAIL" in text:
                 raise RuntimeError(f"Source core self-test failed:\n{text}")
+            time.sleep(5)
+            text = log.read_text()
+            if "FAIL" in text or text.count(": PASS") != 101:
+                raise RuntimeError(f"Expected two sets of 50 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            simctl("launch", udid, "com.apple.Preferences")
+            time.sleep(2)
+            simctl("launch", udid, bundle)
+            time.sleep(3)
+            text = log.read_text()
+            if "Host paused" not in text or "Host resumed" not in text or "FAIL" in text:
+                raise RuntimeError(f"Foreground/background contracts failed:\n{text}")
             Path("artifacts").mkdir(exist_ok=True)
             Path("artifacts/simulator-runtime.log").write_text(text)
             simctl("io", udid, "screenshot", "artifacts/simulator.png")

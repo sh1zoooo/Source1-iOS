@@ -27,11 +27,11 @@ Source license and third-party notices are bundled in the IPA.
 - GAME and DEFAULT_WRITE_PATH mounted at Documents/Source1IOS/game; tests use
   an isolated PORT_TEST path and explicitly mounted VPK fixtures.
 - Native UIKit lifecycle and a custom Metal test backend with a depth buffer.
-- Generated rotating cube; CPU transforms use Source mathlib every frame.
+- Built-in BSP room, camera and live physics bodies; Source mathlib transforms every frame.
 - In-app console with real Source command tokenization, dispatch and variable updates.
 
 All twenty-three upstream static libraries compile their manifest entries. Only the features above
-are exercised. This is a **partial core and filesystem port**, not a running engine host.
+are exercised. This is a **partial engine port**: original engine-only host and built-in brush world are active; rendering uses the custom Metal adapter.
 No fabricated CreateInterface or substitute CRC / KeyValues implementation is used.
 
 ## Platform changes
@@ -71,22 +71,17 @@ A passing simulator does not prove that this new module integration works on A18
 
 ## Physical-device check
 
-1. Install the newly signed IPA. Expect a rotating cube and core self-tests PASS.
-2. Execute `source_app_selftest`, `source_fs_selftest`, `source_selftest`, then `ios_rotation_speed 0` and `ios_rotation_speed 30`.
-3. Rotate the device, background it for 20 seconds and resume.
-4. Export the diagnostic log. It must include the Source upstream revision,
-   VEngineCvar004 initialization and PASS for all thirty-five checks.
+The user’s iPhone 16e log confirms the 39-check host build and two pause/resume cycles.
+For the new build: expect a textured room and two yellow physics spheres. Drag left
+for movement and right for view. Repeat source_selftest, apply source_physics_impulse,
+then background for 20 seconds and resume. Export the log after these actions.
 
 ## Remaining engine work
 
-The dedicated `engine` module is statically linked (169 compilation units), with tier3 and bitmap dependencies. Engine command buffering and independent spatial partitions are exercised. The later v0.6 and v0.7 stages below initialize headless materials and the engine-only host; BSP world loading, graphical shaderapi, audio and game client/server execution remain pending.
-Next: port the dedicated engine dependency graph and engine platform code, then attempt
-headless engine startup. `engine/sys_dll2.cpp::CModAppSystemGroup::Create` still
-loads a game server module even in server-only mode; full host startup needs that
-interface or a deliberately scoped engine initialization path. Upstream's engine
-build also links appframework, tier3, datamodel, bitmap/vtf and several desktop
-libraries. No stub server or fabricated engine interface has been added. Materialsystem integration is a separate stage; the Metal
-cube is not evidence that original Source materials or maps can render.
+Original graphical shaderapi/materialsystem, map materials/lightmaps/PVS,
+displacements, studio model drawing/animation, audio and a genuine game DLL remain.
+The dedicated host runs without a fabricated server interface. The Metal adapter
+is separate from the original Source rendering pipeline.
 
 ## Engine integration (v0.5)
 
@@ -118,8 +113,8 @@ objects are remembered across reconnects, with destroyed objects removed from th
 remembered set. Physics and VTF tests run during startup, repeat testing and restart.
 
 35 checks include three VTF contracts, two data-cache contracts, physical collision
-construction, ray fraction and actual gravity simulation. iPhone evidence currently
-covers the preceding 26-check engine build; the expanded graph needs a device run.
+construction, ray fraction and actual gravity simulation. These checks and the later
+39-check host build are confirmed by the user’s physical iPhone log.
 
 
 ## Engine-only host lifecycle (v0.7)
@@ -141,7 +136,7 @@ reinitialization. Command-buffer tests preserve a live host's buffer lifetime.
 39 startup checks include queued loader, Host_Init and idle tick advancement.
 Linux contracts exercise repeat tests, pause/resume, shutdown and restart.
 The 35-check v0.6 IPA passed startup and all checks on the physical iPhone 16e
-(A18, iOS 18.6.2); the v0.7 Host_Init / idle tick build passed ARM64 simulator startup.
+(A18, iOS 18.6.2); the v0.7.1 Host_Init / idle tick build also passed the user’s physical device run.
 
 
 ## Ragdoll solver validation (v0.7.1)
@@ -165,6 +160,15 @@ The original VTF library serializes/reads/decodes the preview checker texture.
 All file/lump bounds and polygon indices are checked before the legacy loader.
 Compressed lumps and external overlays are unsupported. Failed loads preserve
 previous mesh/collision. Dedicated host shutdown follows mesh/collision cleanup.
-The built-in geometry fixture contains polygon sections, not a playable engine
-world; full CModelLoader/CM_LoadMap, lightmaps, PVS and Source shader rendering
-remain separate steps. Simulator evidence must verify the resulting image.
+The v0.9 built-in fixture also contains brush collision, nodes, leaves, texinfo,
+model and entity sections. Original CModelLoader/CM_LoadMap create its brush world;
+CM floor traces, point contents and worldspawn are checked. User-map preview does
+not replace this engine world. Lightmaps, PVS and Source shader rendering remain.
+Simulator evidence must verify the resulting image.
+
+Live physics uses original environments, objects and a ragdoll joint; the renderer
+reads actual body pose matrices. Shapes outlive their environment objects. Default
+surface properties must be parsed before contact simulation in the no-game harness.
+Resources use short relative paths through a dedicated filesystem search path: legacy
+BSP loading reopens files without the caller path ID, and absolute iOS container
+paths interact badly with Source path normalization.

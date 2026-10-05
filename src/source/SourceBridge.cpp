@@ -142,7 +142,10 @@ bool SourceBridge::execute(const std::string& input) {
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
     if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest() && host_.selfTest() && map_.selfTest();
     if (!std::strcmp(args[0], "source_bsp_selftest")) return map_.selfTest();
+    if (!std::strcmp(args[0], "source_bsp_reset")) return map_.resetMap();
     if (!std::strcmp(args[0], "source_camera_reset")) { map_.resetCamera(); return true; }
+    if (!std::strcmp(args[0], "source_physics_reset")) return map_.resetPhysics();
+    if (!std::strcmp(args[0], "source_physics_impulse")) return map_.impulsePhysics();
     if (!std::strcmp(args[0], "source_bsp_load") && args.ArgC()==2) {
         const std::string path=args[1];
         if (path.empty() || path.find("..")!=std::string::npos || path.front()=='/' || path.find('\\')!=std::string::npos || path.rfind("maps/",0)!=0) return false;

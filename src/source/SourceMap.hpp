@@ -4,8 +4,8 @@
 #include <memory>
 #include <vector>
 namespace source1ios {
-// BSP polygon preview uses Source's original lump loader and collision library.
-// It does not replace the engine world loader or graphical materialsystem.
+// Original engine brush loading/collision for the built-in world; polygon
+// preview for user maps. Drawing uses our Metal adapter, not Source shaderapi.
 class SourceMap final {
 public:
     SourceMap();
@@ -13,11 +13,14 @@ public:
     bool start(const std::filesystem::path& root);
     void stop();
     bool load(const char* filename, const char* pathID = "GAME");
+    bool resetMap();
     bool selfTest();
     void look(float yaw, float pitch);
     void frame(float seconds);
     void move(float forward, float right, float seconds);
     void resetCamera();
+    bool resetPhysics();
+    bool impulsePhysics();
     std::vector<SourceVertex> vertices(float aspect) const;
     const SourceTexture& texture() const;
 private:

@@ -11,6 +11,7 @@ static void check(bool condition, const char* message) {
 }
 int main() {
     const auto directory = std::filesystem::temp_directory_path() /
+        ("MixedCase-IOS-Container-" + std::string(90, 'A')) /
         ("source1ios-test-" + std::to_string(
             std::filesystem::file_time_type::clock::now().time_since_epoch().count()));
     try {
@@ -31,15 +32,37 @@ int main() {
         check(host.executeSource("source_fs_selftest"), "Original filesystem contracts failed");
         check(host.executeSource("source_selftest"), "Source contracts failed");
         check(host.executeSource("ios_rotation_speed 0"), "Source ConVar command failed");
+        check(host.executeSource("source_physics_reset"), "Live physics reset failed");
+        check(host.executeSource("source_physics_impulse"), "Live physics impulse failed");
+        const auto physicsBefore=host.vertices(1);
+        host.setActive(false);host.frame(.02);
+        const auto physicsPaused=host.vertices(1);
+        check(physicsBefore.back().position[0]==physicsPaused.back().position[0], "Paused physics advanced");
+        host.setActive(true);
         const auto cameraBefore=host.vertices(1);
         host.cameraLook(10,0);
         const auto cameraAfter=host.vertices(1);
         check(!cameraBefore.empty() && cameraBefore[0].position[0]!=cameraAfter[0].position[0], "Camera look did not alter the view");
         check(host.executeSource("source_camera_reset"), "Camera reset failed");
+        for(int i=0;i<2000;++i)host.cameraMove(1,0,.1f);
+        const auto atWall=host.vertices(1);
+        for(int i=0;i<20;++i)host.cameraMove(1,0,.1f);
+        check(std::abs(host.vertices(1)[0].position[0]-atWall[0].position[0])<.001f, "Camera crossed a solid BSP wall");
+        check(host.executeSource("source_camera_reset"), "Camera reset after movement failed");
+        const auto maps=directory/"Source1IOS/game/maps";
+        std::filesystem::create_directories(maps);
+        std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
+        check(host.executeSource("source_bsp_load maps/imported.bsp"), "Valid user BSP preview failed");
+        const auto imported=host.vertices(1);
+        std::ofstream(maps/"invalid.bsp") << "short";
+        check(!host.executeSource("source_bsp_load maps/invalid.bsp"), "Truncated BSP accepted");
+        check(host.vertices(1)[0].position[0]==imported[0].position[0], "Rejected BSP replaced the previous map");
+        check(host.executeSource("source_bsp_reset"), "Built-in BSP restore failed");
         const auto before = host.vertices(1);
         host.frame(0.01);
         const auto after = host.vertices(1);
         check(before[0].position[0] == after[0].position[0], "Stationary camera changed without input");
+        check(before.back().position[0]!=after.back().position[0], "Visible physics pose did not advance");
         check(!host.executeSource("missing_source_command"), "Unknown command accepted");
         check(!host.start(directory), "Duplicate start accepted");
         host.frame(0.016);

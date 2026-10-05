@@ -29,6 +29,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     BOOL _submittedFirstFrame;
     CGPoint _movement;
     BOOL _movingGesture;
+    BOOL _smokeRequested;
 }
 @property(nonatomic, strong) MTKView *metalView;
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
@@ -42,6 +43,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 @implementation LabController
 - (void)viewDidLoad {
     [super viewDidLoad];
+    _smokeRequested = [NSProcessInfo.processInfo.arguments containsObject:@"--port-smoke"];
     self.view.backgroundColor = [UIColor colorWithRed:0.035 green:0.045 blue:0.065 alpha:1];
     self.status = [[UILabel alloc] init];
     self.status.textColor = UIColor.whiteColor;
@@ -56,7 +58,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self.view addSubview:share];
     self.commandInput = [[UITextField alloc] init];
     self.commandInput.attributedPlaceholder = [[NSAttributedString alloc]
-        initWithString:@"source_app_selftest"
+        initWithString:@"source_selftest"
         attributes:@{NSForegroundColorAttributeName: [UIColor colorWithWhite:0.7 alpha:1]}];
     self.commandInput.textColor = UIColor.whiteColor;
     self.commandInput.backgroundColor = [UIColor colorWithWhite:0.15 alpha:0.9];
@@ -138,7 +140,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
         withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
     _runtime.log("Source VTF preview texture uploaded to Metal");
-    self.status.text = @"Source 1 iOS · progress ~40%\nEngine · materials (headless) · physics\nSource self-tests: 50 PASS\nBSP preview · left move / right look";
+    self.status.text = @"Source 1 iOS · progress ~50%\nEngine · materials (headless) · physics\nSource self-tests: 50 PASS\nBSP preview · left move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -174,6 +176,16 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     _hasPrevious = YES;
     _runtime.cameraMove(_movement.y, _movement.x, (float)dt);
     _runtime.frame(dt);
+    if (_smokeRequested && _runtime.frames() == 60) {
+        if (!_runtime.executeSource("source_selftest") || !_runtime.executeSource("source_physics_reset")
+            || !_runtime.executeSource("source_physics_impulse")) {
+            [self fail:@"Simulator runtime contracts FAIL"]; return;
+        }
+        _runtime.cameraLook(10, 0);
+        _runtime.cameraMove(1, 0, .1f);
+        _runtime.executeSource("source_camera_reset");
+    }
+    if (_smokeRequested && _runtime.frames() == 180) _runtime.log("Source simulator runtime contracts: PASS");
     MTLRenderPassDescriptor *pass = view.currentRenderPassDescriptor;
     id<CAMetalDrawable> drawable = view.currentDrawable;
     if (!pass || !drawable || !self.pipeline) return;
@@ -192,11 +204,15 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertices.size()];
     [encoder endEncoding];
     [command presentDrawable:drawable];
-    [command commit];
     if (!_submittedFirstFrame) {
         _submittedFirstFrame = YES;
+        [command addCompletedHandler:^(id<MTLCommandBuffer> finished) {
+            if (finished.status == MTLCommandBufferStatusCompleted) self->_runtime.log("First Metal frame completed on GPU");
+            else self->_runtime.log(std::string("Metal GPU frame FAIL: ") + finished.error.description.UTF8String);
+        }];
         _runtime.log("First Metal frame submitted");
     }
+    [command commit];
 }
 - (void)cameraPan:(UIPanGestureRecognizer *)gesture {
     if (gesture.state == UIGestureRecognizerStateBegan) {
@@ -218,7 +234,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source core + filesystem + appframework\nHost_Init ready · dedicated idle frames\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · progress ~50%%\nBSP · Source collision · live physics\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;
