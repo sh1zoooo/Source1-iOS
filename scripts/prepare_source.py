@@ -82,7 +82,7 @@ replace("datacache/mdlcache.cpp", 'return g_MDLCache.GetStudioHdr( VoidPtrToMDLH
 replace("studiorender/studiorendercontext.cpp", 'const vertexFileHeader_t * mstudiomodel_t::CacheVertexData( void *pModelData )', '#ifndef SOURCE_ENGINE_PORT\nconst vertexFileHeader_t * mstudiomodel_t::CacheVertexData( void *pModelData )')
 replace("studiorender/studiorendercontext.cpp", 'return g_pStudioDataCache->CacheVertexData( (studiohdr_t *)pModelData );\n}', 'return g_pStudioDataCache->CacheVertexData( (studiohdr_t *)pModelData );\n}\n#endif')
 replace("engine/l_studio.cpp", 'Assert( pModelData == NULL );\n\treturn s_ModelRender.CacheVertexData();', 'if (pModelData) return g_pStudioDataCache->CacheVertexData((studiohdr_t*)pModelData);\n\treturn s_ModelRender.CacheVertexData();')
-replace("engine/l_studio.cpp", '#include "render_pch.h"', '#include "render_pch.h"\nextern IStudioDataCache* g_pStudioDataCache;')
+replace("engine/l_studio.cpp", '#include "render_pch.h"', '#include "render_pch.h"\nclass IStudioDataCache;\nextern IStudioDataCache* g_pStudioDataCache;')
 # Use the original linked headless shader API instead of desktop dylib loading.
 replace("materialsystem/cmaterialsystem.cpp", 'm_ShaderHInst = Sys_LoadModule( pShaderDLL );', '#ifdef SOURCE_ENGINE_PORT\n\tif (!Q_stricmp(pShaderDLL, "shaderapiempty")) return Sys_GetFactoryThis();\n#endif\n\tm_ShaderHInst = Sys_LoadModule( pShaderDLL );')
 # Shared static tier libraries retain interfaces until their final user disconnects.
