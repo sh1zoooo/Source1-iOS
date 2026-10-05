@@ -42,30 +42,38 @@ bool animationValues(const std::vector<std::uint8_t>& bytes,size_t base,short re
         cursor+=(valid+1)*sizeof(*values);
     }return true;
 }
-bool readAnimations(const std::vector<std::uint8_t>& bytes,const studiohdr_t& header,const mstudiobone_t* bones,source1ios::StudioMesh& result,std::string& error){
+bool readAnimations(const std::vector<std::uint8_t>& bytes,const studiohdr_t& header,const mstudiobone_t* bones,source1ios::StudioMesh& result,std::string& error,const std::vector<std::uint8_t>& ani){
     auto fail=[&](const char* why){error=why;return false;};if(header.numlocalanim<0||header.numlocalanim>128)return fail("animation count exceeds limit");
     const auto* descriptions=at<mstudioanimdesc_t>(bytes,header.localanimindex,header.numlocalanim);if(!descriptions)return fail("animation descriptions outside MDL");size_t budget=0;
     for(int a=0;a<header.numlocalanim;++a){const auto& desc=descriptions[a];const size_t base=size_t(header.localanimindex)+size_t(a)*sizeof(*descriptions);
-        // External blocks, sections, delta/IK/local hierarchy and newer frame animation
+        // Sections, delta/IK/local hierarchy and newer frame animation
         // need separate paths; retain static geometry without pretending to play them.
-        if(desc.animblock||desc.sectionframes||desc.numlocalhierarchy||desc.numikrules||(desc.flags&~STUDIO_LOOPING))continue;
+        if(desc.sectionframes||desc.numlocalhierarchy||desc.numikrules||(desc.flags&~STUDIO_LOOPING)||desc.animblock==-1)continue;
+        if(desc.animblock<0||desc.animblock>=std::max(1,header.numanimblocks))return fail("invalid external animation block index");
+        if(desc.animblock && ani.empty())continue;
+        std::vector<std::uint8_t> external;
+        if(desc.animblock){const auto* block=at<mstudioanimblock_t>(bytes,header.animblockindex,header.numanimblocks);if(!block)return fail("animation block table outside MDL");const auto& range=block[desc.animblock];
+            if(range.datastart<0||range.dataend<=range.datastart||size_t(range.dataend)>ani.size())return fail("animation block range outside ANI");
+            external.assign(ani.begin()+range.datastart,ani.begin()+range.dataend);}
+        const auto& tracks=desc.animblock?external:bytes;
         if(desc.numframes<1||desc.numframes>2048||!std::isfinite(desc.fps)||desc.fps<=0||desc.fps>240)return fail("invalid embedded animation timing");
         const size_t cost=size_t(desc.numframes)*result.bones.size();if(cost>262144-budget)return fail("animation pose budget exceeded");budget+=cost;
         source1ios::StudioAnimation clip;clip.fps=desc.fps;clip.looping=(desc.flags&STUDIO_LOOPING)!=0;size_t name=0;
         if(!addRelative(base,desc.sznameindex,name)||name>=bytes.size())return fail("animation name outside MDL");
         for(size_t i=name;i<bytes.size()&&i<name+128&&bytes[i];++i)clip.name.push_back(char(bytes[i]));if(name+clip.name.size()>=bytes.size()||bytes[name+clip.name.size()])return fail("unterminated animation name");
         clip.frames.resize(desc.numframes);for(auto& frame:clip.frames)for(const auto& bone:result.bones){frame.rotations.push_back(bone.rotation);frame.positions.push_back(bone.position);}
-        size_t cursor=0;if(desc.animindex&&!addRelative(base,desc.animindex,cursor))return fail("animation track offset overflow");std::vector<bool> seen(result.bones.size(),false);
-        for(size_t n=0;desc.animindex&&n<=result.bones.size();++n){const auto* track=at<mstudioanim_t>(bytes,cursor);if(!track||track->bone>=result.bones.size()||seen[track->bone])return fail("invalid or repeated animation bone");seen[track->bone]=true;
+        size_t cursor=0;if(desc.animindex&&!addRelative(desc.animblock?0:base,desc.animindex,cursor))return fail("animation track offset overflow");std::vector<bool> seen(result.bones.size(),false);
+        const bool hasTracks=desc.animblock||desc.animindex;
+        for(size_t n=0;hasTracks&&n<=result.bones.size();++n){const auto* track=at<mstudioanim_t>(tracks,cursor);if(!track||track->bone>=result.bones.size()||seen[track->bone])return fail("invalid or repeated animation bone");seen[track->bone]=true;
             const auto& bone=bones[track->bone];const unsigned flags=track->flags;if(flags&~(STUDIO_ANIM_RAWPOS|STUDIO_ANIM_RAWROT|STUDIO_ANIM_RAWROT2|STUDIO_ANIM_ANIMPOS|STUDIO_ANIM_ANIMROT))return fail("unsupported embedded track flags");
             const bool raw=flags&(STUDIO_ANIM_RAWPOS|STUDIO_ANIM_RAWROT|STUDIO_ANIM_RAWROT2);if(raw&&(flags&(STUDIO_ANIM_ANIMPOS|STUDIO_ANIM_ANIMROT)))return fail("mixed raw and RLE track");
             size_t data=cursor+sizeof(*track);Quaternion rawRotation=bone.quat;Vector rawPosition=bone.pos;
-            if(flags&STUDIO_ANIM_RAWROT){if(flags&STUDIO_ANIM_RAWROT2)return fail("two raw rotation formats");const auto* q=at<Quaternion48>(bytes,data);if(!q)return fail("truncated Quaternion48");Quaternion48 copy;std::memcpy(&copy,q,sizeof(copy));rawRotation=copy;data+=sizeof(*q);}
-            if(flags&STUDIO_ANIM_RAWROT2){const auto* q=at<Quaternion64>(bytes,data);if(!q)return fail("truncated Quaternion64");Quaternion64 copy;std::memcpy(&copy,q,sizeof(copy));rawRotation=copy;data+=sizeof(*q);}
-            if(flags&STUDIO_ANIM_RAWPOS){const auto* p=at<Vector48>(bytes,data);if(!p)return fail("truncated Vector48");Vector48 copy;std::memcpy(&copy,p,sizeof(copy));rawPosition=copy;}
+            if(flags&STUDIO_ANIM_RAWROT){if(flags&STUDIO_ANIM_RAWROT2)return fail("two raw rotation formats");const auto* q=at<Quaternion48>(tracks,data);if(!q)return fail("truncated Quaternion48");Quaternion48 copy;std::memcpy(&copy,q,sizeof(copy));rawRotation=copy;data+=sizeof(*q);}
+            if(flags&STUDIO_ANIM_RAWROT2){const auto* q=at<Quaternion64>(tracks,data);if(!q)return fail("truncated Quaternion64");Quaternion64 copy;std::memcpy(&copy,q,sizeof(copy));rawRotation=copy;data+=sizeof(*q);}
+            if(flags&STUDIO_ANIM_RAWPOS){const auto* p=at<Vector48>(tracks,data);if(!p)return fail("truncated Vector48");Vector48 copy;std::memcpy(&copy,p,sizeof(copy));rawPosition=copy;}
             std::vector<float> rotation[3],position[3];
-            if(flags&STUDIO_ANIM_ANIMROT){const auto* ptr=at<mstudioanim_valueptr_t>(bytes,data);if(!ptr)return fail("truncated rotation pointers");for(int j=0;j<3;++j)if(!animationValues(bytes,data,ptr->offset[j],desc.numframes,bone.rotscale[j],rotation[j]))return fail("invalid rotation RLE stream");data+=sizeof(*ptr);}
-            if(flags&STUDIO_ANIM_ANIMPOS){const auto* ptr=at<mstudioanim_valueptr_t>(bytes,data);if(!ptr)return fail("truncated position pointers");for(int j=0;j<3;++j)if(!animationValues(bytes,data,ptr->offset[j],desc.numframes,bone.posscale[j],position[j]))return fail("invalid position RLE stream");}
+            if(flags&STUDIO_ANIM_ANIMROT){const auto* ptr=at<mstudioanim_valueptr_t>(tracks,data);if(!ptr)return fail("truncated rotation pointers");for(int j=0;j<3;++j)if(!animationValues(tracks,data,ptr->offset[j],desc.numframes,bone.rotscale[j],rotation[j]))return fail("invalid rotation RLE stream");data+=sizeof(*ptr);}
+            if(flags&STUDIO_ANIM_ANIMPOS){const auto* ptr=at<mstudioanim_valueptr_t>(tracks,data);if(!ptr)return fail("truncated position pointers");for(int j=0;j<3;++j)if(!animationValues(tracks,data,ptr->offset[j],desc.numframes,bone.posscale[j],position[j]))return fail("invalid position RLE stream");}
             for(int f=0;f<desc.numframes;++f){auto q=rawRotation;auto p=rawPosition;if(flags&STUDIO_ANIM_ANIMROT){RadianEuler angles(bone.rot.x+rotation[0][f],bone.rot.y+rotation[1][f],bone.rot.z+rotation[2][f]);if(!angles.IsValid())return fail("invalid animated angles");AngleQuaternion(angles,q);}
                 if(flags&STUDIO_ANIM_ANIMPOS)for(int j=0;j<3;++j)p[j]+=position[j][f];float norm=0;for(int j=0;j<4;++j){if(!std::isfinite(q[j]))return fail("nonfinite animated quaternion");norm+=q[j]*q[j];}if(std::abs(norm-1)>.01f||!p.IsValid()||p.LengthSqr()>32768.f*32768.f)return fail("invalid animated pose");clip.frames[f].rotations[track->bone]=q;clip.frames[f].positions[track->bone]=p;}
             if(!track->nextoffset)break;if(track->nextoffset<int(sizeof(*track))||!addRelative(cursor,track->nextoffset,cursor))return fail("invalid animation track link");
@@ -75,7 +83,7 @@ bool readAnimations(const std::vector<std::uint8_t>& bytes,const studiohdr_t& he
 }
 
 namespace source1ios {
-StudioFixture makeStudioFixture(){
+StudioFixture makeStudioFixture(bool external){
     StudioFixture f;constexpr int checksum=0x510510;
     studiohdr_t mdl{};mdl.id=idStudioHeader;mdl.version=STUDIO_VERSION;mdl.checksum=checksum;
     std::strncpy(mdl.name,"source1ios_static_probe.mdl",sizeof(mdl.name)-1);mdl.numbodyparts=1;
@@ -98,6 +106,11 @@ StudioFixture makeStudioFixture(){
     mh->numbones=2;mh->boneindex=boneOffset;mh->bodypartindex=bodyOffset;mh->length=f.mdl.size();bp->modelindex=modelOffset-bodyOffset;mo->meshindex=meshOffset-modelOffset;
     mh->numlocalanim=1;mh->localanimindex=animationOffset;
     mh->numtextures=1;mh->textureindex=textureOffset;mh->numcdtextures=1;mh->cdtextureindex=directoriesOffset;
+    if(external){f.ani.resize(16,0);f.ani.insert(f.ani.end(),f.mdl.begin()+trackOffset,f.mdl.begin()+textureOffset);
+        const mstudioanimblock_t blocks[]={{0,0},{16,int(f.ani.size())}};const size_t blockOffset=appendMany(f.mdl,blocks,2);
+        const char aniName[]="__source1ios_external_probe.ani";const size_t aniNameOffset=appendMany(f.mdl,aniName,sizeof(aniName));
+        mh=at<studiohdr_t>(f.mdl,mdlHeader);mh->numanimblocks=2;mh->animblockindex=blockOffset;mh->szanimblocknameindex=aniNameOffset;mh->length=f.mdl.size();
+        auto* desc=at<mstudioanimdesc_t>(f.mdl,animationOffset);desc->animblock=1;desc->animindex=0;}
 
     vertexFileHeader_t vh{};vh.id=MODEL_VERTEX_FILE_ID;vh.version=MODEL_VERTEX_FILE_VERSION;vh.checksum=checksum;vh.numLODs=1;vh.numLODVertexes[0]=8;
     const size_t vvdHeader=append(f.vvd,vh);const Vector positions[]={
@@ -121,10 +134,10 @@ StudioFixture makeStudioFixture(){
 }
 
 bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std::uint8_t>& vvd,
-    const std::vector<std::uint8_t>& vtx,StudioMesh& output,std::string& error){
+    const std::vector<std::uint8_t>& vtx,StudioMesh& output,std::string& error,const std::vector<std::uint8_t>& ani){
     StudioMesh result;auto fail=[&](const char* why){error=why;return false;};
     if(mdl.size()<sizeof(studiohdr_t)||vvd.size()<sizeof(vertexFileHeader_t)||vtx.size()<sizeof(OptimizedModel::FileHeader_t))return fail("truncated MDL/VVD/VTX header");
-    if(mdl.size()>maximumModelFile||vvd.size()>maximumModelFile||vtx.size()>maximumModelFile)return fail("model companion exceeds 32 MiB limit");
+    if(mdl.size()>maximumModelFile||vvd.size()>maximumModelFile||vtx.size()>maximumModelFile||ani.size()>maximumModelFile)return fail("model companion exceeds 32 MiB limit");
     const auto* mh=at<studiohdr_t>(mdl,0);const auto* vh=at<vertexFileHeader_t>(vvd,0);const auto* fh=at<OptimizedModel::FileHeader_t>(vtx,0);
     if(mh->id!=idStudioHeader||mh->version!=STUDIO_VERSION||mh->length<int(sizeof(studiohdr_t))||size_t(mh->length)>mdl.size())return fail("unsupported MDL signature/version/length");
     if(vh->id!=MODEL_VERTEX_FILE_ID||vh->version!=MODEL_VERTEX_FILE_VERSION||vh->numLODs<1||vh->numLODs>MAX_NUM_LODS
@@ -132,6 +145,9 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     if(fh->version!=OPTIMIZED_MODEL_FILE_VERSION||fh->numLODs<1||fh->numLODs>MAX_NUM_LODS)return fail("unsupported VTX header");
     if(mh->checksum!=vh->checksum||mh->checksum!=fh->checkSum)return fail("MDL/VVD/VTX checksum mismatch");
     auto stringAt=[&](size_t offset,std::string& out){if(offset>=size_t(mh->length))return false;out.clear();for(size_t i=offset;i<size_t(mh->length)&&out.size()<240;++i){if(!mdl[i])return true;out.push_back(char(mdl[i]));}return false;};
+    if(mh->numanimblocks<0||mh->numanimblocks>1024)return fail("animation block count exceeds limit");
+    if(mh->numanimblocks>1){if(mh->szanimblocknameindex<=0||!stringAt(mh->szanimblocknameindex,result.animationPath)||result.animationPath.empty()
+            ||!at<mstudioanimblock_t>(mdl,mh->animblockindex,mh->numanimblocks))return fail("invalid external animation filename or block table");}
     if(mh->numtextures<0||mh->numtextures>256||mh->numcdtextures<0||mh->numcdtextures>32)return fail("invalid studio material counts");
     const auto* textures=at<mstudiotexture_t>(mdl,mh->textureindex,mh->numtextures);const auto* directories=at<int>(mdl,mh->cdtextureindex,mh->numcdtextures);if(!textures||!directories)return fail("studio materials outside MDL");
     // Initial adapter binds the first material only. Keep all search-directory
@@ -146,7 +162,7 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
         for(int row=0;row<3;++row)for(int col=0;col<4;++col)if(!std::isfinite(bone.poseToBone[row][col])||std::abs(bone.poseToBone[row][col])>32768)return fail("invalid inverse bind matrix");
         result.bones.push_back({bone.parent,bone.pos,bone.quat,bone.poseToBone});
     }
-    if(!readAnimations(mdl,*mh,bones,result,error))return false;
+    if(!readAnimations(mdl,*mh,bones,result,error,ani))return false;
     const int totalVertices=vh->numLODVertexes[0];if(totalVertices<=0||totalVertices>int(maximumModelVertices))return fail("invalid VVD vertex count");
     const auto* vertices=at<mstudiovertex_t>(vvd,vh->vertexDataStart,totalVertices);if(!vertices)return fail("VVD vertices outside file");
     std::vector<const mstudiovertex_t*> orderedVertices;orderedVertices.reserve(totalVertices);

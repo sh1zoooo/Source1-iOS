@@ -30,3 +30,6 @@ scene/texture revisions, atlas borders, model isolation, map/terrain reload and
 lifecycle. Startup now includes 73 Source checks. Simulator smoke requires
 147 PASS, both material uploads, lightmap upload, GPU completion and pause/resume.
 The new iPhone build is not yet physically tested.
+Actions run 37365664037 passed Linux runtime contracts. Its macOS job remained
+queued while work continued into 0.19; GPU verification is recorded with the
+combined 0.19 build rather than inferred from the native tests.

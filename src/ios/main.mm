@@ -147,7 +147,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~66%\nBSP LDR lightmaps · MDL animation/material\nSource self-tests: 73 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~68%\nBSP LDR lightmaps · MDL/ANI animation\nSource self-tests: 76 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -185,7 +185,8 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     _runtime.frame(dt);
     if (_smokeRequested && _runtime.frames() == 60) {
         if (!_runtime.executeSource("source_selftest") || !_runtime.executeSource("source_physics_reset")
-            || !_runtime.executeSource("source_physics_impulse") || !_runtime.executeSource("source_bsp_terrain")) {
+            || !_runtime.executeSource("source_physics_impulse") || !_runtime.executeSource("source_bsp_terrain")
+            || !_runtime.executeSource("source_model_load models/__source1ios_external_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) {
             [self fail:@"Simulator runtime contracts FAIL"]; return;
         }
         _runtime.cameraLook(10, 0);
@@ -265,7 +266,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~66%%\nBSP LDR lightmaps · MDL animation/material\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~68%%\nBSP LDR lightmaps · MDL/ANI animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

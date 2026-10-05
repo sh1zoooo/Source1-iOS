@@ -39,6 +39,16 @@ int main() {
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
         check(host.executeSource("source_model_reset"),"Built-in Source studio model reload failed");
+        check(host.executeSource("source_model_load models/__source1ios_external_probe.mdl"),"External ANI model load failed");
+        check(host.executeSource("source_anim_play 0"),"External ANI clip unavailable");const auto aniBefore=host.vertices(1);host.frame(.03);const auto aniAfter=host.vertices(1);
+        bool aniMoved=false;for(size_t i=252;i<288;++i)for(int axis=0;axis<4;++axis)aniMoved|=aniBefore[i].position[axis]!=aniAfter[i].position[axis];check(aniMoved,"External ANI pose did not animate geometry");
+        const auto aniFile=directory/"Source1IOS/game/models/__source1ios_external_probe.ani";
+        std::ifstream aniInput(aniFile,std::ios::binary);std::vector<char> aniBytes((std::istreambuf_iterator<char>(aniInput)),{});aniInput.close();
+        {std::ofstream brokenAni(aniFile,std::ios::binary);brokenAni.write(aniBytes.data(),aniBytes.size()-1);}
+        const auto aniRevision=host.modelTextureRevision();check(!host.executeSource("source_model_load models/__source1ios_external_probe.mdl")&&host.modelTextureRevision()==aniRevision,"Malformed ANI replaced current model");
+        std::filesystem::remove(aniFile);check(host.executeSource("source_model_load models/__source1ios_external_probe.mdl")&&!host.executeSource("source_anim_play 0"),"Missing ANI did not retain static geometry");
+        {std::ofstream restoredAni(aniFile,std::ios::binary);restoredAni.write(aniBytes.data(),aniBytes.size());}
+        check(host.executeSource("source_model_reset"),"Embedded model restore after ANI test failed");
         check(host.executeSource("source_anim_play 0"),"Embedded studio clip selection failed");
         check(!host.executeSource("source_anim_play -1")&&!host.executeSource("source_anim_play 999")&&!host.executeSource("source_anim_play 0junk"),"Invalid animation index accepted");
         check(!host.executeSource("source_model_load models/missing.mdl"),"Missing studio companions accepted");
@@ -180,21 +190,21 @@ int main() {
         check(host.executeSource("source_anim_resume"),"Animation resume command failed");
         host.setActive(false);
         host.frame(1);
-        check(host.frames() == 2, "Background host advanced simulation");
+        check(host.frames() == 3, "Background host advanced simulation");
         host.setActive(true);
         host.frame(30);
-        check(std::abs(host.elapsed() - 0.126) < 1e-9, "Background interval was not clamped");
+        check(std::abs(host.elapsed() - 0.156) < 1e-9, "Background interval was not clamped");
         host.frame(std::numeric_limits<double>::quiet_NaN());
         host.frame(std::numeric_limits<double>::infinity());
         host.frame(-1);
-        check(host.frames() == 3, "Invalid delta was accepted");
+        check(host.frames() == 4, "Invalid delta was accepted");
         const auto logPath = host.logPath();
         host.stop();
         host.stop();
         std::ifstream file(logPath);
         std::string contents((std::istreambuf_iterator<char>(file)), {});
         check(contents.find("Host paused") != std::string::npos, "Pause log missing");
-        check(contents.find("Host stopped after 3 frames") != std::string::npos, "Shutdown log missing");
+        check(contents.find("Host stopped after 4 frames") != std::string::npos, "Shutdown log missing");
         check(contents.find("Source Host_Shutdown completed; host_initialized=0") != std::string::npos, "Original host did not shut down");
         check(contents.find("Source host GAME directory: " + (directory / "Source1IOS" / "game").string()) != std::string::npos, "Host path differs from the mounted game path");
         check(contents.find("Recursive shutdown") == std::string::npos, "Recursive shutdown guard persisted");

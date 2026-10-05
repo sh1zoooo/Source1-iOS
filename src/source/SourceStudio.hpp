@@ -24,13 +24,14 @@ struct StudioMesh {
     std::vector<StudioBone> bones;
     std::vector<StudioAnimation> animations;
     std::vector<std::string> materialPaths;
+    std::string animationPath;
     unsigned sourceVertices=0;
     unsigned meshes=0;
 };
 struct StudioFixture {
-    std::vector<std::uint8_t> mdl, vvd, vtx;
+    std::vector<std::uint8_t> mdl, vvd, vtx, ani;
 };
-StudioFixture makeStudioFixture();
+StudioFixture makeStudioFixture(bool external=false);
 // Local rotations are explicit pose overrides, not decoded MDL sequences.
 bool skinStudioModel(const StudioMesh& model, const std::vector<Quaternion>& rotations,
     std::vector<StudioVertex>& output, const std::vector<Vector>& positions={});
@@ -38,5 +39,5 @@ bool sampleStudioAnimation(const StudioMesh& model,unsigned animation,double sec
 bool parseStudioModel(const std::vector<std::uint8_t>& mdl,
     const std::vector<std::uint8_t>& vvd,
     const std::vector<std::uint8_t>& vtx,
-    StudioMesh& output, std::string& error);
+    StudioMesh& output, std::string& error,const std::vector<std::uint8_t>& ani={});
 }

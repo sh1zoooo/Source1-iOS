@@ -380,6 +380,9 @@ bool SourceMap::start(const std::filesystem::path& root) {
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
     ok=ok&&writeModel(impl_->builtinModel.c_str(),studio.mdl)&&writeModel("models/__source1ios_static_probe.vvd",studio.vvd)&&writeModel("models/__source1ios_static_probe.dx90.vtx",studio.vtx);
+    const auto externalStudio=makeStudioFixture(true);
+    ok=ok&&writeModel("models/__source1ios_external_probe.mdl",externalStudio.mdl)&&writeModel("models/__source1ios_external_probe.vvd",externalStudio.vvd)
+        &&writeModel("models/__source1ios_external_probe.dx90.vtx",externalStudio.vtx)&&writeModel("models/__source1ios_external_probe.ani",externalStudio.ani);
     for(int mip=0;mip<source->MipCount();++mip){const int size=std::max(1,64>>mip);auto* pixels=source->ImageData(0,0,mip);for(int y=0;y<size;++y)for(int x=0;x<size;++x){const bool stripe=((y*64/size)/8)%2;auto* p=pixels+(y*size+x)*4;p[0]=stripe?240:20;p[1]=stripe?100:200;p[2]=stripe?30:240;p[3]=255;}}
     CUtlBuffer modelVtf;ok=ok&&source->Serialize(modelVtf);std::vector<std::uint8_t> modelVtfBytes(static_cast<std::uint8_t*>(modelVtf.Base()),static_cast<std::uint8_t*>(modelVtf.Base())+modelVtf.TellPut());
     const std::string modelVmt="VertexLitGeneric { \"$basetexture\" \"models/source1ios/__source1ios_model\" }";
@@ -410,13 +413,23 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     const auto base=mdlPath.substr(0,mdlPath.size()-4);auto read=[&](const std::string& path,std::vector<std::uint8_t>& bytes){return readBounded(path.c_str(),pathID,32*1024*1024,bytes);};
     std::vector<std::uint8_t> mdl,vvd,vtx;if(!read(mdlPath,mdl)||!read(base+".vvd",vvd)||!read(base+".dx90.vtx",vtx)){Warning("Source studio: missing MDL/VVD/DX90.VTX companion for %s\n",filename);return false;}
     StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
+    if(!parsed.animationPath.empty()){
+        const auto& name=parsed.animationPath;
+        if(!materialPath(name)||name.size()<5||name.substr(name.size()-4)!=".ani"){Warning("Source studio rejected %s: unsafe ANI path\n",filename);return false;}
+        const size_t slash=mdlPath.find_last_of('/');const std::string aniPath=name.find('/')==std::string::npos?(slash==std::string::npos?std::string():mdlPath.substr(0,slash+1))+name:name;
+        std::vector<std::uint8_t> ani;
+        if(g_pFullFileSystem->FileExists(aniPath.c_str(),pathID)){
+            if(!read(aniPath,ani)||ani.empty()||!parseStudioModel(mdl,vvd,vtx,parsed,error,ani)){Warning("Source studio rejected %s: invalid ANI companion (%s)\n",filename,error.c_str());return false;}
+            Msg("Source studio external ANI loaded: %s; %zu bytes\n",aniPath.c_str(),ani.size());
+        }else Msg("Source studio external ANI missing: %s; available embedded clips/bind pose retained\n",aniPath.c_str());
+    }
     SourceTexture modelTexture;const bool textured=decodeMaterial(parsed.materialPaths,modelTexture,"studio");if(!textured)modelTexture=impl_->texture;
     std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(0,64,0);
     for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{light,light,light},{v.uv.x,v.uv.y}});}
     impl_->modelTexture=std::move(modelTexture);++impl_->modelTextureRevision;
     impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
-    Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %zu embedded animation clips\n",impl_->studio.bones.size(),impl_->studio.animations.size());
+    Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %zu animation clips\n",impl_->studio.bones.size(),impl_->studio.animations.size());
     for(size_t i=0;i<impl_->studio.animations.size();++i){const auto& clip=impl_->studio.animations[i];Msg("Source studio clip %zu: %s; %zu frames at %.2f fps\n",i,clip.name.c_str(),clip.frames.size(),clip.fps);}return true;
 }
 bool SourceMap::playAnimation(unsigned index){if(!impl_||index>=impl_->studio.animations.size())return false;impl_->animation=index;impl_->poseTime=0;impl_->animationPlaying=true;Msg("Source studio animation selected: %u\n",index);return true;}
@@ -604,6 +617,13 @@ bool SourceMap::selfTest(){
     StudioPose startPose,halfPose,endPose;bool animationOK=model.animations.size()==1&&sampleStudioAnimation(model,0,0,startPose)&&sampleStudioAnimation(model,0,.375,halfPose)&&sampleStudioAnimation(model,0,2,endPose);
     Quaternion expected;AngleQuaternion(RadianEuler(.4f,0,0),expected);bool halfway=animationOK&&std::abs(QuaternionDotProduct(halfPose.rotations[1],expected))>.9999f;
     all&=report("studio embedded RLE clip interpolation/loop",halfway&&std::abs(QuaternionDotProduct(startPose.rotations[1],endPose.rotations[1]))>.99999f);
+    const auto externalStudio=makeStudioFixture(true);StudioMesh externalModel;StudioPose externalPose;
+    all&=report("studio external ANI block RLE pose",parseStudioModel(externalStudio.mdl,externalStudio.vvd,externalStudio.vtx,externalModel,modelError,externalStudio.ani)
+        &&externalModel.animations.size()==1&&sampleStudioAnimation(externalModel,0,.375,externalPose)&&std::abs(QuaternionDotProduct(externalPose.rotations[1],expected))>.9999f);
+    StudioMesh missingExternal;all&=report("studio missing ANI retains bind geometry",parseStudioModel(externalStudio.mdl,externalStudio.vvd,externalStudio.vtx,missingExternal,modelError)&&missingExternal.animations.empty()&&missingExternal.triangles.size()==36);
+    auto shortAni=externalStudio.ani;shortAni.pop_back();auto crossedAni=externalStudio.ani;crossedAni[16+sizeof(mstudioanim_t)+sizeof(mstudioanim_valueptr_t)]=0;
+    StudioMesh invalidExternal;all&=report("studio ANI truncated block and malformed RLE rejected",!parseStudioModel(externalStudio.mdl,externalStudio.vvd,externalStudio.vtx,invalidExternal,modelError,shortAni)
+        &&!parseStudioModel(externalStudio.mdl,externalStudio.vvd,externalStudio.vtx,invalidExternal,modelError,crossedAni));
     auto badAnimation=studio.mdl;auto* animHeader=reinterpret_cast<studiohdr_t*>(badAnimation.data());auto* anim=animHeader->pLocalAnimdesc(0);auto* track=reinterpret_cast<mstudioanim_t*>(reinterpret_cast<unsigned char*>(anim)+anim->animindex);auto* values=track->pRotV()->pAnimvalue(0);values->num.total=0;
     StudioMesh rejectedAnimation;std::string animationError;all&=report("studio malformed RLE track rejected",!parseStudioModel(badAnimation,studio.vvd,studio.vtx,rejectedAnimation,animationError));
     auto rawAnimation=studio.mdl;auto* rawHeader=reinterpret_cast<studiohdr_t*>(rawAnimation.data());auto* rawDesc=rawHeader->pLocalAnimdesc(0);auto* rawTrack=reinterpret_cast<mstudioanim_t*>(reinterpret_cast<unsigned char*>(rawDesc)+rawDesc->animindex);rawTrack->flags=STUDIO_ANIM_RAWROT2|STUDIO_ANIM_RAWPOS;

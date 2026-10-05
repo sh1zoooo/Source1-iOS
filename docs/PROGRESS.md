@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **66%**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **68%**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -20,6 +20,10 @@ VMT `$basetexture`, оригинальный VTF decoder и отдельную t
 по краям tiles, UV стен в плоскости грани и bounded LZMA для материалов/lighting.
 Отображается первая статическая lightstyle; HDR, animated styles и bump-lighting
 не воспроизводятся. Это preview adapter, оригинальный shader API остаётся впереди.
+Этап 0.19 разрешает внешний ANI filename, проверяет MDL animation block table
+и читает простые raw/RLE tracks только внутри выбранного ANI block. Пропавший ANI
+оставляет геометрию в bind pose; повреждённый существующий файл отклоняется.
+Sections, IK, delta и blend sequences пока впереди.
 Процент — инженерная оценка оставшейся работы, а не число тестов или исходников.
 100% здесь означает минимальный порт с реальным engine, загрузкой тестовой BSP-карты,
 адаптированными материалами/рендерингом и камерой на iPhone. Готовая CS:GO не входит
@@ -28,7 +32,7 @@ VMT `$basetexture`, оригинальный VTF decoder и отдельную t
 Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
 Оригинальные Host_Init и Host_RunFrame работают с -nogamedll, без игровой DLL.
-Последний пользовательский лог iPhone 16e подтверждает 63 проверки версии 0.13,
+Последний пользовательский лог iPhone 16e подтверждает 69 проверок версии 0.17,
 GPU A18 и смену ориентации; пользователь подтвердил плавную деформацию модели.
 
 Новый этап: настоящий CModelLoader и CM_LoadMap загружают встроенный BSP-мир,
@@ -46,7 +50,7 @@ GPU A18, смену ориентации и два pause/resume на iPhone 16e,
 декодер встроенных анимаций и первый материал; это ещё не полный studio renderer.
 
 Остаются графический shaderapi/materialsystem Source, настоящие материалы карт,
-PVS, lightmaps, графический displacement LOD, полный evaluator sequences/ANI/IK,
+PVS, HDR/полное освещение, графический displacement LOD, полный evaluator sequences/ANI/IK,
 аудио и игровая DLL. Версия 0.12.0/build 15 прошла Linux Debug, iPhone ARM64 и
 симулятор: 121 PASS, завершённый GPU-кадр, видимая статическая модель и pause/resume.
 Пользовательские BSP пока открываются только как ограниченный polygon preview;
