@@ -79,7 +79,7 @@ bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::Sourc
 bool report(const char* name, bool ok) {
     Msg("Source BSP self-test %s: %s\n",name,ok?"PASS":"FAIL");return ok;
 }
-struct MeshPoint { Vector position; float color[3]; float uv[2]; };
+struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; };
 struct CollisionDelete {
     void operator()(CPhysCollide* p) const { if(p && g_pPhysicsCollision) g_pPhysicsCollision->DestroyCollide(p); }
 };
@@ -171,7 +171,7 @@ struct LoaderScope {
     LoaderScope(const char* path) { CMapLoadHelper::Init(nullptr,path); }
     ~LoaderScope(){ CMapLoadHelper::Shutdown(); }
 };
-struct BspMaterials {std::vector<texinfo_t> infos;std::vector<dtexdata_t> data;std::vector<int> table;std::vector<char> strings;std::string first;};
+struct BspMaterials {std::vector<texinfo_t> infos;std::vector<dtexdata_t> data;std::vector<int> table;std::vector<char> strings;std::vector<std::string> names;std::vector<unsigned> slots;unsigned slotCount=0;};
 bool bspMaterials(BspMaterials& out){
     out.infos=lump<texinfo_t>(LUMP_TEXINFO,{});out.data=lump<dtexdata_t>(LUMP_TEXDATA,{});out.table=lump<int>(LUMP_TEXDATA_STRING_TABLE,{});out.strings=lump<char>(LUMP_TEXDATA_STRING_DATA,{});
     if(out.infos.empty()||out.infos.size()>65536||out.data.empty()||out.data.size()>MAX_MAP_TEXDATA||out.table.empty()||out.table.size()>MAX_MAP_TEXDATA_STRING_TABLE||out.strings.empty())return false;
@@ -179,9 +179,21 @@ bool bspMaterials(BspMaterials& out){
     for(const auto& data:out.data){if(data.nameStringTableID<0||size_t(data.nameStringTableID)>=out.table.size()||data.width<=0||data.height<=0||data.width>2048||data.height>2048)return false;
         const int offset=out.table[data.nameStringTableID];if(offset<0||size_t(offset)>=out.strings.size())return false;std::string name;
         for(size_t i=offset;i<out.strings.size()&&name.size()<240&&out.strings[i];++i)name.push_back(out.strings[i]);
-        if(name.empty()||name.size()>=240||size_t(offset)+name.size()>=out.strings.size()||out.strings[size_t(offset)+name.size()]||!materialPath(name))return false;
-        if(out.first.empty())out.first=name;
-    }return !out.first.empty();
+        if(name.empty()||name.size()>=240||size_t(offset)+name.size()>=out.strings.size()||out.strings[size_t(offset)+name.size()]||!materialPath(name))return false;out.names.push_back(name);
+    }
+    out.slots.resize(out.names.size());std::vector<std::string> unique;
+    for(size_t i=0;i<out.names.size();++i){auto found=std::find(unique.begin(),unique.end(),out.names[i]);if(found!=unique.end())out.slots[i]=found-unique.begin();
+        else if(unique.size()<16){out.slots[i]=unique.size();unique.push_back(out.names[i]);}else out.slots[i]=0;}
+    out.slotCount=std::max(1u,unsigned(unique.size()));return true;
+}
+source1ios::SourceTexture bspAtlas(const BspMaterials& materials,const source1ios::SourceTexture& fallback){
+    constexpr unsigned tile=64;source1ios::SourceTexture atlas;atlas.width=tile*materials.slotCount;atlas.height=tile;atlas.pixels.resize(size_t(atlas.width)*tile*4);
+    std::vector<bool> written(materials.slotCount,false);
+    for(size_t i=0;i<materials.names.size();++i){const unsigned slot=materials.slots[i];if(written[slot])continue;written[slot]=true;source1ios::SourceTexture decoded;
+        if(!decodeMaterial({materials.names[i]},decoded,"BSP"))decoded=fallback;
+        for(unsigned y=0;y<tile;++y)for(unsigned x=0;x<tile;++x){const unsigned sx=std::min(decoded.width-1,x*decoded.width/tile),sy=std::min(decoded.height-1,y*decoded.height/tile);
+            std::memcpy(atlas.pixels.data()+(size_t(y)*atlas.width+slot*tile+x)*4,decoded.pixels.data()+(size_t(sy)*decoded.width+sx)*4,4);}
+    }return atlas;
 }
 using Triangle=std::array<Vector,3>;
 bool boundedPoint(const Vector& p){return p.IsValid() && std::abs(p.x)<=32768 && std::abs(p.y)<=32768 && std::abs(p.z)<=32768;}
@@ -250,7 +262,7 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     for(unsigned box=0;box<7;++box){dbrush_t brush{};brush.firstside=sides.size();brush.numsides=6;brush.contents=CONTENTS_SOLID;brushes.push_back(brush);
         for(int axis=0;axis<3;++axis)for(int sign=0;sign<2;++sign){dplane_t plane{};plane.normal[axis]=sign?-1:1;plane.type=axis;plane.dist=sign?-lows[box][axis]:highs[box][axis];planes.push_back(plane);
             dbrushside_t side{};side.planenum=planes.size()-1;side.texinfo=0;side.dispinfo=-1;sides.push_back(side);}
-        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=0;}
+        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=(box+f)%2;}
     }
     if(displaced){
         faces[1].dispinfo=0;ddispinfo_t disp{};disp.startPosition=vertices[4].point;disp.power=2;disp.m_iMapFace=1;disp.smoothingAngle=45;disp.contents=CONTENTS_SOLID;
@@ -268,15 +280,15 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     for(auto& leaf:leaves){leaf.area=1;leaf.numleafbrushes=7;leaf.leafWaterDataID=-1;for(int i=0;i<3;++i){leaf.mins[i]=-272;leaf.maxs[i]=272;}}
     dnode_t node{};node.planenum=4;node.children[0]=-2;node.children[1]=-1;
     dmodel_t model{};model.mins=Vector(-272,-272,-16);model.maxs=Vector(272,272,192);model.headnode=0;model.numfaces=faces.size();
-    texinfo_t info{};info.textureVecsTexelsPerWorldUnits[0][0]=info.textureVecsTexelsPerWorldUnits[1][1]=1;info.lightmapVecsLuxelsPerWorldUnits[0][0]=info.lightmapVecsLuxelsPerWorldUnits[1][1]=1;
-    dtexdata_t tex{};tex.width=tex.height=tex.view_width=tex.view_height=64;tex.reflectivity=Vector(1,1,1);
+    texinfo_t infos[2]{};for(int i=0;i<2;++i){infos[i].textureVecsTexelsPerWorldUnits[0][0]=infos[i].textureVecsTexelsPerWorldUnits[1][1]=1;infos[i].lightmapVecsLuxelsPerWorldUnits[0][0]=infos[i].lightmapVecsLuxelsPerWorldUnits[1][1]=1;infos[i].texdata=i;}
+    dtexdata_t tex[2]{};for(int i=0;i<2;++i){tex[i].width=tex[i].height=tex[i].view_width=tex[i].view_height=64;tex[i].reflectivity=Vector(1,1,1);tex[i].nameStringTableID=i;}
     std::vector<unsigned short> leafFaces;for(unsigned i=0;i<faces.size();++i)leafFaces.push_back(i);leaves[1].numleaffaces=faces.size();
     append(LUMP_LEAFFACES,leafFaces.data(),leafFaces.size()*sizeof(unsigned short));
-    darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};int nameIndex=0;const char name[]="debug/debugempty";const char entities[]="{ \"classname\" \"worldspawn\" }\n";
+    darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};const char names[]="debug/debugempty\0debug/debugblue\0";const int nameIndex[]={0,17};const char entities[]="{ \"classname\" \"worldspawn\" }\n";
     append(LUMP_PLANES,planes.data(),planes.size()*sizeof(dplane_t));append(LUMP_BRUSHSIDES,sides.data(),sides.size()*sizeof(dbrushside_t));append(LUMP_BRUSHES,brushes.data(),brushes.size()*sizeof(dbrush_t));
     append(LUMP_LEAFS,leaves,sizeof(leaves));h.lumps[LUMP_LEAFS].version=1;append(LUMP_LEAFBRUSHES,leafbrush,sizeof(leafbrush));
-    append(LUMP_NODES,&node,sizeof(node));append(LUMP_MODELS,&model,sizeof(model));append(LUMP_TEXINFO,&info,sizeof(info));
-    append(LUMP_TEXDATA,&tex,sizeof(tex));append(LUMP_TEXDATA_STRING_TABLE,&nameIndex,sizeof(nameIndex));append(LUMP_TEXDATA_STRING_DATA,name,sizeof(name));
+    append(LUMP_NODES,&node,sizeof(node));append(LUMP_MODELS,&model,sizeof(model));append(LUMP_TEXINFO,infos,sizeof(infos));
+    append(LUMP_TEXDATA,tex,sizeof(tex));append(LUMP_TEXDATA_STRING_TABLE,nameIndex,sizeof(nameIndex));append(LUMP_TEXDATA_STRING_DATA,names,sizeof(names));
     append(LUMP_AREAS,areas,sizeof(areas));append(LUMP_ENTITIES,entities,sizeof(entities));
     std::memcpy(bytes.data(),&h,sizeof(h));return bytes;
 }
@@ -286,7 +298,7 @@ struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
-    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture;unsigned mapMaterialCount=1;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
@@ -329,6 +341,10 @@ bool SourceMap::start(const std::filesystem::path& root) {
     CUtlBuffer bspVtf;ok=ok&&source->Serialize(bspVtf);std::vector<std::uint8_t> bspVtfBytes(static_cast<std::uint8_t*>(bspVtf.Base()),static_cast<std::uint8_t*>(bspVtf.Base())+bspVtf.TellPut());
     const std::string bspVmt="LightmappedGeneric { \"$basetexture\" \"debug/debugempty\" }";
     std::filesystem::create_directories(root/"game/materials/debug");ok=ok&&writeModel("materials/debug/debugempty.vtf",bspVtfBytes)&&writeModel("materials/debug/debugempty.vmt",std::vector<std::uint8_t>(bspVmt.begin(),bspVmt.end()));
+    for(int mip=0;mip<source->MipCount();++mip){const int size=std::max(1,64>>mip);auto* pixels=source->ImageData(0,0,mip);for(int y=0;y<size;++y)for(int x=0;x<size;++x){const bool grid=((x*64/size)%16<2)||((y*64/size)%16<2);auto* p=pixels+(y*size+x)*4;p[0]=grid?90:30;p[1]=grid?150:75;p[2]=grid?210:155;p[3]=255;}}
+    CUtlBuffer blueVtf;ok=ok&&source->Serialize(blueVtf);std::vector<std::uint8_t> blueVtfBytes(static_cast<std::uint8_t*>(blueVtf.Base()),static_cast<std::uint8_t*>(blueVtf.Base())+blueVtf.TellPut());
+    const std::string blueVmt="LightmappedGeneric { \"$basetexture\" \"debug/debugblue\" }";
+    ok=ok&&writeModel("materials/debug/debugblue.vtf",blueVtfBytes)&&writeModel("materials/debug/debugblue.vmt",std::vector<std::uint8_t>(blueVmt.begin(),blueVmt.end()));
     if(!ok || !load(impl_->builtin.c_str(),nullptr) || !loadModel(impl_->builtinModel.c_str())){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
     if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
@@ -377,7 +393,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
     if(g_pFullFileSystem->FileExists(overlay,pathID)){Warning("Source BSP: external lump overlays unsupported\n");return false;}
-    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;
+    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     {
         LoaderScope scope(filename);
@@ -385,7 +401,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[2]);auto faces=lump<dface_t>(LUMP_FACES,decoded[3]);
         auto disps=lump<ddispinfo_t>(LUMP_DISPINFO,decoded[4]);auto dispVerts=lump<CDispVert>(LUMP_DISP_VERTS,decoded[5]);auto dispTris=lump<CDispTri>(LUMP_DISP_TRIS,decoded[6]);
         BspMaterials materials;if(!bspMaterials(materials))return false;
-        decodeMaterial({materials.first},stagedMapTexture,"BSP");
+        stagedMapTexture=bspAtlas(materials,impl_->checkerTexture);stagedMaterialCount=materials.slotCount;
+        Msg("Source BSP material atlas ready: %u slots, %ux%u RGBA\n",materials.slotCount,stagedMapTexture.width,stagedMapTexture.height);
         for(const auto& p:points)if(!p.point.IsValid() || std::abs(p.point.x)>32768 || std::abs(p.point.y)>32768 || std::abs(p.point.z)>32768)return false;
         for(size_t face=0;face<faces.size();++face){const auto& f=faces[face];
             if(f.numedges<3 || f.numedges>256 || f.firstedge<0 || size_t(f.firstedge)>surfedges.size() || size_t(f.numedges)>surfedges.size()-size_t(f.firstedge))return false;
@@ -410,7 +427,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
                     const float tx=(p.x*s[0]+p.y*s[1]+p.z*s[2]+s[3])/texdata.width;
                     const float ty=(p.x*t[0]+p.y*t[1]+p.z*t[2]+t[3])/texdata.height;
                     if(!std::isfinite(tx)||!std::isfinite(ty)||std::abs(tx)>65536||std::abs(ty)>65536)return false;
-                    mesh.push_back({p,{palette[face%6][0]*shade,palette[face%6][1]*shade,palette[face%6][2]*shade},{tx,ty}});
+                    mesh.push_back({p,{palette[face%6][0]*shade,palette[face%6][1]*shade,palette[face%6][2]*shade},{tx,ty},materials.slots[texinfo.texdata]});
                 }
             }
         }
@@ -422,7 +439,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     auto live=physicsScene(collision);if(!live)return false;
     impl_->scene=std::move(live);
     impl_->displacementCollision=std::move(displacementCollision);
-    impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
+    impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=Vector(-190,-160,80);impl_->angles=QAngle(8,45,0);}}
@@ -459,7 +476,7 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
-        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],model?2.f:1.f},{v.uv[0],v.uv[1]}});};
+        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-1.f:float(v.material),float(impl_->mapMaterialCount)}});};
     for(const auto& v:impl_->mesh)append(v);
     for(const auto& v:impl_->modelMesh)append(v,true);
     if(impl_->scene){
@@ -484,7 +501,9 @@ const SourceTexture& SourceMap::modelTexture() const { static const SourceTextur
 std::uint64_t SourceMap::modelTextureRevision() const { return impl_?impl_->modelTextureRevision:0; }
 bool SourceMap::selfTest(){
     if(!impl_)return false;bool all=report("original lump geometry",!impl_->mesh.empty()&&CMapLoadHelper::GetRefCount()==0);
-    all&=report("BSP texinfo VMT VTF base texture",impl_->texture.width==64&&impl_->texture.height==64&&impl_->texture.pixels.size()==64*64*4&&impl_->texture.pixels!=impl_->checkerTexture.pixels);
+    bool materialSlots=impl_->mapMaterialCount==2&&impl_->texture.width==128&&impl_->texture.height==64&&impl_->texture.pixels.size()==128*64*4;
+    all&=report("BSP texinfo multi-material VMT VTF atlas",materialSlots&&impl_->texture.pixels!=impl_->checkerTexture.pixels);
+    all&=report("BSP material atlas slots remain distinct",materialSlots&&std::memcmp(impl_->texture.pixels.data(),impl_->texture.pixels.data()+64*4,64*4));
     dheader_t bad{};bad.ident=IDBSPHEADER;bad.version=BSPVERSION;bad.lumps[LUMP_VERTEXES].fileofs=sizeof(bad);bad.lumps[LUMP_VERTEXES].filelen=12;
     all&=report("truncated lump range rejected",!headerValid(bad,sizeof(bad)));
     auto encoded=bspLzmaVertices();std::vector<unsigned char> decoded;const char* reason=nullptr;
@@ -567,7 +586,7 @@ bool SourceMap::selfTest(){
     all&=report("IVP polygon floor trace",trace.fraction>0 && trace.fraction<1 && !trace.startsolid);
     g_pPhysicsCollision->TraceBox(Vector(-190,-160,80),Vector(400,-160,80),Vector(-8,-8,-24),Vector(8,8,8),impl_->fixtureCollision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
     all&=report("IVP swept camera wall",trace.fraction>0 && trace.fraction<.8f && !trace.startsolid);
-    all&=report("VTF preview texture decoded",impl_->texture.width==64 && impl_->texture.height==64 && impl_->texture.pixels.size()==64*64*4);
+    all&=report("VTF checker fallback decoded",impl_->checkerTexture.width==64 && impl_->checkerTexture.height==64 && impl_->checkerTexture.pixels.size()==64*64*4);
     all&=report("engine brush model loaded",impl_->world && modelloader->IsLoaded(impl_->world) && impl_->world->type==mod_brush && impl_->world->brush.pShared->numvertexes==56 && impl_->world->brush.pShared->numsurfaces==42);
     Ray_t ray;ray.Init(Vector(-190,-160,80),Vector(-190,-160,-80));CM_BoxTrace(ray,0,MASK_SOLID,true,trace);
     all&=report("engine CM floor trace",trace.fraction>.49f && trace.fraction<.51f);

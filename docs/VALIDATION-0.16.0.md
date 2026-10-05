@@ -22,4 +22,10 @@ Boundaries: this is one BSP base-texture slot shared across the preview. It does
 not yet batch multiple surface materials, evaluate proxies, render lightmaps,
 normal/specular maps, alpha or use Source's graphical materialsystem.
 
-Actions pending.
+Run 37352860212 passed Linux runtime contracts and built both iPhone/simulator
+apps. The simulator log itself reached 68 PASS, GPU completion and runtime
+contracts PASS. The workflow was nevertheless marked failed because the smoke
+script still waited for the obsolete pre-0.16 log phrase
+`Source VTF preview texture uploaded to Metal` until timeout. Version 0.17
+updates that assertion to the new BSP upload phrase; this 0.16 run is not called
+a successful smoke run.

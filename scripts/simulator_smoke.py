@@ -27,17 +27,19 @@ try:
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""
-        if "First Metal frame completed on GPU" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text and "Source Host_Init completed: dedicated idle host" in text and "Source host self-test Host_RunFrame idle ticks: PASS" in text and "Source assets/physics self-test physics ragdoll joint under impulse: PASS" in text and "Source BSP preview ready" in text and "Source VTF preview texture uploaded to Metal" in text and "Source simulator runtime contracts: PASS" in text:
+        if "First Metal frame completed on GPU" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text and "Source Host_Init completed: dedicated idle host" in text and "Source host self-test Host_RunFrame idle ticks: PASS" in text and "Source assets/physics self-test physics ragdoll joint under impulse: PASS" in text and "Source BSP preview ready" in text and "Source BSP VMT/VTF base texture uploaded to Metal" in text and "Source simulator runtime contracts: PASS" in text:
             if "FAIL" in text:
                 raise RuntimeError(f"Source core self-test failed:\n{text}")
             time.sleep(5)
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 137:
-                raise RuntimeError(f"Expected two sets of 68 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 139:
+                raise RuntimeError(f"Expected two sets of 69 Source checks, runtime contracts and a completed GPU frame:\n{text}")
             if "Source BSP VMT/VTF base texture uploaded to Metal" not in text:
                 raise RuntimeError("BSP base texture did not reach Metal")
+            if "Source BSP material atlas ready: 2 slots, 128x64 RGBA" not in text:
+                raise RuntimeError("BSP multi-material atlas was not built")
             if "Source studio VTF base texture uploaded to Metal" not in text:
                 raise RuntimeError("Studio base texture did not reach Metal")
             if "Source studio model loaded: 8 source vertices, 12 triangles, 1 meshes" not in text:

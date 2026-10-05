@@ -25,7 +25,9 @@ int main() {
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
         const auto bspTexture=host.texture();const auto bspTextureRevision=host.textureRevision();
-        check(bspTexture.width==64&&bspTexture.height==64&&bspTexture.pixels.size()==64*64*4,"BSP material texture missing");
+        check(bspTexture.width==128&&bspTexture.height==64&&bspTexture.pixels.size()==128*64*4,"BSP material atlas missing");
+        bool material0=false,material1=false;for(const auto& vertex:host.vertices(1)){material0|=vertex.material[0]==0;material1|=vertex.material[0]==1;}
+        check(material0&&material1,"BSP surface material slots were not preserved in render vertices");
         check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");

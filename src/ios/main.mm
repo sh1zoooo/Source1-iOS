@@ -6,19 +6,25 @@
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Output { float4 position [[position]]; float3 color; float2 uv; uint model [[flat]]; };
-struct Input { float4 position; float4 color; float2 uv; };
+struct Output { float4 position [[position]]; float3 color; float2 uv; int material [[flat]]; uint materialCount [[flat]]; };
+struct Input { float4 position; float4 color; float2 uv; float2 material; };
 vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
     out.position = vertices[id].position;
     out.color = vertices[id].color.xyz;
     out.uv = vertices[id].uv;
-    out.model = vertices[id].color.w > 1.5f;
+    out.material = int(vertices[id].material.x);
+    out.materialCount = max(1u,uint(vertices[id].material.y));
     return out;
 }
 fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
-    return float4(in.color,1) * (in.model ? modelTexture.sample(repeatSample,in.uv) : texture.sample(repeatSample,in.uv));
+    if (in.material < 0) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
+    constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
+    float tile=float(texture.get_height());
+    float2 local=(fract(in.uv)*(tile-1.0)+0.5)/tile;
+    float2 atlasUV=float2((float(in.material)+local.x)/float(in.materialCount),local.y);
+    return float4(in.color,1) * texture.sample(clampSample,atlasUV);
 }
 )metal";
 
@@ -138,7 +144,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~61%\nBSP VMT/VTF · MDL animation/material\nSource self-tests: 68 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~64%\nBSP multi-material · MDL animation/material\nSource self-tests: 69 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -251,7 +257,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~61%%\nBSP VMT/VTF · MDL animation/material\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~64%%\nBSP multi-material · MDL animation/material\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;
