@@ -1,4 +1,5 @@
 #include "SourceMap.hpp"
+#include "BspLzmaFixture.hpp"
 #include "quakedef.h"
 #include "bspfile.h"
 #include "modelloader.h"
@@ -12,6 +13,7 @@
 #include "gl_model_private.h"
 #include "vtf/vtf.h"
 #include "tier1/utlbuffer.h"
+#include "tier1/lzmaDecoder.h"
 #include "tier0/dbg.h"
 #include <algorithm>
 #include <array>
@@ -61,20 +63,46 @@ std::unique_ptr<PhysicsScene> physicsScene(Collision shape){
     scene->joint=scene->environment->CreateRagdollConstraint(scene->anchor,scene->body,nullptr,joint);if(!scene->joint)return nullptr;
     scene->body->Wake();scene->body->ApplyForceCenter(Vector(3500,0,0));return scene;
 }
-// Only trusted, bounded sections reach the legacy Source loader. Validate raw
-// disk ranges before it allocates buffers; unsupported compressed lumps fail.
-bool headerValid(const dheader_t& h, size_t size) {
-    if(h.ident!=IDBSPHEADER || h.version<MINBSPVERSION || h.version>BSPVERSION || size<sizeof(h) || size>maximumFile)return false;
-    for(const auto& l:h.lumps) {
-        if(l.fileofs<0 || l.filelen<0 || l.uncompressedSize!=0)return false;
-        if(l.filelen && (size_t(l.fileofs)<sizeof(h) || size_t(l.fileofs)>size || size_t(l.filelen)>size-size_t(l.fileofs)))return false;
+constexpr size_t maximumLump = 16 * 1024 * 1024;
+constexpr int geometryLumps[]={LUMP_VERTEXES,LUMP_EDGES,LUMP_SURFEDGES,LUMP_FACES};
+constexpr size_t geometryStrides[]={sizeof(dvertex_t),sizeof(dedge_t),sizeof(int),sizeof(dface_t)};
+bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
+    auto fail=[&](const char* reason,int id=-1){if(file)Warning("Source BSP rejected %s: %s; version=%d, lump=%d, file bytes=%zu\n",file,reason,h.version,id,size);return false;};
+    if(size<sizeof(h))return fail("truncated BSP header");
+    if(size>maximumFile)return fail("file exceeds 128 MiB limit");
+    if(h.ident!=IDBSPHEADER)return fail("expected VBSP signature (not an archive or GoldSrc BSP)");
+    if(h.version<MINBSPVERSION || h.version>BSPVERSION)return fail("unsupported BSP version");
+    for(int id=0;id<HEADER_LUMPS;++id){const auto& l=h.lumps[id];
+        if(l.fileofs<0 || l.filelen<0 || (l.filelen && (size_t(l.fileofs)<sizeof(h) || size_t(l.fileofs)>size || size_t(l.filelen)>size-size_t(l.fileofs))))return fail("lump range outside file",id);
     }
-    return h.lumps[LUMP_VERTEXES].filelen%sizeof(dvertex_t)==0
-        && h.lumps[LUMP_EDGES].filelen%sizeof(dedge_t)==0
-        && h.lumps[LUMP_SURFEDGES].filelen%sizeof(int)==0
-        && h.lumps[LUMP_FACES].filelen%sizeof(dface_t)==0;
+    for(size_t i=0;i<4;++i){const auto& l=h.lumps[geometryLumps[i]];
+        const size_t decoded=l.uncompressedSize?l.uncompressedSize:l.filelen;
+        if(decoded>maximumLump || size_t(l.filelen)>maximumLump)return fail("geometry lump exceeds 16 MiB limit",geometryLumps[i]);
+        if(decoded%geometryStrides[i])return fail("geometry record size mismatch",geometryLumps[i]);
+        if(l.version!=0)return fail("unsupported geometry lump version",geometryLumps[i]);
+    }
+    return true;
 }
-template<class T> std::vector<T> lump(int id) {
+// Use the original bounded streaming decoder, not legacy Uncompress(), which
+// has no input-length argument and is unsafe for arbitrary imported maps.
+bool decodeLump(const std::vector<unsigned char>& raw,size_t expected,std::vector<unsigned char>& out,const char*& reason){
+    auto fail=[&](const char* why){reason=why;return false;};
+    if(raw.size()<sizeof(lzma_header_t))return fail("truncated LZMA header");
+    lzma_header_t h;std::memcpy(&h,raw.data(),sizeof(h));
+    if(h.id!=LZMA_ID)return fail("compressed lump lacks LZMA signature");
+    if(!expected || expected>maximumLump || h.actualSize!=expected)return fail("LZMA decoded size mismatch or limit");
+    if(h.lzmaSize!=raw.size()-sizeof(h))return fail("LZMA payload size mismatch");
+    uint32 dictionary=0;std::memcpy(&dictionary,h.properties+1,sizeof(dictionary));
+    if(h.properties[0]>=225 || dictionary>maximumLump)return fail("invalid LZMA properties or dictionary exceeds 16 MiB");
+    out.resize(expected);CLZMAStream stream;unsigned consumed=0,written=0,remaining=0;
+    if(!stream.Read(const_cast<unsigned char*>(raw.data()),raw.size(),out.data(),out.size(),consumed,written)
+        || written!=expected || !stream.GetExpectedBytesRemaining(remaining) || remaining!=0 || consumed!=raw.size()){
+        out.clear();return fail("LZMA stream incomplete or damaged");
+    }
+    return true;
+}
+template<class T> std::vector<T> lump(int id,const std::vector<unsigned char>& decoded) {
+    if(!decoded.empty()){std::vector<T> out(decoded.size()/sizeof(T));std::memcpy(out.data(),decoded.data(),decoded.size());return out;}
     CMapLoadHelper load(id);std::vector<T> out(load.LumpSize()/sizeof(T));
     if(!out.empty())std::memcpy(out.data(),load.LumpBase(),out.size()*sizeof(T));return out;
 }
@@ -178,16 +206,26 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
     auto file=g_pFullFileSystem->Open(filename,"rb",pathID);if(!file){Warning("Source BSP: file not found: %s\n",filename);return false;}
     const auto size=g_pFullFileSystem->Size(file);dheader_t h{};
-    const bool read=g_pFullFileSystem->Read(&h,sizeof(h),file)==sizeof(h);g_pFullFileSystem->Close(file);
-    if(!read || !headerValid(h,size)){Warning("Source BSP: unsupported or invalid header/lump ranges\n");return false;}
+    const bool read=g_pFullFileSystem->Read(&h,sizeof(h),file)==sizeof(h);
+    if(!read || !headerValid(h,size,filename)){if(!read)Warning("Source BSP rejected %s: truncated BSP header (%u bytes)\n",filename,size);g_pFullFileSystem->Close(file);return false;}
+    std::array<std::vector<unsigned char>,4> decoded;
+    for(size_t i=0;i<4;++i){const auto& l=h.lumps[geometryLumps[i]];if(!l.uncompressedSize)continue;
+        std::vector<unsigned char> raw(l.filelen);g_pFullFileSystem->Seek(file,l.fileofs,FILESYSTEM_SEEK_HEAD);
+        const char* reason="short compressed lump read";
+        if(g_pFullFileSystem->Read(raw.data(),raw.size(),file)!=int(raw.size()) || !decodeLump(raw,l.uncompressedSize,decoded[i],reason)){
+            Warning("Source BSP rejected %s: %s; lump=%d\n",filename,reason,geometryLumps[i]);g_pFullFileSystem->Close(file);return false;
+        }
+        Msg("Source BSP LZMA lump %d decoded: %d -> %zu bytes\n",geometryLumps[i],l.filelen,decoded[i].size());
+    }
+    g_pFullFileSystem->Close(file);
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
     if(g_pFullFileSystem->FileExists(overlay,pathID)){Warning("Source BSP: external lump overlays unsupported\n");return false;}
     std::vector<MeshPoint> mesh;
     {
         LoaderScope scope(filename);
-        auto points=lump<dvertex_t>(LUMP_VERTEXES);auto edges=lump<dedge_t>(LUMP_EDGES);
-        auto surfedges=lump<int>(LUMP_SURFEDGES);auto faces=lump<dface_t>(LUMP_FACES);
+        auto points=lump<dvertex_t>(LUMP_VERTEXES,decoded[0]);auto edges=lump<dedge_t>(LUMP_EDGES,decoded[1]);
+        auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[2]);auto faces=lump<dface_t>(LUMP_FACES,decoded[3]);
         for(const auto& p:points)if(!p.point.IsValid() || std::abs(p.point.x)>32768 || std::abs(p.point.y)>32768 || std::abs(p.point.z)>32768)return false;
         for(size_t face=0;face<faces.size();++face){const auto& f=faces[face];
             if(f.numedges<3 || f.numedges>256 || f.firstedge<0 || size_t(f.firstedge)>surfedges.size() || size_t(f.numedges)>surfedges.size()-size_t(f.firstedge))return false;
@@ -266,6 +304,17 @@ bool SourceMap::selfTest(){
     if(!impl_)return false;bool all=report("original lump geometry",!impl_->mesh.empty()&&CMapLoadHelper::GetRefCount()==0);
     dheader_t bad{};bad.ident=IDBSPHEADER;bad.version=BSPVERSION;bad.lumps[LUMP_VERTEXES].fileofs=sizeof(bad);bad.lumps[LUMP_VERTEXES].filelen=12;
     all&=report("truncated lump range rejected",!headerValid(bad,sizeof(bad)));
+    auto encoded=bspLzmaVertices();std::vector<unsigned char> decoded;const char* reason=nullptr;
+    const auto original=fixture();dheader_t originalHeader;std::memcpy(&originalHeader,original.data(),sizeof(originalHeader));
+    const auto& originalVertices=originalHeader.lumps[LUMP_VERTEXES];
+    all&=report("bounded Source LZMA vertex decode",decodeLump(encoded,originalVertices.filelen,decoded,reason)
+        && decoded.size()==size_t(originalVertices.filelen) && !std::memcmp(decoded.data(),original.data()+originalVertices.fileofs,decoded.size()));
+    bool rejects=true;auto broken=encoded;broken.pop_back();rejects&=!decodeLump(broken,672,decoded,reason);
+    broken=encoded;broken[12]=255;rejects&=!decodeLump(broken,672,decoded,reason);
+    broken=encoded;broken[16]=127;rejects&=!decodeLump(broken,672,decoded,reason);
+    rejects&=!decodeLump(encoded,maximumLump+1,decoded,reason);
+    broken=encoded;broken[17]=255;rejects&=!decodeLump(broken,672,decoded,reason);
+    all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
     trace_t trace{};g_pPhysicsCollision->TraceBox(Vector(-190,-160,80),Vector(-190,-160,-80),Vector(0,0,0),Vector(0,0,0),impl_->fixtureCollision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
     all&=report("IVP polygon floor trace",trace.fraction>0 && trace.fraction<1 && !trace.startsolid);
     g_pPhysicsCollision->TraceBox(Vector(-190,-160,80),Vector(400,-160,80),Vector(-8,-8,-24),Vector(8,8,8),impl_->fixtureCollision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);

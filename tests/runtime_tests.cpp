@@ -1,4 +1,8 @@
 #include "Runtime.hpp"
+#include "BspLzmaFixture.hpp"
+#include <cstdint>
+#include <cstring>
+#include <vector>
 #include <cmath>
 #include <filesystem>
 #include <fstream>
@@ -54,6 +58,28 @@ int main() {
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         check(host.executeSource("source_bsp_load maps/imported.bsp"), "Valid user BSP preview failed");
         const auto imported=host.vertices(1);
+        std::ifstream bspFile(maps/"imported.bsp",std::ios::binary);
+        std::vector<unsigned char> bsp((std::istreambuf_iterator<char>(bspFile)),{});
+        auto put32=[&](size_t offset,uint32_t value){std::memcpy(bsp.data()+offset,&value,4);};
+        const auto compressed=source1ios::bspLzmaVertices();
+        put32(8+3*16,bsp.size());put32(8+3*16+4,compressed.size());put32(8+3*16+12,672);
+        bsp.insert(bsp.end(),compressed.begin(),compressed.end());
+        auto writeBsp=[&](const char* name){std::ofstream out(maps/name,std::ios::binary);out.write(reinterpret_cast<const char*>(bsp.data()),bsp.size());};
+        writeBsp("compressed.bsp");
+        check(host.executeSource("source_bsp_load maps/compressed.bsp"),"Compressed Source vertex lump rejected");
+        const auto compressedView=host.vertices(1);
+        check(compressedView.size()==imported.size(),"Compressed BSP changed mesh size");
+        for(size_t i=0;i<imported.size();++i)for(int axis=0;axis<4;++axis)
+            check(compressedView[i].position[axis]==imported[i].position[axis],"Compressed BSP changed geometry or physics pose");
+        // A guaranteed invalid range decoder initial byte is the first payload byte.
+        bsp[bsp.size()-compressed.size()+17]=255;writeBsp("damaged-compressed.bsp");
+        check(!host.executeSource("source_bsp_load maps/damaged-compressed.bsp"),"Damaged LZMA stream accepted");
+        check(host.vertices(1)[0].position[0]==compressedView[0].position[0],"Damaged compressed map replaced scene");
+        // Compression metadata in unused sections must not block geometry preview.
+        std::ifstream originalFile(maps/"imported.bsp",std::ios::binary);
+        bsp.assign(std::istreambuf_iterator<char>(originalFile),{});
+        put32(8+40*16+12,12);writeBsp("unused-compression.bsp");
+        check(host.executeSource("source_bsp_load maps/unused-compression.bsp"),"Unused compressed section blocked polygon preview");
         std::ofstream(maps/"invalid.bsp") << "short";
         check(!host.executeSource("source_bsp_load maps/invalid.bsp"), "Truncated BSP accepted");
         check(host.vertices(1)[0].position[0]==imported[0].position[0], "Rejected BSP replaced the previous map");
