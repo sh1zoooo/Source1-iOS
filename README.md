@@ -65,13 +65,13 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Проверенная автоматическими тестами сборка: [0.15.0, build 18 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37349031337/artifacts/11362138591).
-67 стартовых проверок; симулятор повторяет их и проверяет GPU, terrain,
-MDL animation, VMT/VTF model texture и background/resume (135 PASS).
-Новая 0.15 пока проверена автоматически, не на физическом iPhone. На iPhone 16e
+Проверенная автоматическими тестами сборка: [0.17.0, build 20 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37354477235/artifacts/11364222411).
+69 стартовых проверок; симулятор повторяет их и проверяет GPU, terrain,
+BSP multi-material, MDL animation/VMT/VTF и background/resume (139 PASS).
+Новая 0.17 пока проверена автоматически, не на физическом iPhone. На iPhone 16e
 версия 0.13 подтверждена пользовательским логом: 63 PASS, GPU A18, iOS 18.6.2,
 смена ориентации; пользователь также подтвердил плавную деформацию модели.
-[Отчёт 0.15 и границы проверки](docs/VALIDATION-0.15.0.md).
+[Отчёт 0.17 и границы проверки](docs/VALIDATION-0.17.0.md).
 Enter / Go в консоли теперь выполняет команду и закрывает клавиатуру, как Run.
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 

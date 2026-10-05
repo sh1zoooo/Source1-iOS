@@ -52,3 +52,8 @@ engine brush-мир загружается только из нашей пров
 симулятор дал 135 PASS, texture upload, GPU completion и pause/resume.
 Артефакт и скриншот проверены отдельно. [Отчёт 0.15](VALIDATION-0.15.0.md).
 На физическом iPhone эта новая версия пока не подтверждена.
+
+Версия 0.17.0/build 20 прошла Linux Debug, ARM64 iPhone build и simulator smoke:
+139 PASS, два BSP material slots, отдельная studio texture, GPU completion и
+pause/resume. [Отчёт 0.17](VALIDATION-0.17.0.md). На физическом iPhone 0.17 пока
+не проверена; пользовательский лог и два кадра подтверждают 0.15/67 PASS на A18.

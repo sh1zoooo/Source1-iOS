@@ -17,4 +17,16 @@ expects 139 PASS, both BSP/studio uploads, GPU completion and lifecycle checks.
 
 Boundaries: 16 preview material slots, fixed 64x64 resampling, base textures
 only. Lightmaps, HDR data, alpha, detail/bump/env maps, proxies and the original
-graphical materialsystem remain pending. Actions pending.
+graphical materialsystem remain pending.
+
+## Verified Actions artifact
+
+Commit `2017521b017c2c99716fd42f646171e5e21d8b49`,
+[run 37354477235](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37354477235)
+passed Linux runtime contracts, iPhone ARM64 build, simulator build/startup,
+139 PASS, both BSP/studio uploads, GPU completion and pause/resume. Downloaded
+artifact 11364222411 was checked independently. Screenshot shows blue grid and
+brown brick surfaces together with the separately textured posed model.
+IPA SHA256 matches its manifest:
+`abfca004935c73f74a192d7837122279efbc4339a5adeb629b6a36994cb63a09`.
+Physical-phone confirmation remains at 0.15; 0.17 is simulator-verified.
