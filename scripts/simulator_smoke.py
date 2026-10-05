@@ -32,8 +32,10 @@ try:
                 raise RuntimeError(f"Source core self-test failed:\n{text}")
             time.sleep(5)
             text = log.read_text()
-            if "FAIL" in text or text.count(": PASS") != 105:
-                raise RuntimeError(f"Expected two sets of 52 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
+                raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
+            if "FAIL" in text or text.count(": PASS") != 111:
+                raise RuntimeError(f"Expected two sets of 55 Source checks, runtime contracts and a completed GPU frame:\n{text}")
             simctl("launch", udid, "com.apple.Preferences")
             time.sleep(2)
             simctl("launch", udid, bundle)

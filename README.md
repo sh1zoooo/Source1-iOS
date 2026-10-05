@@ -7,7 +7,7 @@
 
 ## Что реально подключено
 
-539 единиц компиляции из `tier0`, `tier1`, `mathlib`, `vstdlib`, `filesystem`, `vpklib`
+540 единиц компиляции (539 из manifest и tool-mode displacement collision) из `tier0`, `tier1`, `mathlib`, `vstdlib`, `filesystem`, `vpklib`
 `tier2`, `tier3`, `appframework`, `bitmap`, `engine`, `materialsystem`, `shaderapiempty`, `shaderlib`, `vtf`, `datacache`, `studiorender`, `vphysics` и IVP/Havana исходной базы
 [nillerusr/source-engine](https://github.com/nillerusr/source-engine),
 зафиксированной на `ed8209cc35c61fbd8ddff8480962a01c981eef2f`.
@@ -22,7 +22,7 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 Поле консоли работает через реальные `CCommand`, `ConCommand` и `ConVar`:
 
 - `source_status` — перечень подключённых библиотек и границы текущего порта.
-- `source_selftest` — повторить все 52 проверки Source.
+- `source_selftest` — повторить все 55 проверок Source.
 - `source_host_selftest` — настоящий Host_Init, queued loader и idle ticks.
 - `source_app_selftest` — проверить фабрику, порядок остановки и откат ошибок.
 - `source_assets_selftest` — VTF, data cache, физические коллизии, симуляция и ragdoll-сочленение.
@@ -30,6 +30,7 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_fs_selftest` — повторить семь проверок файловой системы.
 - `source_bsp_selftest` — BSP, engine brush model, CM collision, VTF и камера.
 - `source_bsp_reset` — вернуться к встроенной комнате.
+- `source_bsp_terrain` — встроенный пример displacement-рельефа.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
 - `source_physics_reset` — заново создать сцену с двумя телами и шарниром.
 - `source_physics_impulse` — толкнуть подвижное тело.
@@ -155,7 +156,7 @@ solid brush-боксов. Он загружен оригинальным engine;
 
 Пользовательские карты пока имеют только preview полигонов с единой тестовой
 текстурой и IVP-столкновениями; engine CM-мир остаётся встроенным. Графический
-materialsystem Source ещё не адаптирован. BSP-пакеты материалов, displacement, PVS,
+materialsystem Source ещё не адаптирован. BSP-пакеты материалов, PVS,
 lightmaps и модели ещё не поддержаны. Внешние .lmp отклоняются.
 Лимиты: файл 128 MiB, 100 тысяч треугольников, координаты ±32768.
 
@@ -181,3 +182,23 @@ Vertices, edges, surfedges и faces могут быть несжатыми ил�
 MDL/VVD/VTX и анимация, ввод/звук/UI, совместимые client/server игровые модули,
 загрузка карты как игрового мира и проверка реального матча. Наличие tier-библиотек
 и headless Host_Init не равно готовой CS:S. Игровые ресурсы предоставляет пользователь.
+
+### Displacement preview (0.11.0, build 14)
+
+Source CCoreDispInfo строит полную сетку displacement power 2–4. Геометрия и
+metadata проверяются до вызова legacy builder: диапазоны массивов, power, parent
+face, start corner, выпуклость/плоскость quad, конечность и пределы чисел.
+Дополнительно читаются DISPINFO/DISP_VERTS/DISP_TRIS, включая bounded Source LZMA.
+Лимит 16 MiB применяется к каждой из семи используемых геометрических секций.
+
+Камера использует оригинальный Source displacement collision tree вместе с IVP
+для обычных полигонов. Отдельная tool-mode копия Source collision tree с переименованными
+экспортами использует освобождаемую память, не engine hunk: импорт/ошибка/reset не
+должны накапливать деревья до конца Host_Shutdown. Это не подмена алгоритма коллизий.
+Луч и swept hull проверяются на вершине холма высотой 32 units.
+
+Пока нет displacement LOD/seam stitching, blend-материалов, lightmaps и поведения
+поверхностных physics-флагов. Коллизии динамических IVP-тел на рельефе не подтверждены:
+диагностический IVP point/hull trace по отдельному slope soup не дал правильной
+высоты; камера использует специализированный путь Source. Также остаются IVP
+contact-rescue warnings в длительных прогонах и рост RSS после restart.

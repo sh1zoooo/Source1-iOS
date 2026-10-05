@@ -25,6 +25,8 @@ int main() {
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
         check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
+        check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
+        check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
         check(!host.executeSource("source_bsp_load \"\""), "Empty BSP name accepted");
         check(!host.executeSource("source_bsp_load maps/../../outside.bsp"), "BSP path traversal accepted");
         check(!host.executeSource("source_bsp_load maps/missing.bsp"), "Missing map accepted");
@@ -81,6 +83,16 @@ int main() {
         bsp.assign(std::istreambuf_iterator<char>(originalFile),{});
         put32(8+40*16+12,12);writeBsp("unused-compression.bsp");
         check(host.executeSource("source_bsp_load maps/unused-compression.bsp"),"Unused compressed section blocked polygon preview");
+        std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_displacement.bsp",maps/"terrain.bsp");
+        check(host.executeSource("source_bsp_load maps/terrain.bsp"),"Source displacement map import failed");
+        const auto terrainView=host.vertices(1);
+        check(terrainView.size()==imported.size()+90,"Displacement was skipped or incorrectly triangulated");
+        std::ifstream terrainFile(maps/"terrain.bsp",std::ios::binary);bsp.assign(std::istreambuf_iterator<char>(terrainFile),{});
+        uint32_t dispOffset=0;std::memcpy(&dispOffset,bsp.data()+8+26*16,4);put32(dispOffset+20,31);
+        writeBsp("bad-terrain.bsp");
+        check(!host.executeSource("source_bsp_load maps/bad-terrain.bsp"),"Unsafe displacement power accepted");
+        check(host.vertices(1).size()==terrainView.size(),"Rejected displacement replaced the scene");
+        check(host.executeSource("source_bsp_load maps/imported.bsp"),"Map restore after terrain failed");
         std::ofstream(maps/"invalid.bsp") << "short";
         check(!host.executeSource("source_bsp_load maps/invalid.bsp"), "Truncated BSP accepted");
         check(host.vertices(1)[0].position[0]==imported[0].position[0], "Rejected BSP replaced the previous map");

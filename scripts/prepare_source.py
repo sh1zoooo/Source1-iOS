@@ -3,6 +3,7 @@
 from pathlib import Path
 import argparse
 import json
+import re
 import shutil
 import subprocess
 
@@ -112,5 +113,19 @@ replace("public/dt_recv.cpp", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DL
 replace("public/dt_send.cpp", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL)", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL) || defined(SOURCE_ENGINE_PORT)")
 replace("mathlib/IceKey.cpp", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB)", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB) || defined(SOURCE_ENGINE_PORT)")
 shutil.copytree(args.upstream / "thirdparty/stb", args.output / "thirdparty/stb", dirs_exist_ok=True)
+# Imported preview trees need independently reclaimable storage. Compile Source's
+# tool-mode displacement collision implementation, not the engine's hunk-backed
+# ABI. Rename its types/exports so both genuine implementations can coexist.
+disp_names = ["CDispCollTree", "CDispCollTriCache", "CDispCollTri", "CDispCollHelper",
+              "CDispCollNode", "CDispCollLeaf", "CDispVector", "DispCollTrees_Alloc",
+              "DispCollTrees_Free", "DispCollPlaneIndex_t", "CPlaneIndexHashFuncs",
+              "g_DispCollPlaneIndexHash", "DISPCOLL_COMMON_H", "RayDispOutput_t",
+              "rayleaflist_t", "MAX_DISP_AABB_NODES", "MAX_AABB_LIST"]
+for suffix in ("h", "cpp"):
+    text = (args.upstream / f"public/dispcoll_common.{suffix}").read_text()
+    for name in disp_names:
+        text = re.sub(r"\b" + re.escape(name) + r"\b", "Port" + name, text)
+    text = text.replace('"dispcoll_common.h"', '"dispcoll_preview.h"')
+    (args.output / f"public/dispcoll_preview.{suffix}").write_text(text)
 (args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": patch_count}, indent=2))
 print(f"Prepared real Source modules from {PIN}")

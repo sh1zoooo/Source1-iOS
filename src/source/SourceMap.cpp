@@ -2,6 +2,9 @@
 #include "BspLzmaFixture.hpp"
 #include "quakedef.h"
 #include "bspfile.h"
+#include "builddisp.h"
+#include "cmodel.h"
+#include "dispcoll_preview.h"
 #include "modelloader.h"
 #include "filesystem_engine.h"
 #include "tier2/tier2.h"
@@ -64,8 +67,9 @@ std::unique_ptr<PhysicsScene> physicsScene(Collision shape){
     scene->body->Wake();scene->body->ApplyForceCenter(Vector(3500,0,0));return scene;
 }
 constexpr size_t maximumLump = 16 * 1024 * 1024;
-constexpr int geometryLumps[]={LUMP_VERTEXES,LUMP_EDGES,LUMP_SURFEDGES,LUMP_FACES};
-constexpr size_t geometryStrides[]={sizeof(dvertex_t),sizeof(dedge_t),sizeof(int),sizeof(dface_t)};
+constexpr int geometryLumps[]={LUMP_VERTEXES,LUMP_EDGES,LUMP_SURFEDGES,LUMP_FACES,LUMP_DISPINFO,LUMP_DISP_VERTS,LUMP_DISP_TRIS};
+constexpr size_t geometryStrides[]={sizeof(dvertex_t),sizeof(dedge_t),sizeof(int),sizeof(dface_t),sizeof(ddispinfo_t),sizeof(CDispVert),sizeof(CDispTri)};
+constexpr size_t geometryLumpCount=sizeof(geometryLumps)/sizeof(*geometryLumps);
 bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
     auto fail=[&](const char* reason,int id=-1){if(file)Warning("Source BSP rejected %s: %s; version=%d, lump=%d, file bytes=%zu\n",file,reason,h.version,id,size);return false;};
     if(size<sizeof(h))return fail("truncated BSP header");
@@ -75,7 +79,7 @@ bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
     for(int id=0;id<HEADER_LUMPS;++id){const auto& l=h.lumps[id];
         if(l.fileofs<0 || l.filelen<0 || (l.filelen && (size_t(l.fileofs)<sizeof(h) || size_t(l.fileofs)>size || size_t(l.filelen)>size-size_t(l.fileofs))))return fail("lump range outside file",id);
     }
-    for(size_t i=0;i<4;++i){const auto& l=h.lumps[geometryLumps[i]];
+    for(size_t i=0;i<geometryLumpCount;++i){const auto& l=h.lumps[geometryLumps[i]];
         const size_t decoded=l.uncompressedSize?l.uncompressedSize:l.filelen;
         if(decoded>maximumLump || size_t(l.filelen)>maximumLump)return fail("geometry lump exceeds 16 MiB limit",geometryLumps[i]);
         if(decoded%geometryStrides[i])return fail("geometry record size mismatch",geometryLumps[i]);
@@ -111,6 +115,44 @@ struct LoaderScope {
     LoaderScope(const char* path) { CMapLoadHelper::Init(nullptr,path); }
     ~LoaderScope(){ CMapLoadHelper::Shutdown(); }
 };
+using Triangle=std::array<Vector,3>;
+bool boundedPoint(const Vector& p){return p.IsValid() && std::abs(p.x)<=32768 && std::abs(p.y)<=32768 && std::abs(p.z)<=32768;}
+bool displacementTriangles(const std::vector<Vector>& polygon,size_t face,const ddispinfo_t& d,
+    const std::vector<CDispVert>& verts,const std::vector<CDispTri>& tris,std::vector<Triangle>& out,
+    std::unique_ptr<PortCDispCollTree>* collisionTree=nullptr){
+    if(polygon.size()!=4 || d.m_iMapFace!=face || d.power<MIN_MAP_DISP_POWER || d.power>MAX_MAP_DISP_POWER
+        || !boundedPoint(d.startPosition) || !std::isfinite(d.smoothingAngle) || d.smoothingAngle<0 || d.smoothingAngle>180)return false;
+    const size_t nv=d.NumVerts(),nt=d.NumTris();
+    if(d.m_iDispVertStart<0 || size_t(d.m_iDispVertStart)>verts.size() || nv>verts.size()-d.m_iDispVertStart
+        || d.m_iDispTriStart<0 || size_t(d.m_iDispTriStart)>tris.size() || nt>tris.size()-d.m_iDispTriStart)return false;
+    bool startMatches=false;for(const auto& p:polygon){if(!boundedPoint(p))return false;startMatches|=(p-d.startPosition).LengthSqr()<.01f;}
+    if(!startMatches)return false;
+    Vector normal;CrossProduct(polygon[1]-polygon[0],polygon[2]-polygon[0],normal);
+    if(normal.LengthSqr()<1e-4f)return false;VectorNormalize(normal);
+    for(int i=0;i<4;++i){Vector cross;CrossProduct(polygon[(i+1)%4]-polygon[i],polygon[(i+2)%4]-polygon[(i+1)%4],cross);
+        if(DotProduct(cross,normal)<=1e-4f || std::abs(DotProduct(polygon[i]-polygon[0],normal))>.1f)return false;}
+    for(size_t i=0;i<nv;++i){const auto& v=verts[d.m_iDispVertStart+i];
+        if(!v.m_vVector.IsValid() || v.m_vVector.LengthSqr()>4 || !std::isfinite(v.m_flDist) || std::abs(v.m_flDist)>32768
+            || !std::isfinite(v.m_flAlpha) || v.m_flAlpha<0 || v.m_flAlpha>255)return false;}
+    CCoreDispInfo core;auto* surface=core.GetSurface();surface->SetPointCount(4);surface->SetPointStart(d.startPosition);
+    Vector axisS=polygon[1]-polygon[0],axisT=polygon[3]-polygon[0];VectorNormalize(axisS);VectorNormalize(axisT);
+    surface->SetSAxis(axisS);surface->SetTAxis(axisT);surface->SetFlags(0);
+    surface->SetContents(CONTENTS_SOLID);
+    const Vector2D uv[]={Vector2D(0,0),Vector2D(0,1),Vector2D(1,1),Vector2D(1,0)};
+    for(int i=0;i<4;++i){surface->SetPoint(i,polygon[i]);surface->SetPointNormal(i,normal);surface->SetTexCoord(i,uv[i]);
+        for(int bump=0;bump<4;++bump)surface->SetLuxelCoord(bump,i,uv[i]);}
+    surface->FindSurfPointStartIndex();surface->AdjustSurfPointData();
+    // Preview builds full-resolution triangles, not the graphical engine's
+    // neighbor-dependent LOD, lighting or surface-physics flag behavior.
+    core.InitDispInfo(d.power,0,d.smoothingAngle,verts.data()+d.m_iDispVertStart,tris.data()+d.m_iDispTriStart);
+    if(!core.CreateWithoutLOD())return false;
+    for(size_t i=0;i<nt;++i){Triangle t;core.GetTriPos(i,t[0],t[1],t[2]);
+        for(const auto& p:t)if(!boundedPoint(p))return false;
+        out.push_back(t);
+    }
+    if(collisionTree){auto tree=std::make_unique<PortCDispCollTree>();if(!tree->Create(&core))return false;*collisionTree=std::move(tree);}
+    return true;
+}
 void addBox(std::vector<dvertex_t>& vertices,std::vector<dedge_t>& edges,std::vector<int>& surfedges,std::vector<dface_t>& faces,const Vector& lo,const Vector& hi) {
     const Vector corners[]={ {lo.x,lo.y,lo.z},{hi.x,lo.y,lo.z},{hi.x,hi.y,lo.z},{lo.x,hi.y,lo.z},
         {lo.x,lo.y,hi.z},{hi.x,lo.y,hi.z},{hi.x,hi.y,hi.z},{lo.x,hi.y,hi.z} };
@@ -119,7 +161,7 @@ void addBox(std::vector<dvertex_t>& vertices,std::vector<dedge_t>& edges,std::ve
     for(const auto& q:quads){dface_t f{};f.firstedge=surfedges.size();f.numedges=4;f.dispinfo=-1;f.texinfo=-1;f.lightofs=-1;
         for(unsigned i=0;i<4;++i){dedge_t e{{}};e.v[0]=first+q[i];e.v[1]=first+q[(i+1)%4];surfedges.push_back(edges.size());edges.push_back(e);}faces.push_back(f);}
 }
-std::vector<unsigned char> fixture() {
+std::vector<unsigned char> fixture(bool displaced=false) {
     std::vector<dvertex_t> vertices;std::vector<dedge_t> edges(1);std::vector<int> surfedges;std::vector<dface_t> faces;
     addBox(vertices,edges,surfedges,faces,Vector(-256,-256,-16),Vector(256,256,0));
     addBox(vertices,edges,surfedges,faces,Vector(256,-256,0),Vector(272,272,192));
@@ -141,6 +183,16 @@ std::vector<unsigned char> fixture() {
         for(int axis=0;axis<3;++axis)for(int sign=0;sign<2;++sign){dplane_t plane{};plane.normal[axis]=sign?-1:1;plane.type=axis;plane.dist=sign?-lows[box][axis]:highs[box][axis];planes.push_back(plane);
             dbrushside_t side{};side.planenum=planes.size()-1;side.texinfo=0;side.dispinfo=-1;sides.push_back(side);}
         for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=0;}
+    }
+    if(displaced){
+        faces[1].dispinfo=0;ddispinfo_t disp{};disp.startPosition=vertices[4].point;disp.power=2;disp.m_iMapFace=1;disp.smoothingAngle=45;disp.contents=CONTENTS_SOLID;
+        // Source displacement surfaces use clockwise parent-face corners.
+        const int first=faces[1].firstedge;int old[4];for(int i=0;i<4;++i)old[i]=surfedges[first+i];
+        for(int i=0;i<4;++i)surfedges[first+i]=-old[3-i];
+        std::memcpy(bytes.data()+h.lumps[LUMP_SURFEDGES].fileofs,surfedges.data(),surfedges.size()*sizeof(int));
+        std::vector<CDispVert> dv(25);for(int y=0;y<5;++y)for(int x=0;x<5;++x){auto& v=dv[y*5+x];v.m_vVector=Vector(0,0,1);v.m_flDist=(x==2&&y==2)?32:0;v.m_flAlpha=0;}
+        std::vector<CDispTri> dt(32);for(auto& t:dt)t.m_uiTags=DISPTRI_TAG_SURFACE;
+        append(LUMP_DISPINFO,&disp,sizeof(disp));append(LUMP_DISP_VERTS,dv.data(),dv.size()*sizeof(CDispVert));append(LUMP_DISP_TRIS,dt.data(),dt.size()*sizeof(CDispTri));
     }
     // The geometry section was appended above; replace it with updated planes/texinfo.
     std::memcpy(bytes.data()+h.lumps[LUMP_FACES].fileofs,faces.data(),faces.size()*sizeof(dface_t));
@@ -164,6 +216,7 @@ std::vector<unsigned char> fixture() {
 namespace source1ios {
 struct SourceMap::Impl {
     std::vector<MeshPoint> mesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
+    std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::string builtin;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
@@ -193,6 +246,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     Msg("Source BSP startup: generating BSP\n");
     const auto bytes=fixture();auto file=g_pFullFileSystem->Open(impl_->builtin.c_str(),"wb","PORT_BSP_PREVIEW");
     bool ok=file && g_pFullFileSystem->Write(bytes.data(),bytes.size(),file)==int(bytes.size());if(file)g_pFullFileSystem->Close(file);
+    const auto terrain=fixture(true);auto terrainFile=g_pFullFileSystem->Open("__source1ios_displacement.bsp","wb","PORT_BSP_PREVIEW");
+    ok=ok && terrainFile && g_pFullFileSystem->Write(terrain.data(),terrain.size(),terrainFile)==int(terrain.size());if(terrainFile)g_pFullFileSystem->Close(terrainFile);
     if(!ok || !load(impl_->builtin.c_str(),nullptr)){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
     if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
@@ -203,14 +258,15 @@ bool SourceMap::start(const std::filesystem::path& root) {
 }
 void SourceMap::stop(){impl_.reset();}
 bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);}
+bool SourceMap::demoTerrain(){return impl_ && load("__source1ios_displacement.bsp",nullptr);}
 bool SourceMap::load(const char* filename,const char* pathID) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
     auto file=g_pFullFileSystem->Open(filename,"rb",pathID);if(!file){Warning("Source BSP: file not found: %s\n",filename);return false;}
     const auto size=g_pFullFileSystem->Size(file);dheader_t h{};
     const bool read=g_pFullFileSystem->Read(&h,sizeof(h),file)==sizeof(h);
     if(!read || !headerValid(h,size,filename)){if(!read)Warning("Source BSP rejected %s: truncated BSP header (%u bytes)\n",filename,size);g_pFullFileSystem->Close(file);return false;}
-    std::array<std::vector<unsigned char>,4> decoded;
-    for(size_t i=0;i<4;++i){const auto& l=h.lumps[geometryLumps[i]];if(!l.uncompressedSize)continue;
+    std::array<std::vector<unsigned char>,geometryLumpCount> decoded;
+    for(size_t i=0;i<geometryLumpCount;++i){const auto& l=h.lumps[geometryLumps[i]];if(!l.uncompressedSize)continue;
         std::vector<unsigned char> raw(l.filelen);g_pFullFileSystem->Seek(file,l.fileofs,FILESYSTEM_SEEK_HEAD);
         const char* reason="short compressed lump read";
         if(g_pFullFileSystem->Read(raw.data(),raw.size(),file)!=int(raw.size()) || !decodeLump(raw,l.uncompressedSize,decoded[i],reason)){
@@ -223,23 +279,31 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
     if(g_pFullFileSystem->FileExists(overlay,pathID)){Warning("Source BSP: external lump overlays unsupported\n");return false;}
     std::vector<MeshPoint> mesh;
+    std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     {
         LoaderScope scope(filename);
         auto points=lump<dvertex_t>(LUMP_VERTEXES,decoded[0]);auto edges=lump<dedge_t>(LUMP_EDGES,decoded[1]);
         auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[2]);auto faces=lump<dface_t>(LUMP_FACES,decoded[3]);
+        auto disps=lump<ddispinfo_t>(LUMP_DISPINFO,decoded[4]);auto dispVerts=lump<CDispVert>(LUMP_DISP_VERTS,decoded[5]);auto dispTris=lump<CDispTri>(LUMP_DISP_TRIS,decoded[6]);
         for(const auto& p:points)if(!p.point.IsValid() || std::abs(p.point.x)>32768 || std::abs(p.point.y)>32768 || std::abs(p.point.z)>32768)return false;
         for(size_t face=0;face<faces.size();++face){const auto& f=faces[face];
             if(f.numedges<3 || f.numedges>256 || f.firstedge<0 || size_t(f.firstedge)>surfedges.size() || size_t(f.numedges)>surfedges.size()-size_t(f.firstedge))return false;
-            if(f.dispinfo>=0)continue; // Displacement topology needs its own reader.
             std::vector<Vector> polygon;
             for(int i=0;i<f.numedges;++i){const int se=surfedges[f.firstedge+i];if(se==std::numeric_limits<int>::min())return false;
                 const size_t e=se<0?size_t(-se):size_t(se);if(e>=edges.size())return false;
                 const size_t v=edges[e].v[se<0?1:0];if(v>=points.size())return false;polygon.push_back(points[v].point);}
-            for(size_t i=1;i+1<polygon.size();++i){if(mesh.size()+3>maximumVertices)return false;
-                Vector normal;CrossProduct(polygon[i]-polygon[0],polygon[i+1]-polygon[0],normal);if(normal.LengthSqr()<1e-8f)continue;VectorNormalize(normal);
+            std::vector<Triangle> triangles;
+            if(f.dispinfo>=0){
+                std::unique_ptr<PortCDispCollTree> tree;
+                if(size_t(f.dispinfo)>=disps.size() || !displacementTriangles(polygon,face,disps[f.dispinfo],dispVerts,dispTris,triangles,&tree)){
+                    Warning("Source BSP rejected %s: invalid displacement; face=%zu, disp=%d\n",filename,face,f.dispinfo);return false;}
+                displacementCollision.push_back(std::move(tree));
+            }else for(size_t i=1;i+1<polygon.size();++i)triangles.push_back({polygon[0],polygon[i],polygon[i+1]});
+            for(const auto& triangle:triangles){if(mesh.size()+3>maximumVertices)return false;
+                Vector normal;CrossProduct(triangle[1]-triangle[0],triangle[2]-triangle[0],normal);if(normal.LengthSqr()<1e-8f)continue;VectorNormalize(normal);
                 const float shade=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);
                 const float palette[6][3]={{.3f,.7f,.9f},{.7f,.8f,.9f},{.9f,.5f,.2f},{.4f,.8f,.5f},{.65f,.45f,.85f},{.85f,.75f,.35f}};
-                for(auto p:{polygon[0],polygon[i],polygon[i+1]}){
+                for(auto p:triangle){
                     const float tx=std::abs(normal.z)>.5f?p.x:(std::abs(normal.x)>.5f?p.y:p.x);
                     const float ty=std::abs(normal.z)>.5f?p.y:p.z;
                     mesh.push_back({p,{palette[face%6][0]*shade,palette[face%6][1]*shade,palette[face%6][2]*shade},{tx/64,ty/64}});
@@ -253,6 +317,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
     auto live=physicsScene(collision);if(!live)return false;
     impl_->scene=std::move(live);
+    impl_->displacementCollision=std::move(displacementCollision);
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
@@ -275,6 +340,10 @@ void SourceMap::move(float forward,float right,float seconds){
     trace_t trace{};
     if(impl_->builtinActive && impl_->world){Ray_t hull;hull.Init(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8));CM_BoxTrace(hull,0,MASK_PLAYERSOLID,true,trace);}
     else g_pPhysicsCollision->TraceBox(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8),impl_->collision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
+    if(!impl_->displacementCollision.empty()){
+        Ray_t hull;hull.Init(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8));const auto inv=hull.InvDelta();
+        for(const auto& tree:impl_->displacementCollision)tree->AABBTree_SweepAABB(hull,inv,&trace);
+    }
     if(!trace.startsolid)impl_->camera+=delta*std::max(0.f,trace.fraction-.001f);
 }
 void SourceMap::frame(float seconds){if(impl_ && impl_->scene && seconds>0 && std::isfinite(seconds))impl_->scene->environment->Simulate(std::min(seconds,.05f));}
@@ -316,6 +385,31 @@ bool SourceMap::selfTest(){
     rejects&=!decodeLump(encoded,maximumLump+1,decoded,reason);
     broken=encoded;broken[17]=255;rejects&=!decodeLump(broken,672,decoded,reason);
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
+    const std::vector<Vector> quad={Vector(-64,-64,0),Vector(-64,64,0),Vector(64,64,0),Vector(64,-64,0)};
+    ddispinfo_t disp{};disp.startPosition=quad[0];disp.power=2;disp.smoothingAngle=45;
+    std::vector<CDispVert> dv(25);for(auto& v:dv){v.m_vVector=Vector(0,0,1);v.m_flDist=0;v.m_flAlpha=0;}dv[12].m_flDist=32;
+    std::vector<CDispTri> dt(32);for(auto& t:dt)t.m_uiTags=DISPTRI_TAG_SURFACE;
+    std::vector<Triangle> terrain;std::unique_ptr<PortCDispCollTree> terrainTree;
+    const bool terrainBuilt=displacementTriangles(quad,0,disp,dv,dt,terrain,&terrainTree);
+    float height=0;for(const auto& t:terrain)for(const auto& p:t)height=std::max(height,p.z);
+    bool allPowers=terrainBuilt && terrain.size()==32 && std::abs(height-32)<.001f;
+    for(int power=3;power<=4;++power){auto large=disp;large.power=power;std::vector<CDispVert> lv(large.NumVerts());
+        for(auto& v:lv){v.m_vVector=Vector(0,0,1);v.m_flDist=0;v.m_flAlpha=0;}lv[lv.size()/2].m_flDist=32;
+        std::vector<CDispTri> lt(large.NumTris());for(auto& t:lt)t.m_uiTags=DISPTRI_TAG_SURFACE;
+        std::vector<Triangle> built;allPowers&=displacementTriangles(quad,0,large,lv,lt,built) && built.size()==size_t(large.NumTris());}
+    all&=report("original displacement powers 2/3/4 terrain",allPowers);
+    std::vector<Triangle> rejectedTerrain;auto wrong=disp;wrong.power=31;
+    bool rejectsDisp=!displacementTriangles(quad,0,wrong,dv,dt,rejectedTerrain);
+    wrong=disp;wrong.m_iDispVertStart=std::numeric_limits<int>::max();rejectsDisp&=!displacementTriangles(quad,0,wrong,dv,dt,rejectedTerrain);
+    wrong=disp;wrong.startPosition=Vector(0,0,0);rejectsDisp&=!displacementTriangles(quad,0,wrong,dv,dt,rejectedTerrain);
+    auto invalidVerts=dv;invalidVerts[0].m_flDist=std::numeric_limits<float>::quiet_NaN();rejectsDisp&=!displacementTriangles(quad,0,disp,invalidVerts,dt,rejectedTerrain);
+    all&=report("malformed displacement metadata rejected",rejectsDisp && rejectedTerrain.empty());
+    Ray_t terrainRay;terrainRay.Init(Vector(0,0,80),Vector(0,0,-80));trace_t terrainTrace{};terrainTrace.fraction=1;
+    const bool terrainHit=terrainTree && terrainTree->AABBTree_Ray(terrainRay,terrainRay.InvDelta(),&terrainTrace);
+    Ray_t terrainHull;terrainHull.Init(Vector(0,0,80),Vector(0,0,-80),Vector(-1,-1,-1),Vector(1,1,1));trace_t hullTrace{};hullTrace.fraction=1;
+    const bool hullHit=terrainTree && terrainTree->AABBTree_SweepAABB(terrainHull,terrainHull.InvDelta(),&hullTrace);
+    all&=report("Source displacement ray/hull hit raised height",terrainHit && !terrainTrace.startsolid && std::abs(terrainTrace.fraction-.3f)<.01f
+        && hullHit && !hullTrace.startsolid && std::abs(hullTrace.fraction-.29375f)<.003f);
     trace_t trace{};g_pPhysicsCollision->TraceBox(Vector(-190,-160,80),Vector(-190,-160,-80),Vector(0,0,0),Vector(0,0,0),impl_->fixtureCollision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
     all&=report("IVP polygon floor trace",trace.fraction>0 && trace.fraction<1 && !trace.startsolid);
     g_pPhysicsCollision->TraceBox(Vector(-190,-160,80),Vector(400,-160,80),Vector(-8,-8,-24),Vector(8,8,8),impl_->fixtureCollision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);

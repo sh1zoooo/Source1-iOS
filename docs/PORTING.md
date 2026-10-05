@@ -8,7 +8,10 @@ this fork originates from the TF2 2018 leak; it is not an official Valve iOS por
 The official Source SDK 2013 does not include the complete standalone engine.
 
 The dependency is a pinned, non-recursive git submodule. `cmake/source-files.json`
-contains the 539 compilation units compiled into twenty-three upstream static libraries. Preparation
+contains 539 compilation units compiled into twenty-three upstream static libraries.
+A twenty-fourth static library compiles the original displacement collision implementation
+in tool mode with distinct type/export names (540 total compilation units), providing
+heap-owned preview trees without mixing the engine's hunk-backed class ABI. Preparation
 copies the selected source directories into the build tree, verifies the commit,
 and checks each patch anchor before applying it. Upstream files remain unchanged.
 Source license and third-party notices are bundled in the IPA.

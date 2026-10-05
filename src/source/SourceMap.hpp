@@ -14,6 +14,7 @@ public:
     void stop();
     bool load(const char* filename, const char* pathID = "GAME");
     bool resetMap();
+    bool demoTerrain();
     bool selfTest();
     void look(float yaw, float pitch);
     void frame(float seconds);

@@ -142,7 +142,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
         withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
     _runtime.log("Source VTF preview texture uploaded to Metal");
-    self.status.text = @"Source 1 iOS · minimal milestone ~50%\nEngine · materials (headless) · physics\nSource self-tests: 52 PASS\nBSP preview · left move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~50%\nEngine · materials (headless) · physics\nSource self-tests: 55 PASS\nBSP preview · left move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -180,7 +180,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     _runtime.frame(dt);
     if (_smokeRequested && _runtime.frames() == 60) {
         if (!_runtime.executeSource("source_selftest") || !_runtime.executeSource("source_physics_reset")
-            || !_runtime.executeSource("source_physics_impulse")) {
+            || !_runtime.executeSource("source_physics_impulse") || !_runtime.executeSource("source_bsp_terrain")) {
             [self fail:@"Simulator runtime contracts FAIL"]; return;
         }
         _runtime.cameraLook(10, 0);
