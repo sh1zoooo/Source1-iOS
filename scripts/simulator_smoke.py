@@ -34,8 +34,10 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 131:
-                raise RuntimeError(f"Expected two sets of 65 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 135:
+                raise RuntimeError(f"Expected two sets of 67 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "Source studio VTF base texture uploaded to Metal" not in text:
+                raise RuntimeError("Studio base texture did not reach Metal")
             if "Source studio model loaded: 8 source vertices, 12 triangles, 1 meshes" not in text:
                 raise RuntimeError("Static MDL/VVD/VTX model was not staged for Metal")
             simctl("launch", udid, "com.apple.Preferences")

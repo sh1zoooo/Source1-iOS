@@ -18,6 +18,8 @@ public:
     void frame(double seconds);
     std::vector<SourceVertex> vertices(float aspect) const;
     const SourceTexture& texture() const { return map_.texture(); }
+    const SourceTexture& modelTexture() const { return map_.modelTexture(); }
+    std::uint64_t modelTextureRevision() const { return map_.modelTextureRevision(); }
     void cameraLook(float yaw, float pitch) { map_.look(yaw, pitch); }
     void cameraMove(float forward, float right, float seconds) { map_.move(forward, right, seconds); }
     bool ready() const { return ready_; }

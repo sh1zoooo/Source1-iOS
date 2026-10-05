@@ -71,6 +71,14 @@ int main() {
         {std::fstream bad(models/"bad.vvd",std::ios::in|std::ios::out|std::ios::binary);bad.seekg(8);int checksum=0;bad.read(reinterpret_cast<char*>(&checksum),4);checksum^=1;bad.seekp(8);bad.write(reinterpret_cast<const char*>(&checksum),4);}
         check(!host.executeSource("source_model_load models/bad.mdl"),"Mismatched studio companions accepted");
         check(host.vertices(1).size()==imported.size(),"Rejected studio model replaced visible geometry");
+        const auto textureBefore=host.modelTexture();const auto revisionBefore=host.modelTextureRevision();
+        check(!host.executeSource("source_model_load models/bad.mdl")&&host.modelTexture().pixels==textureBefore.pixels&&host.modelTextureRevision()==revisionBefore,"Rejected model replaced texture or advanced GPU upload revision");
+        const auto vmt=directory/"Source1IOS/game/materials/models/source1ios/__source1ios_model.vmt";
+        {std::ofstream invalidVmt(vmt);invalidVmt<<"VertexLitGeneric { \"$basetexture\" \"../../outside\" }";}
+        check(host.executeSource("source_model_reset"),"Missing/invalid optional material blocked model geometry");
+        check(host.modelTexture().pixels==host.texture().pixels,"Invalid material did not use checker fallback");
+        {std::ofstream restoredVmt(vmt);restoredVmt<<"VertexLitGeneric { \"$basetexture\" \"models/source1ios/__source1ios_model\" }";}
+        check(host.executeSource("source_model_reset")&&host.modelTexture().pixels==textureBefore.pixels,"Studio texture restore failed");
         std::ifstream bspFile(maps/"imported.bsp",std::ios::binary);
         std::vector<unsigned char> bsp((std::istreambuf_iterator<char>(bspFile)),{});
         auto put32=[&](size_t offset,uint32_t value){std::memcpy(bsp.data()+offset,&value,4);};

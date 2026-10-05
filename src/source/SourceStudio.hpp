@@ -23,6 +23,7 @@ struct StudioMesh {
     std::vector<StudioVertex> triangles;
     std::vector<StudioBone> bones;
     std::vector<StudioAnimation> animations;
+    std::vector<std::string> materialPaths;
     unsigned sourceVertices=0;
     unsigned meshes=0;
 };

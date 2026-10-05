@@ -92,9 +92,12 @@ StudioFixture makeStudioFixture(){
     mstudioanimvalue_t run{};run.num.valid=run.num.total=9;append(f.mdl,run);
     const short angles[]={0,3000,5000,3000,0,-3000,-5000,-3000,0};for(short angle:angles){mstudioanimvalue_t value{};value.value=angle;append(f.mdl,value);}
     auto* desc=at<mstudioanimdesc_t>(f.mdl,animationOffset);desc->baseptr=-int(animationOffset);desc->sznameindex=nameOffset-animationOffset;desc->animindex=trackOffset-animationOffset;
+    const size_t textureOffset=f.mdl.size();mstudiotexture_t texture{};append(f.mdl,texture);const char textureName[]="__source1ios_model";const size_t textureNameOffset=appendMany(f.mdl,textureName,sizeof(textureName));at<mstudiotexture_t>(f.mdl,textureOffset)->sznameindex=textureNameOffset-textureOffset;
+    const size_t directoriesOffset=f.mdl.size();int directory=0;append(f.mdl,directory);const char directoryName[]="models/source1ios/";directory=f.mdl.size();appendMany(f.mdl,directoryName,sizeof(directoryName));std::memcpy(f.mdl.data()+directoriesOffset,&directory,sizeof(directory));
     auto* mh=at<studiohdr_t>(f.mdl,mdlHeader);auto* bp=at<mstudiobodyparts_t>(f.mdl,bodyOffset);auto* mo=at<mstudiomodel_t>(f.mdl,modelOffset);
     mh->numbones=2;mh->boneindex=boneOffset;mh->bodypartindex=bodyOffset;mh->length=f.mdl.size();bp->modelindex=modelOffset-bodyOffset;mo->meshindex=meshOffset-modelOffset;
     mh->numlocalanim=1;mh->localanimindex=animationOffset;
+    mh->numtextures=1;mh->textureindex=textureOffset;mh->numcdtextures=1;mh->cdtextureindex=directoriesOffset;
 
     vertexFileHeader_t vh{};vh.id=MODEL_VERTEX_FILE_ID;vh.version=MODEL_VERTEX_FILE_VERSION;vh.checksum=checksum;vh.numLODs=1;vh.numLODVertexes[0]=8;
     const size_t vvdHeader=append(f.vvd,vh);const Vector positions[]={
@@ -128,6 +131,13 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
         ||vh->numFixups<0||vh->numFixups>int(maximumModelVertices))return fail("unsupported VVD header or fixups");
     if(fh->version!=OPTIMIZED_MODEL_FILE_VERSION||fh->numLODs<1||fh->numLODs>MAX_NUM_LODS)return fail("unsupported VTX header");
     if(mh->checksum!=vh->checksum||mh->checksum!=fh->checkSum)return fail("MDL/VVD/VTX checksum mismatch");
+    auto stringAt=[&](size_t offset,std::string& out){if(offset>=size_t(mh->length))return false;out.clear();for(size_t i=offset;i<size_t(mh->length)&&out.size()<240;++i){if(!mdl[i])return true;out.push_back(char(mdl[i]));}return false;};
+    if(mh->numtextures<0||mh->numtextures>256||mh->numcdtextures<0||mh->numcdtextures>32)return fail("invalid studio material counts");
+    const auto* textures=at<mstudiotexture_t>(mdl,mh->textureindex,mh->numtextures);const auto* directories=at<int>(mdl,mh->cdtextureindex,mh->numcdtextures);if(!textures||!directories)return fail("studio materials outside MDL");
+    // Initial adapter binds the first material only. Keep all search-directory
+    // candidates for that slot; per-mesh skins/material batches remain separate.
+    if(mh->numtextures){std::string name;size_t offset=0;if(!addRelative(size_t(mh->textureindex),textures[0].sznameindex,offset)||!stringAt(offset,name))return fail("invalid studio material name");
+        if(!mh->numcdtextures)result.materialPaths.push_back(name);for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory))return fail("invalid studio material directory");result.materialPaths.push_back(directory+name);}}
     if(mh->numbones<0||mh->numbones>256)return fail("invalid studio bone count");
     const auto* bones=at<mstudiobone_t>(mdl,mh->boneindex,mh->numbones);if(!bones)return fail("studio bones outside file");
     for(int i=0;i<mh->numbones;++i){const auto& bone=bones[i];

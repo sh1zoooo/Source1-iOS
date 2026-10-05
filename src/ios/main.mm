@@ -6,18 +6,19 @@
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Output { float4 position [[position]]; float3 color; float2 uv; };
+struct Output { float4 position [[position]]; float3 color; float2 uv; uint model [[flat]]; };
 struct Input { float4 position; float4 color; float2 uv; };
 vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
     out.position = vertices[id].position;
     out.color = vertices[id].color.xyz;
     out.uv = vertices[id].uv;
+    out.model = vertices[id].color.w > 1.5f;
     return out;
 }
-fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]]) {
+fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
-    return float4(in.color,1) * texture.sample(repeatSample,in.uv);
+    return float4(in.color,1) * (in.model ? modelTexture.sample(repeatSample,in.uv) : texture.sample(repeatSample,in.uv));
 }
 )metal";
 
@@ -30,12 +31,14 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     CGPoint _movement;
     BOOL _movingGesture;
     BOOL _smokeRequested;
+    std::uint64_t _modelTextureRevision;
 }
 @property(nonatomic, strong) MTKView *metalView;
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
 @property(nonatomic, strong) id<MTLRenderPipelineState> pipeline;
 @property(nonatomic, strong) id<MTLDepthStencilState> depthState;
 @property(nonatomic, strong) id<MTLTexture> mapTexture;
+@property(nonatomic, strong) id<MTLTexture> modelTexture;
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UITextField *commandInput;
 @end
@@ -142,7 +145,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
         withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
     _runtime.log("Source VTF preview texture uploaded to Metal");
-    self.status.text = @"Source 1 iOS · minimal milestone ~56%\nEngine · BSP · MDL animation track\nSource self-tests: 65 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~58%\nBSP · MDL animation · VMT/VTF model\nSource self-tests: 67 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -191,12 +194,20 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     MTLRenderPassDescriptor *pass = view.currentRenderPassDescriptor;
     id<CAMetalDrawable> drawable = view.currentDrawable;
     if (!pass || !drawable || !self.pipeline) return;
+    if (_modelTextureRevision != _runtime.modelTextureRevision()) {
+        const auto& decoded=_runtime.modelTexture();
+        MTLTextureDescriptor *descriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:decoded.width height:decoded.height mipmapped:NO];
+        id<MTLTexture> staged=[view.device newTextureWithDescriptor:descriptor];if(!staged){[self fail:@"Studio texture upload failed"];return;}
+        [staged replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0 withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
+        self.modelTexture=staged;_modelTextureRevision=_runtime.modelTextureRevision();_runtime.log("Source studio VTF base texture uploaded to Metal");
+    }
     id<MTLCommandBuffer> command = [self.queue commandBuffer];
     id<MTLRenderCommandEncoder> encoder = [command renderCommandEncoderWithDescriptor:pass];
     if (!command || !encoder) { [self fail:@"Cannot encode Metal frame"]; return; }
     [encoder setRenderPipelineState:self.pipeline];
     [encoder setDepthStencilState:self.depthState];
     [encoder setFragmentTexture:self.mapTexture atIndex:0];
+    [encoder setFragmentTexture:self.modelTexture atIndex:1];
     float aspect = (float)(view.drawableSize.width / MAX(view.drawableSize.height, 1.0));
     auto vertices = _runtime.vertices(aspect);
     id<MTLBuffer> geometry = [view.device newBufferWithBytes:vertices.data()
@@ -240,7 +251,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~56%%\nBSP · MDL animation · live physics\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~58%%\nBSP · MDL animation · VMT/VTF model\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

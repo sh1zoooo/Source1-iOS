@@ -19,6 +19,7 @@
 #include "gl_model_private.h"
 #include "vtf/vtf.h"
 #include "tier1/utlbuffer.h"
+#include "tier1/KeyValues.h"
 #include "tier1/lzmaDecoder.h"
 #include "tier0/dbg.h"
 #include "datacache/imdlcache.h"
@@ -32,6 +33,24 @@ namespace {
 constexpr int idStudioHeader=(('T'<<24)+('S'<<16)+('D'<<8)+'I');
 constexpr size_t maximumFile = 128 * 1024 * 1024;
 constexpr size_t maximumVertices = 300000;
+bool readBounded(const char* path,const char* pathID,size_t limit,std::vector<std::uint8_t>& bytes){
+    auto file=g_pFullFileSystem->Open(path,"rb",pathID);if(!file)return false;const unsigned size=g_pFullFileSystem->Size(file);bool ok=size>0&&size<=limit;if(ok){bytes.resize(size);ok=g_pFullFileSystem->Read(bytes.data(),size,file)==int(size);}g_pFullFileSystem->Close(file);if(!ok)bytes.clear();return ok;
+}
+bool materialPath(const std::string& path){return !path.empty()&&path.size()<240&&path.front()!='/'&&path.find("..") == std::string::npos&&path.find('\\')==std::string::npos&&path.find(':')==std::string::npos;}
+bool decodeModelMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture){
+    for(const auto& name:candidates){if(!materialPath(name))continue;std::vector<std::uint8_t> vmt;const std::string path="materials/"+name+".vmt";if(!readBounded(path.c_str(),"GAME",65536,vmt))continue;
+        // Bound parser recursion before using the original KeyValues implementation.
+        int depth=0;bool quoted=false,escaped=false,valid=true;for(unsigned char c:vmt){if(escaped){escaped=false;continue;}if(quoted&&c=='\\'){escaped=true;continue;}if(c=='"'){quoted=!quoted;continue;}if(!quoted&&c=='{'){if(++depth>16){valid=false;break;}}if(!quoted&&c=='}'&&--depth<0){valid=false;break;}}
+        if(!valid||quoted||depth)continue;std::string text(vmt.begin(),vmt.end());auto* kv=new KeyValues("model");const bool loaded=kv->LoadFromBuffer(path.c_str(),text.c_str());const std::string shader=kv->GetName(),base=kv->GetString("$basetexture","");kv->deleteThis();
+        if(!loaded||(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric"))||!materialPath(base))continue;
+        std::vector<std::uint8_t> vtf;const std::string texturePath="materials/"+base+".vtf";if(!readBounded(texturePath.c_str(),"GAME",16*1024*1024,vtf))continue;
+        auto* image=CreateVTFTexture();if(!image)continue;CUtlBuffer buffer(vtf.data(),vtf.size(),CUtlBuffer::READ_ONLY);
+        bool ok=image->Unserialize(buffer,true)&&image->Width()>0&&image->Height()>0&&image->Width()<=2048&&image->Height()<=2048&&image->Depth()==1&&image->FrameCount()==1&&image->FaceCount()==1;
+        if(ok){buffer.SeekGet(CUtlBuffer::SEEK_HEAD,0);ok=image->Unserialize(buffer);}
+        if(ok){image->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);texture.width=image->Width();texture.height=image->Height();const auto* data=image->ImageData(0,0,0);ok=data!=nullptr;if(ok)texture.pixels.assign(data,data+size_t(texture.width)*texture.height*4);}
+        DestroyVTFTexture(image);if(ok){Msg("Source studio VMT/VTF base texture decoded: %s (%ux%u)\n",path.c_str(),texture.width,texture.height);return true;}
+    }return false;
+}
 bool report(const char* name, bool ok) {
     Msg("Source BSP self-test %s: %s\n",name,ok?"PASS":"FAIL");return ok;
 }
@@ -223,7 +242,7 @@ struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
-    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture texture,modelTexture;std::uint64_t modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
@@ -255,8 +274,13 @@ bool SourceMap::start(const std::filesystem::path& root) {
     const auto terrain=fixture(true);auto terrainFile=g_pFullFileSystem->Open("__source1ios_displacement.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok && terrainFile && g_pFullFileSystem->Write(terrain.data(),terrain.size(),terrainFile)==int(terrain.size());if(terrainFile)g_pFullFileSystem->Close(terrainFile);
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
+    std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
     ok=ok&&writeModel(impl_->builtinModel.c_str(),studio.mdl)&&writeModel("models/__source1ios_static_probe.vvd",studio.vvd)&&writeModel("models/__source1ios_static_probe.dx90.vtx",studio.vtx);
+    for(int mip=0;mip<source->MipCount();++mip){const int size=std::max(1,64>>mip);auto* pixels=source->ImageData(0,0,mip);for(int y=0;y<size;++y)for(int x=0;x<size;++x){const bool stripe=((y*64/size)/8)%2;auto* p=pixels+(y*size+x)*4;p[0]=stripe?240:20;p[1]=stripe?100:200;p[2]=stripe?30:240;p[3]=255;}}
+    CUtlBuffer modelVtf;ok=ok&&source->Serialize(modelVtf);std::vector<std::uint8_t> modelVtfBytes(static_cast<std::uint8_t*>(modelVtf.Base()),static_cast<std::uint8_t*>(modelVtf.Base())+modelVtf.TellPut());
+    const std::string modelVmt="VertexLitGeneric { \"$basetexture\" \"models/source1ios/__source1ios_model\" }";
+    ok=ok&&writeModel("materials/models/source1ios/__source1ios_model.vtf",modelVtfBytes)&&writeModel("materials/models/source1ios/__source1ios_model.vmt",std::vector<std::uint8_t>(modelVmt.begin(),modelVmt.end()));
     if(!ok || !load(impl_->builtin.c_str(),nullptr) || !loadModel(impl_->builtinModel.c_str())){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
     if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
@@ -272,11 +296,13 @@ bool SourceMap::resetModel(){return impl_&&loadModel(impl_->builtinModel.c_str()
 bool SourceMap::loadModel(const char* filename,const char* pathID){
     if(!impl_||!filename||std::strlen(filename)>=MAX_PATH)return false;std::string mdlPath=filename;
     if(mdlPath.size()<5||mdlPath.substr(mdlPath.size()-4)!=".mdl"){Warning("Source studio: expected .mdl path: %s\n",filename);return false;}
-    const auto base=mdlPath.substr(0,mdlPath.size()-4);auto read=[&](const std::string& path,std::vector<std::uint8_t>& bytes){CUtlBuffer data;if(!g_pFullFileSystem->ReadFile(path.c_str(),pathID,data)||data.TellPut()<=0)return false;bytes.assign(static_cast<std::uint8_t*>(data.Base()),static_cast<std::uint8_t*>(data.Base())+data.TellPut());return true;};
+    const auto base=mdlPath.substr(0,mdlPath.size()-4);auto read=[&](const std::string& path,std::vector<std::uint8_t>& bytes){return readBounded(path.c_str(),pathID,32*1024*1024,bytes);};
     std::vector<std::uint8_t> mdl,vvd,vtx;if(!read(mdlPath,mdl)||!read(base+".vvd",vvd)||!read(base+".dx90.vtx",vtx)){Warning("Source studio: missing MDL/VVD/DX90.VTX companion for %s\n",filename);return false;}
     StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
+    SourceTexture modelTexture;const bool textured=decodeModelMaterial(parsed.materialPaths,modelTexture);if(!textured)modelTexture=impl_->texture;
     std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(0,64,0);
-    for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{.2f*light,.85f*light,.35f*light},{v.uv.x,v.uv.y}});}
+    for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{light,light,light},{v.uv.x,v.uv.y}});}
+    impl_->modelTexture=std::move(modelTexture);++impl_->modelTextureRevision;
     impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
     Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %zu embedded animation clips\n",impl_->studio.bones.size(),impl_->studio.animations.size());
@@ -374,15 +400,15 @@ void SourceMap::move(float forward,float right,float seconds){
 void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(seconds))return;seconds=std::min(seconds,.05f);
     if(impl_->scene)impl_->scene->environment->Simulate(seconds);
     if(impl_->animationPlaying){impl_->poseTime+=seconds;StudioPose pose;std::vector<StudioVertex> posed;
-        if(sampleStudioAnimation(impl_->studio,impl_->animation,impl_->poseTime,pose)&&skinStudioModel(impl_->studio,pose.rotations,posed,pose.positions)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);impl_->modelMesh[i].color[0]=.2f*light;impl_->modelMesh[i].color[1]=.85f*light;impl_->modelMesh[i].color[2]=.35f*light;}}}
+        if(sampleStudioAnimation(impl_->studio,impl_->animation,impl_->poseTime,pose)&&skinStudioModel(impl_->studio,pose.rotations,posed,pose.positions)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);for(float& channel:impl_->modelMesh[i].color)channel=light;}}}
 }
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
-    auto append=[&](const MeshPoint& v){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
-        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1},{v.uv[0],v.uv[1]}});};
+    auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
+        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],model?2.f:1.f},{v.uv[0],v.uv[1]}});};
     for(const auto& v:impl_->mesh)append(v);
-    for(const auto& v:impl_->modelMesh)append(v);
+    for(const auto& v:impl_->modelMesh)append(v,true);
     if(impl_->scene){
         constexpr int rings=6,slices=12;
         constexpr float pi=3.14159265358979323846f;
@@ -400,6 +426,8 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     return out;
 }
 const SourceTexture& SourceMap::texture() const { static const SourceTexture empty; return impl_?impl_->texture:empty; }
+const SourceTexture& SourceMap::modelTexture() const { static const SourceTexture empty;return impl_?impl_->modelTexture:empty; }
+std::uint64_t SourceMap::modelTextureRevision() const { return impl_?impl_->modelTextureRevision:0; }
 bool SourceMap::selfTest(){
     if(!impl_)return false;bool all=report("original lump geometry",!impl_->mesh.empty()&&CMapLoadHelper::GetRefCount()==0);
     dheader_t bad{};bad.ident=IDBSPHEADER;bad.version=BSPVERSION;bad.lumps[LUMP_VERTEXES].fileofs=sizeof(bad);bad.lumps[LUMP_VERTEXES].filelen=12;
@@ -432,6 +460,10 @@ bool SourceMap::selfTest(){
     all&=report("studio embedded RLE clip interpolation/loop",halfway&&std::abs(QuaternionDotProduct(startPose.rotations[1],endPose.rotations[1]))>.99999f);
     auto badAnimation=studio.mdl;auto* animHeader=reinterpret_cast<studiohdr_t*>(badAnimation.data());auto* anim=animHeader->pLocalAnimdesc(0);auto* track=reinterpret_cast<mstudioanim_t*>(reinterpret_cast<unsigned char*>(anim)+anim->animindex);auto* values=track->pRotV()->pAnimvalue(0);values->num.total=0;
     StudioMesh rejectedAnimation;std::string animationError;all&=report("studio malformed RLE track rejected",!parseStudioModel(badAnimation,studio.vvd,studio.vtx,rejectedAnimation,animationError));
+    auto rawAnimation=studio.mdl;auto* rawHeader=reinterpret_cast<studiohdr_t*>(rawAnimation.data());auto* rawDesc=rawHeader->pLocalAnimdesc(0);auto* rawTrack=reinterpret_cast<mstudioanim_t*>(reinterpret_cast<unsigned char*>(rawDesc)+rawDesc->animindex);rawTrack->flags=STUDIO_ANIM_RAWROT2|STUDIO_ANIM_RAWPOS;
+    Quaternion rawExpected;AngleQuaternion(RadianEuler(.25f,0,0),rawExpected);Quaternion64 rawQuaternion;rawQuaternion=rawExpected;Vector48 rawPosition;rawPosition=Vector(0,0,40);
+    std::memcpy(rawTrack->pData(),&rawQuaternion,sizeof(rawQuaternion));std::memcpy(rawTrack->pData()+sizeof(rawQuaternion),&rawPosition,sizeof(rawPosition));
+    StudioMesh rawModel;StudioPose rawPose;all&=report("studio raw Quaternion64 Vector48 clip",parseStudioModel(rawAnimation,studio.vvd,studio.vtx,rawModel,animationError)&&sampleStudioAnimation(rawModel,0,.5,rawPose)&&std::abs(QuaternionDotProduct(rawPose.rotations[1],rawExpected))>.9999f&&(rawPose.positions[1]-Vector(0,0,40)).LengthSqr()<.001f);
     auto fixedVvd=studio.vvd;const auto originalVvd=*reinterpret_cast<const vertexFileHeader_t*>(studio.vvd.data());
     fixedVvd.resize(sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t)+8*sizeof(mstudiovertex_t));
     auto* fixedHeader=reinterpret_cast<vertexFileHeader_t*>(fixedVvd.data());*fixedHeader=originalVvd;fixedHeader->numFixups=1;fixedHeader->fixupTableStart=sizeof(vertexFileHeader_t);fixedHeader->vertexDataStart=sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t);
@@ -450,6 +482,7 @@ bool SourceMap::selfTest(){
     all&=report("original MDLCache studio header",cached&&cached->id==idStudioHeader&&cached->version==STUDIO_VERSION&&cached->checksum==0x510510);
     if(handle!=MDLHANDLE_INVALID)g_pMDLCache->Release(handle);
     all&=report("Metal static model geometry staged",impl_->modelMesh.size()==36);
+    all&=report("studio MDL VMT VTF base texture",impl_->modelTexture.width==64&&impl_->modelTexture.height==64&&impl_->modelTexture.pixels.size()==64*64*4&&impl_->modelTexture.pixels!=impl_->texture.pixels);
     const std::vector<Vector> quad={Vector(-64,-64,0),Vector(-64,64,0),Vector(64,64,0),Vector(64,-64,0)};
     ddispinfo_t disp{};disp.startPosition=quad[0];disp.power=2;disp.smoothingAngle=45;
     std::vector<CDispVert> dv(25);for(auto& v:dv){v.m_vVector=Vector(0,0,1);v.m_flDist=0;v.m_flAlpha=0;}dv[12].m_flDist=32;
