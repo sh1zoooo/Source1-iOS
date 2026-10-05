@@ -15,7 +15,7 @@ actual = subprocess.check_output(["git", "-C", str(args.upstream), "rev-parse", 
 if actual != PIN:
     parser.error(f"Source revision mismatch: expected {PIN}, got {actual}")
 args.output.mkdir(parents=True, exist_ok=True)
-for folder in ("public", "common", "tier0", "tier1", "mathlib", "vstdlib", "filesystem", "vpklib", "tier2", "appframework", "engine", "tier3", "bitmap", "utils/lzma/C"):
+for folder in ("public", "common", "tier0", "tier1", "mathlib", "vstdlib", "filesystem", "vpklib", "tier2", "appframework", "engine", "tier3", "bitmap", "utils/lzma/C", "utils/bzip2"):
     shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
 
 def replace(path, old, new):
@@ -60,6 +60,9 @@ replace("appframework/AppSystemGroup.cpp", "case CREATION:\n\tcase CONNECTION:\n
 replace("appframework/AppSystemGroup.cpp", "\tDestroy();\n}", "\tDestroy();\n\ts_pCurrentAppSystem = GetParent();\n}")
 # A single static executable owns these shared implementations exactly once.
 replace("tier0/commandline.cpp", "static CCommandLine g_CmdLine;\nICommandLine *CommandLine()\n{", "ICommandLine *CommandLine()\n{\n\tstatic CCommandLine g_CmdLine; // Initialize before engine global constructors use it.")
+replace("engine/sys_dll.cpp", "#include <Carbon/Carbon.h>", "#ifndef SOURCE_IOS\n#include <Carbon/Carbon.h>\n#endif")
+replace("engine/sys_dll.cpp", "#elif OSX\n\tstruct mstats memstats = mstats( );", "#elif defined(SOURCE_IOS)\n\tmalloc_statistics_t stats = {};\n\tmalloc_zone_statistics(malloc_default_zone(), &stats);\n\tMsg(\"Allocated %.2f MB, #blocks = %u\\n\", stats.size_in_use / (1024.0 * 1024.0), stats.blocks_in_use);\n#elif OSX\n\tstruct mstats memstats = mstats( );")
+replace("engine/sys_dll.cpp", "#include <sys/sysctl.h>", "#include <sys/sysctl.h>\n#ifdef SOURCE_IOS\n#include <malloc/malloc.h>\n#endif")
 # Independent bounds-only partitions have no models or query callbacks. Preserve
 # the mandatory MDL lock for the global world and every callback-bearing index.
 replace("engine/spatialpartition.cpp", "class CVoxelTree;", """class PortSpatialModelLock {
@@ -84,5 +87,5 @@ replace("public/dt_recv.cpp", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DL
 replace("public/dt_send.cpp", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL)", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL) || defined(SOURCE_ENGINE_PORT)")
 replace("mathlib/IceKey.cpp", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB)", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB) || defined(SOURCE_ENGINE_PORT)")
 shutil.copytree(args.upstream / "thirdparty/stb", args.output / "thirdparty/stb", dirs_exist_ok=True)
-(args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": 27}, indent=2))
+(args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": 30}, indent=2))
 print(f"Prepared real Source modules from {PIN}")
