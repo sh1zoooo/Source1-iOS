@@ -62,7 +62,7 @@ replace("appframework/AppSystemGroup.cpp", "\tDestroy();\n}", "\tDestroy();\n\ts
 replace("tier0/commandline.cpp", "static CCommandLine g_CmdLine;\nICommandLine *CommandLine()\n{", "ICommandLine *CommandLine()\n{\n\tstatic CCommandLine g_CmdLine; // Initialize before engine global constructors use it.")
 replace("engine/sys_dll.cpp", "#include <Carbon/Carbon.h>", "#ifndef SOURCE_IOS\n#include <Carbon/Carbon.h>\n#endif")
 replace("engine/sys_dll.cpp", "#elif OSX\n\tstruct mstats memstats = mstats( );", "#elif defined(SOURCE_IOS)\n\tmalloc_statistics_t stats = {};\n\tmalloc_zone_statistics(malloc_default_zone(), &stats);\n\tMsg(\"Allocated %.2f MB, #blocks = %u\\n\", stats.size_in_use / (1024.0 * 1024.0), stats.blocks_in_use);\n#elif OSX\n\tstruct mstats memstats = mstats( );")
-replace("engine/sys_dll.cpp", "#include <sys/sysctl.h>", "#include <sys/sysctl.h>\n#ifdef SOURCE_IOS\n#include <malloc/malloc.h>\n#endif")
+replace("engine/sys_dll.cpp", "#endif\n#include <sys/sysctl.h>\n#elif defined(PLATFORM_BSD)", "#endif\n#include <sys/sysctl.h>\n#ifdef SOURCE_IOS\n#include <malloc/malloc.h>\n#endif\n#elif defined(PLATFORM_BSD)")
 # Independent bounds-only partitions have no models or query callbacks. Preserve
 # the mandatory MDL lock for the global world and every callback-bearing index.
 replace("engine/spatialpartition.cpp", "class CVoxelTree;", """class PortSpatialModelLock {
