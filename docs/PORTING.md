@@ -79,7 +79,7 @@ A passing simulator does not prove that this new module integration works on A18
 
 ## Remaining engine work
 
-The dedicated `engine` module is statically linked (169 compilation units), with tier3 and bitmap dependencies. Engine command buffering and independent spatial partitions are exercised; full Host_Init, materialsystem / shaderapi, BSP world loading, audio, networking and game client/server execution remain pending.
+The dedicated `engine` module is statically linked (169 compilation units), with tier3 and bitmap dependencies. Engine command buffering and independent spatial partitions are exercised. The later v0.6 and v0.7 stages below initialize headless materials and the engine-only host; BSP world loading, graphical shaderapi, audio and game client/server execution remain pending.
 Next: port the dedicated engine dependency graph and engine platform code, then attempt
 headless engine startup. `engine/sys_dll2.cpp::CModAppSystemGroup::Create` still
 loads a game server module even in server-only mode; full host startup needs that
