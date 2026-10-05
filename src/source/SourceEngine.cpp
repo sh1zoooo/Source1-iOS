@@ -17,6 +17,7 @@ class CAppSystemGroup;
 // Original engine entry points, not substitute implementations.
 extern ISpatialPartition* CreateSpatialPartition(const Vector&, const Vector&);
 extern void DestroySpatialPartition(ISpatialPartition*);
+extern bool host_initialized;
 
 namespace {
 bool report(const char* name, bool passed) {
@@ -68,7 +69,7 @@ bool sourceEngineSelfTest() {
         const bool deferred = commands == std::vector<std::string>{"before"};
         Cbuf_Execute();
         all &= report("command buffer wait", deferred && commands == std::vector<std::string>{"before", "after"});
-        Cbuf_Shutdown();
+        if (!host_initialized) Cbuf_Shutdown();
         g_pCVar->UnregisterConCommand(&probe);
     }
     commandResults = nullptr;
@@ -102,7 +103,7 @@ bool sourceEngineSelfTest() {
     partition->DestroyHandle(b);
     partition->EnumerateElementsInSphere(PARTITION_ENGINE_SOLID_EDICTS, Vector(512,0,0), 16, false, &deletedBox);
     all &= report("spatial move/delete", oldBox.entities.empty() && movedBox.only(&solid) && deletedBox.entities.empty());
-    if (all) Msg("Source engine linked: dedicated engine; command buffer and spatial partition verified. Host_Init pending.\n");
+    if (all) Msg("Source engine linked: dedicated engine; command buffer and spatial partition verified.\n");
     return all;
 }
 }

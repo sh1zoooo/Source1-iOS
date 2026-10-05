@@ -19,9 +19,10 @@ int main() {
         check(host.frames() == 0, "Stopped host accepted a frame");
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
+        check(host.executeSource("source_host_selftest"), "Original Host_Init / idle frame contracts failed");
         check(host.executeSource("source_engine_selftest"), "Engine subsystem contracts failed");
         check(host.executeSource("source_assets_selftest"), "Assets/physics contracts failed");
-        check(!host.executeSource("map test"), "Uninitialized engine command exposed");
+        check(!host.executeSource("map test"), "Game command exposed without a game DLL");
         check(host.executeSource("source_app_selftest"), "Appframework contracts failed");
         check(host.executeSource("source_fs_selftest"), "Original filesystem contracts failed");
         check(host.executeSource("source_selftest"), "Source contracts failed");
@@ -50,8 +51,11 @@ int main() {
         std::string contents((std::istreambuf_iterator<char>(file)), {});
         check(contents.find("Host paused") != std::string::npos, "Pause log missing");
         check(contents.find("Host stopped after 3 frames") != std::string::npos, "Shutdown log missing");
+        check(contents.find("Source Host_Shutdown completed; host_initialized=0") != std::string::npos, "Original host did not shut down");
+        check(contents.find("Recursive shutdown") == std::string::npos, "Recursive shutdown guard persisted");
         check(host.start(directory), "Restart failed");
         check(host.frames() == 0 && host.elapsed() == 0, "Restart retained simulation state");
+        check(host.executeSource("source_host_selftest"), "Original host failed after restart");
         host.stop();
         const auto badPath = directory / "regular-file";
         std::ofstream(badPath) << "not a directory";

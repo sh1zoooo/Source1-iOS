@@ -99,10 +99,9 @@ data-table and IceKey implementations are enabled once for the static build.
 Spatial queries now acquire the original initialized MDLCache lock. The earlier
 independent-partition lock exception is removed. Connect/Init/Shutdown/Disconnect
 run for actual materialsystem (shaderapiempty), physics, data/model cache, studiorender
-and dedicated engine API. ModInit/Host_Init remain pending.
+and dedicated engine API. The v0.7 engine-only lifecycle is described below.
 
-The app console exposes only initialized port commands while engine host initialization
-is pending. Engine subsystem tests execute a controlled command through original
+The app console exposes only initialized port commands while no game DLL is loaded. Engine subsystem tests execute a controlled command through original
 Cbuf_AddText/Cbuf_Execute and remove the probe from the registry afterwards.
 
 ## Headless dependency graph (v0.6)
@@ -121,3 +120,25 @@ remembered set. Physics and VTF tests run during startup, repeat testing and res
 35 checks include three VTF contracts, two data-cache contracts, physical collision
 construction, ray fraction and actual gravity simulation. iPhone evidence currently
 covers the preceding 26-check engine build; the expanded graph needs a device run.
+
+
+## Engine-only host lifecycle (v0.7)
+
+The original filesystem QueuedLoader.cpp was already compiled but its interface
+registration was dropped from the static archive. Retain the filesystem archive
+and add its real IQueuedLoader to the app-system lifecycle before the engine.
+Host_Init(true) uses upstream -nogamedll to avoid requiring a fabricated server
+interface. Host_RunFrame advances real idle ticks; this does not load a map.
+
+SourceFiles owns mounted paths. Host path strings remain alive until Host_Shutdown.
+Game configuration queued during Host_Init is discarded because arbitrary game
+commands need a real server DLL. Networking is disabled with -noip; the original
+dedicated warning is expected in this engine-only harness.
+
+The shutdown recursion guard now resets after successful shutdown. The hunk stack
+terminates its reservation on shutdown rather than retaining a base that prevents
+reinitialization. Command-buffer tests preserve a live host's buffer lifetime.
+38 startup checks include queued loader, Host_Init and idle tick advancement.
+Linux contracts exercise repeat tests, pause/resume, shutdown and restart.
+The previous 35-check IPA passed ARM64 simulator startup; physical iPhone evidence
+currently covers the preceding 26-check build.

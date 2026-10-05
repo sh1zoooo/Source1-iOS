@@ -3,6 +3,7 @@
 #include <string>
 #include "SourceFiles.hpp"
 #include "SourceAppSystems.hpp"
+#include "SourceHost.hpp"
 
 namespace source1ios {
 struct SourceVertex { float position[4]; float color[4]; };
@@ -21,6 +22,7 @@ private:
     bool ownsCore_ = false;
     SourceAppSystems systems_;
     SourceFiles files_;
+    SourceHost host_;
     double elapsed_ = 0;
 };
 }

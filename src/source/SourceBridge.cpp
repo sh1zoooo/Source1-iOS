@@ -32,7 +32,7 @@ SpewRetval_t sourceSpew(SpewType_t type, const char* message) {
 }
 void statusCommand(const CCommand&) {
     Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib, appframework, tier2, tier3, bitmap, engine (dedicated), materialsystem/shaderapiempty, VTF, datacache, studiorender, vphysics/IVP.\n");
-    Msg("Engine app-system and headless materials are initialized; ModInit/Host_Init and graphics remain pending.\n");
+    Msg("Original Host_Init and dedicated idle frames are active. Game DLL, maps and graphics remain pending.\n");
 }
 ConCommand status("source_status", statusCommand, "Report the actual port scope");
 void logCheck(const char* name, bool passed) {
@@ -70,12 +70,14 @@ bool SourceBridge::start(Logger output, void* context, const std::filesystem::pa
     if (!files_.start(root, systems_.find("VFileSystem022"))) { stop(); return false; }
     if (!sourceEngineSelfTest()) { stop(); return false; }
     if (!sourceAssetsSelfTest()) { stop(); return false; }
+    if (!host_.start(root)) { stop(); return false; }
     execute("source_status");
     Msg("Source core initialized: tier0/tier1/mathlib/vstdlib\n");
     return true;
 }
 void SourceBridge::stop() {
     if (!ownsCore_) return;
+    host_.stop();
     files_.stop();
     systems_.stop();
     console = nullptr;
@@ -136,13 +138,14 @@ bool SourceBridge::execute(const std::string& input) {
     if (!ready_ || input.size() > 255) return false;
     CCommand args;
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
-    if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest();
+    if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest() && host_.selfTest();
+    if (!std::strcmp(args[0], "source_host_selftest")) return host_.selfTest();
     if (!std::strcmp(args[0], "source_assets_selftest")) return sourceAssetsSelfTest();
     if (!std::strcmp(args[0], "source_engine_selftest")) return sourceEngineSelfTest();
     if (!std::strcmp(args[0], "source_app_selftest")) return systems_.selfTest();
     if (!std::strcmp(args[0], "source_fs_selftest")) return files_.selfTest();
-    // Engine commands may dereference systems that require Host_Init. Until
-    // that lifecycle works, only expose the port's initialized commands.
+    // Game commands still require a real server DLL and map. Expose only the
+    // initialized engine-only harness commands in -nogamedll mode.
     if (!std::strcmp(args[0], "source_status")) {
         auto* command = console->FindCommand(args[0]);
         command->Dispatch(args);
@@ -160,6 +163,7 @@ bool SourceBridge::execute(const std::string& input) {
 void SourceBridge::frame(double seconds) {
     if (!ready_ || !std::isfinite(seconds) || seconds < 0) return;
     elapsed_ += std::min(seconds, 0.1);
+    host_.frame(float(std::min(seconds, 0.1)));
     console->ProcessQueuedMaterialThreadConVarSets();
 }
 std::array<SourceVertex, 36> SourceBridge::vertices(float aspect) const {

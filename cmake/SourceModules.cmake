@@ -102,11 +102,11 @@ add_library(source_offline STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/source/SteamO
 target_link_libraries(source_offline PUBLIC source_settings)
 add_library(source_modules INTERFACE)
 if(APPLE)
-  foreach(module IN ITEMS engine materialsystem shaderapiempty datacache studiorender vphysics)
+  foreach(module IN ITEMS engine materialsystem shaderapiempty datacache studiorender vphysics filesystem)
     target_link_options(source_modules INTERFACE "LINKER:-force_load,$<TARGET_FILE:source_${module}>")
   endforeach()
   target_link_libraries(source_modules INTERFACE source_engine source_materialsystem source_shaderapiempty source_datacache source_studiorender source_vphysics source_shaderlib source_vtf source_ivp_physics source_ivp_compactbuilder source_havana_constraints source_hk_base source_hk_math source_offline source_tier3 source_bitmap source_appframework source_filesystem source_vpklib source_tier2 source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
 else()
   target_link_libraries(source_modules INTERFACE
-    "$<LINK_GROUP:RESCAN,$<LINK_LIBRARY:WHOLE_ARCHIVE,source_engine,source_materialsystem,source_shaderapiempty,source_datacache,source_studiorender,source_vphysics>,source_shaderlib,source_vtf,source_ivp_physics,source_ivp_compactbuilder,source_havana_constraints,source_hk_base,source_hk_math,source_offline,source_tier3,source_bitmap,source_appframework,source_filesystem,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
+    "$<LINK_GROUP:RESCAN,$<LINK_LIBRARY:WHOLE_ARCHIVE,source_engine,source_materialsystem,source_shaderapiempty,source_datacache,source_studiorender,source_vphysics,source_filesystem>,source_shaderlib,source_vtf,source_ivp_physics,source_ivp_compactbuilder,source_havana_constraints,source_hk_base,source_hk_math,source_offline,source_tier3,source_bitmap,source_appframework,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
 endif()

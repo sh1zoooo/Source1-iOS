@@ -123,7 +123,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · progress ~20%\nEngine · materials (headless) · physics\nSource self-tests: 35 PASS\nEngine API ready · Host_Init pending";
+    self.status.text = @"Source 1 iOS · progress ~25%\nEngine · materials (headless) · physics\nSource self-tests: 38 PASS\nHost_Init ready · dedicated idle frames";
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)
@@ -179,7 +179,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source core + filesystem + appframework\nEngine API ready · Host_Init pending\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source core + filesystem + appframework\nHost_Init ready · dedicated idle frames\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

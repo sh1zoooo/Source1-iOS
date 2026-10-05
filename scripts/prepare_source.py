@@ -103,6 +103,10 @@ replace("tier1/convar.cpp", 'ConCommandBase::~ConCommandBase( void )\n{\n}', 'Co
 replace("tier1/convar.cpp", 'pNext = pCur->m_pNext;\n\t\tpCur->AddFlags', 'pNext = pCur->m_pNext;\n\t\tif (!s_PortCommands) s_PortCommands = new std::vector<ConCommandBase*>;\n\t\tif (std::find(s_PortCommands->begin(), s_PortCommands->end(), pCur) == s_PortCommands->end()) s_PortCommands->push_back(pCur);\n\t\tpCur->AddFlags')
 replace("tier1/convar.cpp", '\tg_pCVar->ProcessQueuedMaterialThreadConVarSets();\n\tConCommandBase::s_pConCommandBases = NULL;', '\tif (s_PortCommands) for (auto* command : *s_PortCommands) if (!command->IsRegistered()) { command->AddFlags(s_nCVarFlag); command->Init(); }\n\tg_pCVar->ProcessQueuedMaterialThreadConVarSets();\n\tConCommandBase::s_pConCommandBases = NULL;')
 replace("tier1/convar.cpp", 'if ( !( m_nFlags & FCVAR_UNREGISTERED ) )', 'if ( !s_bRegistered && !( m_nFlags & FCVAR_UNREGISTERED ) )')
+# The desktop process exits after shutdown; the UIKit host can restart in place.
+replace("engine/host.cpp", '\t\t\tSys_Error( "Host_Shutdown (bottom):  _heapchk() != _HEAPOK\\n" );\n\t\t}\n#endif\n\t}\n}', '\t\t\tSys_Error( "Host_Shutdown (bottom):  _heapchk() != _HEAPOK\\n" );\n\t\t}\n#endif\n\t}\n\tshutting_down = false;\n}')
+replace("engine/zone.cpp", '\tg_HunkMemoryStack.FreeAll();\n\n\t// This disconnects', '\tg_HunkMemoryStack.Term();\n\n\t// This disconnects')
+
 replace("public/collisionutils.cpp", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB)", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB) || defined(SOURCE_ENGINE_PORT)")
 replace("public/dt_recv.cpp", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL)", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL) || defined(SOURCE_ENGINE_PORT)")
 replace("public/dt_send.cpp", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL)", "#if !defined(_STATIC_LINKED) || defined(GAME_DLL) || defined(SOURCE_ENGINE_PORT)")

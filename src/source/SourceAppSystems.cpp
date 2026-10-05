@@ -3,6 +3,7 @@
 #include <vector>
 #include "appframework/IAppSystemGroup.h"
 #include "filesystem.h"
+#include "filesystem/IQueuedLoader.h"
 #include "icvar.h"
 #include "mathlib/mathlib.h"
 #include "tier0/dbg.h"
@@ -20,11 +21,11 @@ extern CreateInterfaceFn SourceFileSystem_GetFactory();
 
 namespace {
 // Native platform front-end required by the real dedicated engine API.
-// UIKit owns the loop; ModInit/RunFrame are not called at this stage.
+// UIKit owns the loop; SourceHost owns original Host_Init / idle frames; no game server is loaded.
 class IOSDedicatedExports final : public CBaseAppSystem<IDedicatedExports> {
 public:
     void Sys_Printf(char* text) override { Msg("%s", text); }
-    void RunServer() override { Warning("Source iOS: engine server loop is pending Host_Init\n"); }
+    void RunServer() override { Warning("Source iOS: server loop is owned by the UIKit host\n"); }
 };
 class CoreGroup final : public CAppSystemGroup {
 public:
@@ -34,7 +35,8 @@ public:
         const auto cvar = LoadModule(VStdLib_GetICVarFactory());
         const auto filesystem = LoadModule(SourceFileSystem_GetFactory());
         if (!AddSystem(cvar, CVAR_INTERFACE_VERSION)
-            || !AddSystem(filesystem, FILESYSTEM_INTERFACE_VERSION)) return false;
+            || !AddSystem(filesystem, FILESYSTEM_INTERFACE_VERSION)
+            || !AddSystem(filesystem, QUEUEDLOADER_INTERFACE_VERSION)) return false;
         const auto modules = LoadModule(Sys_GetFactoryThis());
         auto* materials = static_cast<IMaterialSystem*>(Sys_GetFactoryThis()(MATERIAL_SYSTEM_INTERFACE_VERSION, nullptr));
         if (!materials) return false;
@@ -131,7 +133,7 @@ bool SourceAppSystems::start() {
     impl_->group.Startup();
     if (impl_->group.GetErrorStage() != CAppSystemGroup::NONE) { stop(); return false; }
     Msg("Source appframework initialized: CAppSystemGroup (cvar, filesystem, headless materials, physics, model cache, dedicated engine API)\n");
-    Msg("Source engine app-system connected and initialized; ModInit/Host_Init pending.\n");
+    Msg("Source engine app-system connected and initialized; dedicated Host_Init follows core checks.\n");
     if (!selfTest()) { stop(); return false; }
     return true;
 }

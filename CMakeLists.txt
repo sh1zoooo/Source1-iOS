@@ -8,7 +8,7 @@ set(CMAKE_OBJCXX_STANDARD_REQUIRED ON)
 set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 include(cmake/SourceModules.cmake)
-add_library(port_runtime STATIC src/runtime/Runtime.cpp src/source/SourceBridge.cpp src/source/SourceFiles.cpp src/source/SourceAppSystems.cpp src/source/SourceEngine.cpp src/source/SourceAssets.cpp)
+add_library(port_runtime STATIC src/runtime/Runtime.cpp src/source/SourceBridge.cpp src/source/SourceFiles.cpp src/source/SourceAppSystems.cpp src/source/SourceEngine.cpp src/source/SourceAssets.cpp src/source/SourceHost.cpp)
 target_include_directories(port_runtime PUBLIC src/runtime)
 target_include_directories(port_runtime PUBLIC src/source)
 target_include_directories(port_runtime PRIVATE "${SOURCE_ROOT}/engine")
