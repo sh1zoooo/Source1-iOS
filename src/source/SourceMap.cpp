@@ -220,7 +220,7 @@ std::vector<unsigned char> fixture(bool displaced=false) {
 }
 namespace source1ios {
 struct SourceMap::Impl {
-    StudioMesh studio;float poseTime=0;bool animateFixture=false;
+    StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
@@ -277,10 +277,13 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
     std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(0,64,0);
     for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{.2f*light,.85f*light,.35f*light},{v.uv.x,v.uv.y}});}
-    impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animateFixture=mdlPath==impl_->builtinModel;
+    impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
-    Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %s\n",impl_->studio.bones.size(),impl_->animateFixture?"procedural fixture pose active":"bind pose (MDL sequences pending)");return true;
+    Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %zu embedded animation clips\n",impl_->studio.bones.size(),impl_->studio.animations.size());
+    for(size_t i=0;i<impl_->studio.animations.size();++i){const auto& clip=impl_->studio.animations[i];Msg("Source studio clip %zu: %s; %zu frames at %.2f fps\n",i,clip.name.c_str(),clip.frames.size(),clip.fps);}return true;
 }
+bool SourceMap::playAnimation(unsigned index){if(!impl_||index>=impl_->studio.animations.size())return false;impl_->animation=index;impl_->poseTime=0;impl_->animationPlaying=true;Msg("Source studio animation selected: %u\n",index);return true;}
+bool SourceMap::setAnimationPlaying(bool playing){if(!impl_||impl_->studio.animations.empty())return false;impl_->animationPlaying=playing;Msg("Source studio animation %s\n",playing?"resumed":"paused");return true;}
 bool SourceMap::load(const char* filename,const char* pathID) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
     auto file=g_pFullFileSystem->Open(filename,"rb",pathID);if(!file){Warning("Source BSP: file not found: %s\n",filename);return false;}
@@ -370,9 +373,8 @@ void SourceMap::move(float forward,float right,float seconds){
 }
 void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(seconds))return;seconds=std::min(seconds,.05f);
     if(impl_->scene)impl_->scene->environment->Simulate(seconds);
-    if(impl_->animateFixture){impl_->poseTime=std::remainder(impl_->poseTime+seconds,6.2831853f);std::vector<Quaternion> rotations;for(const auto& bone:impl_->studio.bones)rotations.push_back(bone.rotation);
-        if(rotations.size()>1)AngleQuaternion(QAngle(0,0,25*std::sin(impl_->poseTime*2)),rotations[1]);std::vector<StudioVertex> posed;
-        if(skinStudioModel(impl_->studio,rotations,posed)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);impl_->modelMesh[i].color[0]=.2f*light;impl_->modelMesh[i].color[1]=.85f*light;impl_->modelMesh[i].color[2]=.35f*light;}}}
+    if(impl_->animationPlaying){impl_->poseTime+=seconds;StudioPose pose;std::vector<StudioVertex> posed;
+        if(sampleStudioAnimation(impl_->studio,impl_->animation,impl_->poseTime,pose)&&skinStudioModel(impl_->studio,pose.rotations,posed,pose.positions)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);impl_->modelMesh[i].color[0]=.2f*light;impl_->modelMesh[i].color[1]=.85f*light;impl_->modelMesh[i].color[2]=.35f*light;}}}
 }
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
@@ -425,6 +427,11 @@ bool SourceMap::selfTest(){
     auto blend=model;for(auto& vertex:blend.triangles){vertex.influences=2;vertex.bones={0,1,0};vertex.weights={.5f,.5f,0};}std::vector<StudioVertex> blendPose;
     bool blendOK=skinStudioModel(blend,bent,blendPose);for(size_t i=0;blendOK&&i<blendPose.size();++i){Vector moved;matrix3x4_t rotation;QuaternionMatrix(bent[1],rotation);VectorRotate(model.triangles[i].position-Vector(0,0,32),rotation,moved);const auto expected=(model.triangles[i].position+moved+Vector(0,0,32))*.5f;blendOK&=(blendPose[i].position-expected).LengthSqr()<1e-5f;}
     all&=report("studio two bone weight blend",blendOK);
+    StudioPose startPose,halfPose,endPose;bool animationOK=model.animations.size()==1&&sampleStudioAnimation(model,0,0,startPose)&&sampleStudioAnimation(model,0,.375,halfPose)&&sampleStudioAnimation(model,0,2,endPose);
+    Quaternion expected;AngleQuaternion(RadianEuler(.4f,0,0),expected);bool halfway=animationOK&&std::abs(QuaternionDotProduct(halfPose.rotations[1],expected))>.9999f;
+    all&=report("studio embedded RLE clip interpolation/loop",halfway&&std::abs(QuaternionDotProduct(startPose.rotations[1],endPose.rotations[1]))>.99999f);
+    auto badAnimation=studio.mdl;auto* animHeader=reinterpret_cast<studiohdr_t*>(badAnimation.data());auto* anim=animHeader->pLocalAnimdesc(0);auto* track=reinterpret_cast<mstudioanim_t*>(reinterpret_cast<unsigned char*>(anim)+anim->animindex);auto* values=track->pRotV()->pAnimvalue(0);values->num.total=0;
+    StudioMesh rejectedAnimation;std::string animationError;all&=report("studio malformed RLE track rejected",!parseStudioModel(badAnimation,studio.vvd,studio.vtx,rejectedAnimation,animationError));
     auto fixedVvd=studio.vvd;const auto originalVvd=*reinterpret_cast<const vertexFileHeader_t*>(studio.vvd.data());
     fixedVvd.resize(sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t)+8*sizeof(mstudiovertex_t));
     auto* fixedHeader=reinterpret_cast<vertexFileHeader_t*>(fixedVvd.data());*fixedHeader=originalVvd;fixedHeader->numFixups=1;fixedHeader->fixupTableStart=sizeof(vertexFileHeader_t);fixedHeader->vertexDataStart=sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t);

@@ -28,6 +28,8 @@ int main() {
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
         check(host.executeSource("source_model_reset"),"Built-in Source studio model reload failed");
+        check(host.executeSource("source_anim_play 0"),"Embedded studio clip selection failed");
+        check(!host.executeSource("source_anim_play -1")&&!host.executeSource("source_anim_play 999")&&!host.executeSource("source_anim_play 0junk"),"Invalid animation index accepted");
         check(!host.executeSource("source_model_load models/missing.mdl"),"Missing studio companions accepted");
         check(!host.executeSource("source_bsp_load \"\""), "Empty BSP name accepted");
         check(!host.executeSource("source_bsp_load maps/../../outside.bsp"), "BSP path traversal accepted");
@@ -115,7 +117,10 @@ int main() {
         check(before.back().position[0]!=after.back().position[0], "Visible physics pose did not advance");
         check(!host.executeSource("missing_source_command"), "Unknown command accepted");
         check(!host.start(directory), "Duplicate start accepted");
+        check(host.executeSource("source_anim_pause"),"Animation pause command failed");const auto pausedModel=host.vertices(1);
         host.frame(0.016);
+        const auto pausedFrame=host.vertices(1);for(size_t i=252;i<288;++i)for(int axis=0;axis<4;++axis)check(pausedFrame[i].position[axis]==pausedModel[i].position[axis],"Paused animation advanced");
+        check(host.executeSource("source_anim_resume"),"Animation resume command failed");
         host.setActive(false);
         host.frame(1);
         check(host.frames() == 2, "Background host advanced simulation");

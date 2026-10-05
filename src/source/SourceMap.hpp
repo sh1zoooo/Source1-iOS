@@ -17,6 +17,8 @@ public:
     bool demoTerrain();
     bool loadModel(const char* filename, const char* pathID = "GAME");
     bool resetModel();
+    bool playAnimation(unsigned index);
+    bool setAnimationPlaying(bool playing);
     bool selfTest();
     void look(float yaw, float pitch);
     void frame(float seconds);

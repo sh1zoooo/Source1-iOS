@@ -145,6 +145,11 @@ bool SourceBridge::execute(const std::string& input) {
     if (!std::strcmp(args[0], "source_bsp_reset")) return map_.resetMap();
     if (!std::strcmp(args[0], "source_bsp_terrain")) return map_.demoTerrain();
     if (!std::strcmp(args[0], "source_model_reset")) return map_.resetModel();
+    if (!std::strcmp(args[0], "source_anim_pause")) return map_.setAnimationPlaying(false);
+    if (!std::strcmp(args[0], "source_anim_resume")) return map_.setAnimationPlaying(true);
+    if (!std::strcmp(args[0], "source_anim_play") && args.ArgC()==2) {
+        unsigned index=0;const std::string text=args[1];if(text.empty()||text.size()>3)return false;for(char digit:text){if(digit<'0'||digit>'9')return false;index=index*10+unsigned(digit-'0');}return map_.playAnimation(index);
+    }
     if (!std::strcmp(args[0], "source_model_load") && args.ArgC()==2) {
         const std::string path=args[1];
         if(path.empty()||path.find("..")!=std::string::npos||path.front()=='/'||path.find('\\')!=std::string::npos||path.rfind("models/",0)!=0)return false;

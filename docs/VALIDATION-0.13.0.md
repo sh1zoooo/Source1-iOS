@@ -26,3 +26,7 @@ the included checksum:
 
 Physical iPhone validation of 0.13 is pending. Version 0.12 static geometry has
 been confirmed by the user's A18/iOS 18.6.2 log and landscape screenshot.
+
+Update: the user confirmed smooth bending on the physical A18. The supplied 0.13
+log contains all 63 startup checks, completed GPU frame and landscape resize.
+Two screenshots show different bone poses. No pause/resume appears in this log.
