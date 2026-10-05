@@ -17,7 +17,10 @@ public:
     void stop();
     void log(const std::string& message);
     bool executeSource(const std::string& command) { return source_.execute(command); }
-    std::array<SourceVertex, 36> vertices(float aspect) const { return source_.vertices(aspect); }
+    std::vector<SourceVertex> vertices(float aspect) const { return source_.vertices(aspect); }
+    const SourceTexture& texture() const { return source_.texture(); }
+    void cameraLook(float yaw, float pitch) { source_.cameraLook(yaw,pitch); }
+    void cameraMove(float forward, float right, float seconds) { source_.cameraMove(forward,right,seconds); }
     bool sourceReady() const { return source_.ready(); }
     bool running() const { return running_; }
     std::uint64_t frames() const { return frames_; }

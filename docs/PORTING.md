@@ -152,3 +152,19 @@ must remain within 0.2 Source units while the dynamic body moves. This exercises
 Havana on ARM64, a prerequisite for a physical character skeleton. It is one joint,
 not a loaded or rendered character. Constraint and bodies are destroyed before
 the environment, also during repeated self-tests and host restarts.
+
+
+## BSP polygon preview (v0.8)
+
+Source CMapLoadHelper reads vertices, edges, surfedges and faces from validated
+BSP 19–21 sections. Polygon triangulation and the Metal adapter are port code,
+not the original brush renderer. Static collision uses real IVP Polysoup APIs.
+Source AngleVectors drives the camera; swept hull movement stops at obstacles.
+The original VTF library serializes/reads/decodes the preview checker texture.
+
+All file/lump bounds and polygon indices are checked before the legacy loader.
+Compressed lumps and external overlays are unsupported. Failed loads preserve
+previous mesh/collision. Dedicated host shutdown follows mesh/collision cleanup.
+The built-in geometry fixture contains polygon sections, not a playable engine
+world; full CModelLoader/CM_LoadMap, lightmaps, PVS and Source shader rendering
+remain separate steps. Simulator evidence must verify the resulting image.

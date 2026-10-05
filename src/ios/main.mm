@@ -6,15 +6,19 @@
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Output { float4 position [[position]]; float3 color; };
-struct Input { float4 position; float4 color; };
+struct Output { float4 position [[position]]; float3 color; float2 uv; };
+struct Input { float4 position; float4 color; float2 uv; };
 vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
     out.position = vertices[id].position;
     out.color = vertices[id].color.xyz;
+    out.uv = vertices[id].uv;
     return out;
 }
-fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1); }
+fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]]) {
+    constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
+    return float4(in.color,1) * texture.sample(repeatSample,in.uv);
+}
 )metal";
 
 @interface LabController : UIViewController <MTKViewDelegate> {
@@ -23,11 +27,14 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     BOOL _hasPrevious;
     BOOL _hostStarted;
     BOOL _submittedFirstFrame;
+    CGPoint _movement;
+    BOOL _movingGesture;
 }
 @property(nonatomic, strong) MTKView *metalView;
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
 @property(nonatomic, strong) id<MTLRenderPipelineState> pipeline;
 @property(nonatomic, strong) id<MTLDepthStencilState> depthState;
+@property(nonatomic, strong) id<MTLTexture> mapTexture;
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UITextField *commandInput;
 @end
@@ -123,7 +130,17 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · progress ~25%\nEngine · materials (headless) · physics\nSource self-tests: 39 PASS\nHost_Init ready · dedicated idle frames";
+    const auto& decoded = _runtime.texture();
+    MTLTextureDescriptor *textureDescriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
+        width:decoded.width height:decoded.height mipmapped:NO];
+    self.mapTexture = [device newTextureWithDescriptor:textureDescriptor];
+    if (!self.mapTexture) { [self fail:@"VTF texture upload failed"]; return; }
+    [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
+        withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
+    _runtime.log("Source VTF preview texture uploaded to Metal");
+    self.status.text = @"Source 1 iOS · progress ~35%\nEngine · materials (headless) · physics\nSource self-tests: 45 PASS\nBSP preview · left move / right look";
+    UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
+    [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)
@@ -139,6 +156,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
 - (void)pauseHost {
     self.metalView.paused = YES;
     _hasPrevious = NO;
+    _movement = CGPointZero;
     _runtime.setActive(false);
 }
 - (void)resumeHost {
@@ -154,6 +172,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     double dt = _hasPrevious ? std::chrono::duration<double>(now - _previous).count() : 0;
     _previous = now;
     _hasPrevious = YES;
+    _runtime.cameraMove(_movement.y, _movement.x, (float)dt);
     _runtime.frame(dt);
     MTLRenderPassDescriptor *pass = view.currentRenderPassDescriptor;
     id<CAMetalDrawable> drawable = view.currentDrawable;
@@ -163,9 +182,13 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     if (!command || !encoder) { [self fail:@"Cannot encode Metal frame"]; return; }
     [encoder setRenderPipelineState:self.pipeline];
     [encoder setDepthStencilState:self.depthState];
+    [encoder setFragmentTexture:self.mapTexture atIndex:0];
     float aspect = (float)(view.drawableSize.width / MAX(view.drawableSize.height, 1.0));
     auto vertices = _runtime.vertices(aspect);
-    [encoder setVertexBytes:vertices.data() length:sizeof(vertices) atIndex:0];
+    id<MTLBuffer> geometry = [view.device newBufferWithBytes:vertices.data()
+        length:vertices.size() * sizeof(source1ios::SourceVertex) options:MTLResourceStorageModeShared];
+    if (!geometry) { [encoder endEncoding]; [self fail:@"Geometry buffer creation failed"]; return; }
+    [encoder setVertexBuffer:geometry offset:0 atIndex:0];
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertices.size()];
     [encoder endEncoding];
     [command presentDrawable:drawable];
@@ -173,6 +196,22 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     if (!_submittedFirstFrame) {
         _submittedFirstFrame = YES;
         _runtime.log("First Metal frame submitted");
+    }
+}
+- (void)cameraPan:(UIPanGestureRecognizer *)gesture {
+    if (gesture.state == UIGestureRecognizerStateBegan) {
+        _movingGesture = [gesture locationInView:self.metalView].x < self.metalView.bounds.size.width / 2;
+    }
+    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
+        _movement = CGPointZero;
+        return;
+    }
+    CGPoint delta = [gesture translationInView:self.metalView];
+    if (_movingGesture) {
+        _movement = CGPointMake(MAX(-1, MIN(1, delta.x / 70)), MAX(-1, MIN(1, -delta.y / 70)));
+    } else {
+        _runtime.cameraLook((float)-delta.x * .18f, (float)delta.y * .18f);
+        [gesture setTranslation:CGPointZero inView:self.metalView];
     }
 }
 - (void)runCommand:(UIButton *)sender {

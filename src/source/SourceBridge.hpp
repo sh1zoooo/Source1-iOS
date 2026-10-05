@@ -4,9 +4,10 @@
 #include "SourceFiles.hpp"
 #include "SourceAppSystems.hpp"
 #include "SourceHost.hpp"
+#include "SourceMap.hpp"
+#include "RenderTypes.hpp"
 
 namespace source1ios {
-struct SourceVertex { float position[4]; float color[4]; };
 class SourceBridge final {
 public:
     using Logger = void (*)(void*, const char*);
@@ -15,7 +16,10 @@ public:
     bool selfTest();
     bool execute(const std::string& command);
     void frame(double seconds);
-    std::array<SourceVertex, 36> vertices(float aspect) const;
+    std::vector<SourceVertex> vertices(float aspect) const;
+    const SourceTexture& texture() const { return map_.texture(); }
+    void cameraLook(float yaw, float pitch) { map_.look(yaw, pitch); }
+    void cameraMove(float forward, float right, float seconds) { map_.move(forward, right, seconds); }
     bool ready() const { return ready_; }
 private:
     bool ready_ = false;
@@ -23,6 +27,7 @@ private:
     SourceAppSystems systems_;
     SourceFiles files_;
     SourceHost host_;
+    SourceMap map_;
     double elapsed_ = 0;
 };
 }

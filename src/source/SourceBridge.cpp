@@ -32,7 +32,7 @@ SpewRetval_t sourceSpew(SpewType_t type, const char* message) {
 }
 void statusCommand(const CCommand&) {
     Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib, appframework, tier2, tier3, bitmap, engine (dedicated), materialsystem/shaderapiempty, VTF, datacache, studiorender, vphysics/IVP.\n");
-    Msg("Original Host_Init and dedicated idle frames are active. Game DLL, maps and graphics remain pending.\n");
+    Msg("Original Host_Init and idle frames active; BSP polygon preview uses a Metal adapter. Full engine world, Source shaders and game DLL remain pending.\n");
 }
 ConCommand status("source_status", statusCommand, "Report the actual port scope");
 void logCheck(const char* name, bool passed) {
@@ -71,12 +71,14 @@ bool SourceBridge::start(Logger output, void* context, const std::filesystem::pa
     if (!sourceEngineSelfTest()) { stop(); return false; }
     if (!sourceAssetsSelfTest()) { stop(); return false; }
     if (!host_.start(root)) { stop(); return false; }
+    if (!map_.start(root)) { stop(); return false; }
     execute("source_status");
     Msg("Source core initialized: tier0/tier1/mathlib/vstdlib\n");
     return true;
 }
 void SourceBridge::stop() {
     if (!ownsCore_) return;
+    map_.stop();
     host_.stop();
     files_.stop();
     systems_.stop();
@@ -138,7 +140,14 @@ bool SourceBridge::execute(const std::string& input) {
     if (!ready_ || input.size() > 255) return false;
     CCommand args;
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
-    if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest() && host_.selfTest();
+    if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest() && host_.selfTest() && map_.selfTest();
+    if (!std::strcmp(args[0], "source_bsp_selftest")) return map_.selfTest();
+    if (!std::strcmp(args[0], "source_camera_reset")) { map_.resetCamera(); return true; }
+    if (!std::strcmp(args[0], "source_bsp_load") && args.ArgC()==2) {
+        const std::string path=args[1];
+        if (path.empty() || path.find("..")!=std::string::npos || path.front()=='/' || path.find('\\')!=std::string::npos || path.rfind("maps/",0)!=0) return false;
+        return map_.load(path.c_str());
+    }
     if (!std::strcmp(args[0], "source_host_selftest")) return host_.selfTest();
     if (!std::strcmp(args[0], "source_assets_selftest")) return sourceAssetsSelfTest();
     if (!std::strcmp(args[0], "source_engine_selftest")) return sourceEngineSelfTest();
@@ -166,27 +175,7 @@ void SourceBridge::frame(double seconds) {
     host_.frame(float(std::min(seconds, 0.1)));
     console->ProcessQueuedMaterialThreadConVarSets();
 }
-std::array<SourceVertex, 36> SourceBridge::vertices(float aspect) const {
-    std::array<SourceVertex, 36> output{};
-    if (!ready_) return output;
-    // Geometry and projection are ours; rotation and transforms run real Source mathlib.
-    const Vector points[] = { {-1,-1,-1}, {1,-1,-1}, {1,1,-1}, {-1,1,-1},
-        {-1,-1,1}, {1,-1,1}, {1,1,1}, {-1,1,1} };
-    const int indices[] = {0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,
-        3,7,6,3,6,2,0,4,7,0,7,3,1,2,6,1,6,5};
-    const float colors[6][3] = {{1,.3f,.1f},{.1f,.7f,1},{.4f,1,.5f},
-        {.9f,.8f,.1f},{.7f,.3f,1},{.1f,1,.9f}};
-    matrix3x4_t transform;
-    AngleMatrix(QAngle(20, float(std::fmod(elapsed_ * rotationSpeed.GetFloat(), 360)), 15), transform);
-    const float safeAspect = std::max(aspect, 0.01f);
-    const float scale = std::min(safeAspect, 1.0f);
-    for (size_t i = 0; i < output.size(); ++i) {
-        Vector p;
-        VectorTransform(points[indices[i]], transform, p);
-        const float depth = p.z + 6;
-        output[i] = {{p.x * 2.3f * scale / safeAspect, p.y * 2.3f * scale, depth - 1, depth},
-            {colors[i/6][0], colors[i/6][1], colors[i/6][2], 1}};
-    }
-    return output;
+std::vector<SourceVertex> SourceBridge::vertices(float aspect) const {
+    return ready_ ? map_.vertices(aspect) : std::vector<SourceVertex>{};
 }
 }

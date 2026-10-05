@@ -19,6 +19,10 @@ int main() {
         check(host.frames() == 0, "Stopped host accepted a frame");
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
+        check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
+        check(!host.executeSource("source_bsp_load \"\""), "Empty BSP name accepted");
+        check(!host.executeSource("source_bsp_load maps/../../outside.bsp"), "BSP path traversal accepted");
+        check(!host.executeSource("source_bsp_load maps/missing.bsp"), "Missing map accepted");
         check(host.executeSource("source_host_selftest"), "Original Host_Init / idle frame contracts failed");
         check(host.executeSource("source_engine_selftest"), "Engine subsystem contracts failed");
         check(host.executeSource("source_assets_selftest"), "Assets/physics contracts failed");
@@ -27,10 +31,15 @@ int main() {
         check(host.executeSource("source_fs_selftest"), "Original filesystem contracts failed");
         check(host.executeSource("source_selftest"), "Source contracts failed");
         check(host.executeSource("ios_rotation_speed 0"), "Source ConVar command failed");
+        const auto cameraBefore=host.vertices(1);
+        host.cameraLook(10,0);
+        const auto cameraAfter=host.vertices(1);
+        check(!cameraBefore.empty() && cameraBefore[0].position[0]!=cameraAfter[0].position[0], "Camera look did not alter the view");
+        check(host.executeSource("source_camera_reset"), "Camera reset failed");
         const auto before = host.vertices(1);
         host.frame(0.01);
         const auto after = host.vertices(1);
-        check(before[0].position[0] == after[0].position[0], "Rotation ignored Source ConVar");
+        check(before[0].position[0] == after[0].position[0], "Stationary camera changed without input");
         check(!host.executeSource("missing_source_command"), "Unknown command accepted");
         check(!host.start(directory), "Duplicate start accepted");
         host.frame(0.016);
