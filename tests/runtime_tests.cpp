@@ -20,6 +20,7 @@ int main() {
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
         check(host.executeSource("source_engine_selftest"), "Engine subsystem contracts failed");
+        check(host.executeSource("source_assets_selftest"), "Assets/physics contracts failed");
         check(!host.executeSource("map test"), "Uninitialized engine command exposed");
         check(host.executeSource("source_app_selftest"), "Appframework contracts failed");
         check(host.executeSource("source_fs_selftest"), "Original filesystem contracts failed");

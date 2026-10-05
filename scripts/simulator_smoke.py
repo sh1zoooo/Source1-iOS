@@ -27,7 +27,7 @@ try:
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""
-        if "First Metal frame submitted" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text:
+        if "First Metal frame submitted" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text:
             if "FAIL" in text:
                 raise RuntimeError(f"Source core self-test failed:\n{text}")
             Path("artifacts").mkdir(exist_ok=True)

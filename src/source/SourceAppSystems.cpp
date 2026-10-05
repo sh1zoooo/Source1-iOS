@@ -8,10 +8,24 @@
 #include "tier0/dbg.h"
 #include "tier2/tier2.h"
 #include "vstdlib/cvar.h"
+#include "materialsystem/imaterialsystem.h"
+#include "datacache/idatacache.h"
+#include "datacache/imdlcache.h"
+#include "istudiorender.h"
+#include "vphysics_interface.h"
+#include "engine_hlds_api.h"
+#include "idedicatedexports.h"
 
 extern CreateInterfaceFn SourceFileSystem_GetFactory();
 
 namespace {
+// Native platform front-end required by the real dedicated engine API.
+// UIKit owns the loop; ModInit/RunFrame are not called at this stage.
+class IOSDedicatedExports final : public CBaseAppSystem<IDedicatedExports> {
+public:
+    void Sys_Printf(char* text) override { Msg("%s", text); }
+    void RunServer() override { Warning("Source iOS: engine server loop is pending Host_Init\n"); }
+};
 class CoreGroup final : public CAppSystemGroup {
 public:
     bool Create() override {
@@ -19,8 +33,19 @@ public:
         // actual cvar and stdio interfaces in its dependency/lifetime group.
         const auto cvar = LoadModule(VStdLib_GetICVarFactory());
         const auto filesystem = LoadModule(SourceFileSystem_GetFactory());
-        return AddSystem(cvar, CVAR_INTERFACE_VERSION)
-            && AddSystem(filesystem, FILESYSTEM_INTERFACE_VERSION);
+        if (!AddSystem(cvar, CVAR_INTERFACE_VERSION)
+            || !AddSystem(filesystem, FILESYSTEM_INTERFACE_VERSION)) return false;
+        const auto modules = LoadModule(Sys_GetFactoryThis());
+        auto* materials = static_cast<IMaterialSystem*>(Sys_GetFactoryThis()(MATERIAL_SYSTEM_INTERFACE_VERSION, nullptr));
+        if (!materials) return false;
+        materials->SetShaderAPI("shaderapiempty");
+        AddSystem(&exports_, VENGINE_DEDICATEDEXPORTS_API_VERSION);
+        return AddSystem(modules, MATERIAL_SYSTEM_INTERFACE_VERSION)
+            && AddSystem(modules, VPHYSICS_INTERFACE_VERSION)
+            && AddSystem(modules, DATACACHE_INTERFACE_VERSION)
+            && AddSystem(modules, STUDIO_RENDER_INTERFACE_VERSION)
+            && AddSystem(modules, MDLCACHE_INTERFACE_VERSION)
+            && AddSystem(modules, VENGINE_HLDS_API_VERSION);
     }
     bool PreInit() override {
         auto factory = GetFactory();
@@ -35,6 +60,7 @@ public:
     void* lookup(const char* name) { return FindSystem(name); }
     CreateInterfaceFn factory() const { return GetFactory(); }
 private:
+    IOSDedicatedExports exports_;
     void disconnectTier2() {
         if (tier2Connected_) DisconnectTier2Libraries();
         tier2Connected_ = false;
@@ -104,7 +130,8 @@ bool SourceAppSystems::start() {
     impl_ = std::make_unique<Impl>();
     impl_->group.Startup();
     if (impl_->group.GetErrorStage() != CAppSystemGroup::NONE) { stop(); return false; }
-    Msg("Source appframework initialized: CAppSystemGroup (static cvar + filesystem)\n");
+    Msg("Source appframework initialized: CAppSystemGroup (cvar, filesystem, headless materials, physics, model cache, dedicated engine API)\n");
+    Msg("Source engine app-system connected and initialized; ModInit/Host_Init pending.\n");
     if (!selfTest()) { stop(); return false; }
     return true;
 }

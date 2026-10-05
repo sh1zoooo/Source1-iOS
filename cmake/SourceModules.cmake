@@ -34,7 +34,7 @@ else()
   endif()
   target_compile_definitions(source_settings INTERFACE LINUX=1 _LINUX=1 PLATFORM_GLIBC=1 _DLL_EXT=.so)
 endif()
-foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem appframework tier3 bitmap engine)
+foreach(module IN ITEMS tier0 tier1 mathlib vstdlib filesystem vpklib tier2 appframework engine tier3 bitmap datacache studiorender vtf materialsystem shaderlib shaderapiempty vphysics ivp_physics ivp_compactbuilder havana_constraints hk_base hk_math)
   string(JSON count LENGTH "${SOURCE_MANIFEST}" "${module}")
   math(EXPR last "${count} - 1")
   set(sources)
@@ -43,6 +43,7 @@ foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem appf
     list(APPEND sources "${SOURCE_ROOT}/${relative}")
   endforeach()
   add_library(source_${module} STATIC ${sources})
+  set_target_properties(source_${module} PROPERTIES CXX_STANDARD 14)
   target_link_libraries(source_${module} PUBLIC source_settings)
   if(module STREQUAL "tier0")
     target_compile_definitions(source_tier0 PRIVATE TIER0_DLL_EXPORT=1)
@@ -53,9 +54,42 @@ foreach(module IN ITEMS tier0 tier1 mathlib vstdlib tier2 vpklib filesystem appf
     target_compile_definitions(source_engine PRIVATE DEDICATED=1 SWDS=1 NO_STEAM=1 ENGINE_DLL=1
       VERSION_SAFE_STEAM_API_INTERFACES USE_BREAKPAD_HANDLER USE_CONVARS VOICE_OVER_IP __USEA3D _ADD_EAX_)
     target_include_directories(source_engine PRIVATE "${SOURCE_ROOT}/engine" "${SOURCE_ROOT}/engine/audio" "${SOURCE_ROOT}/public/engine/audio")
+  elseif(module STREQUAL "materialsystem")
+    target_compile_definitions(source_materialsystem PRIVATE DEDICATED=1 DEFINE_MATERIALSYSTEM_INTERFACE MATERIALSYSTEM_EXPORTS COM_GetModDirectory=PortMaterialModDirectory)
+  elseif(module STREQUAL "shaderlib")
+    target_compile_definitions(source_shaderlib PRIVATE FAST_MATERIALVAR_ACCESS=1)
+  elseif(module STREQUAL "shaderapiempty")
+    target_compile_definitions(source_shaderapiempty PRIVATE SHADER_DLL_EXPORT PROTECTED_THINGS_ENABLE g_pShaderUtil=PortEmptyShaderUtil)
+  elseif(module STREQUAL "studiorender")
+    target_compile_definitions(source_studiorender PRIVATE STUDIORENDER_EXPORTS)
+  elseif(module STREQUAL "vphysics")
+    target_compile_definitions(source_vphysics PRIVATE VPHYSICS_EXPORTS HAVANA_CONSTRAINTS HAVOK_MOPP IVP_VERSION_SDK physcollision=PortPhysicsCollision)
+  elseif(module MATCHES "^(ivp_|havana_|hk_)")
+    target_compile_definitions(source_${module} PRIVATE VPHYSICS_EXPORTS HAVANA_CONSTRAINTS HAVOK_MOPP IVP_VERSION_SDK)
   elseif(module STREQUAL "bitmap")
     target_include_directories(source_bitmap PRIVATE "${SOURCE_ROOT}/thirdparty/stb")
   endif()
+  target_include_directories(source_${module} PRIVATE
+    "${SOURCE_ROOT}/materialsystem" "${SOURCE_ROOT}/materialsystem/shaderlib"
+    "${SOURCE_ROOT}/datacache" "${SOURCE_ROOT}/studiorender" "${SOURCE_ROOT}/vtf"
+    "${SOURCE_ROOT}/vphysics" "${SOURCE_ROOT}/ivp/ivp_intern"
+    "${SOURCE_ROOT}/ivp/ivp_collision" "${SOURCE_ROOT}/ivp/ivp_physics"
+    "${SOURCE_ROOT}/ivp/ivp_surface_manager" "${SOURCE_ROOT}/ivp/ivp_utility"
+    "${SOURCE_ROOT}/ivp/ivp_controller" "${SOURCE_ROOT}/ivp/ivp_compact_builder"
+    "${SOURCE_ROOT}/ivp/havana" "${SOURCE_ROOT}/ivp/havana/havok"
+    "${SOURCE_ROOT}/ivp/havana"
+    "${SOURCE_ROOT}/ivp/havana/havok"
+    "${SOURCE_ROOT}/ivp/havana/havok/hk_base"
+    "${SOURCE_ROOT}/ivp/havana/havok/hk_math"
+    "${SOURCE_ROOT}/ivp/ivp_collision"
+    "${SOURCE_ROOT}/ivp/ivp_compact_builder"
+    "${SOURCE_ROOT}/ivp/ivp_compact_builder/havok"
+    "${SOURCE_ROOT}/ivp/ivp_controller"
+    "${SOURCE_ROOT}/ivp/ivp_intern"
+    "${SOURCE_ROOT}/ivp/ivp_physics"
+    "${SOURCE_ROOT}/ivp/ivp_physics/havok"
+    "${SOURCE_ROOT}/ivp/ivp_surface_manager"
+    "${SOURCE_ROOT}/ivp/ivp_utility")
   if(module STREQUAL "appframework")
     target_compile_definitions(source_appframework PRIVATE DEDICATED=1 NO_STEAM=1)
   endif()
@@ -66,9 +100,11 @@ add_library(source_offline STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/source/SteamO
 target_link_libraries(source_offline PUBLIC source_settings)
 add_library(source_modules INTERFACE)
 if(APPLE)
-  target_link_options(source_modules INTERFACE "LINKER:-force_load,$<TARGET_FILE:source_engine>")
-  target_link_libraries(source_modules INTERFACE source_engine source_offline source_tier3 source_bitmap source_appframework source_filesystem source_vpklib source_tier2 source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
+  foreach(module IN ITEMS engine materialsystem shaderapiempty datacache studiorender vphysics)
+    target_link_options(source_modules INTERFACE "LINKER:-force_load,$<TARGET_FILE:source_${module}>")
+  endforeach()
+  target_link_libraries(source_modules INTERFACE source_engine source_materialsystem source_shaderapiempty source_datacache source_studiorender source_vphysics source_shaderlib source_vtf source_ivp_physics source_ivp_compactbuilder source_havana_constraints source_hk_base source_hk_math source_offline source_tier3 source_bitmap source_appframework source_filesystem source_vpklib source_tier2 source_vstdlib source_tier1 source_mathlib source_tier0 iconv)
 else()
   target_link_libraries(source_modules INTERFACE
-    "$<LINK_GROUP:RESCAN,$<LINK_LIBRARY:WHOLE_ARCHIVE,source_engine>,source_offline,source_tier3,source_bitmap,source_appframework,source_filesystem,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
+    "$<LINK_GROUP:RESCAN,$<LINK_LIBRARY:WHOLE_ARCHIVE,source_engine,source_materialsystem,source_shaderapiempty,source_datacache,source_studiorender,source_vphysics>,source_shaderlib,source_vtf,source_ivp_physics,source_ivp_compactbuilder,source_havana_constraints,source_hk_base,source_hk_math,source_offline,source_tier3,source_bitmap,source_appframework,source_filesystem,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
 endif()
