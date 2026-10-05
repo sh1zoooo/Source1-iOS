@@ -32,7 +32,7 @@ SpewRetval_t sourceSpew(SpewType_t type, const char* message) {
 }
 void statusCommand(const CCommand&) {
     Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib, appframework, tier2, tier3, bitmap, engine (dedicated), materialsystem/shaderapiempty, VTF, datacache, studiorender, vphysics/IVP.\n");
-    Msg("Original Host_Init and idle frames active; BSP polygon preview uses a Metal adapter. Full engine world, Source shaders and game DLL remain pending.\n");
+    Msg("Original Host_Init and idle frames active; BSP polygon preview uses a Metal adapter. Built-in engine brush world loaded; original Source graphical shaders and game DLL remain pending.\n");
 }
 ConCommand status("source_status", statusCommand, "Report the actual port scope");
 void logCheck(const char* name, bool passed) {
@@ -173,6 +173,7 @@ void SourceBridge::frame(double seconds) {
     if (!ready_ || !std::isfinite(seconds) || seconds < 0) return;
     elapsed_ += std::min(seconds, 0.1);
     host_.frame(float(std::min(seconds, 0.1)));
+    map_.frame(float(std::min(seconds, 0.1)));
     console->ProcessQueuedMaterialThreadConVarSets();
 }
 std::vector<SourceVertex> SourceBridge::vertices(float aspect) const {

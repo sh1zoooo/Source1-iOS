@@ -15,6 +15,7 @@ public:
     bool load(const char* filename, const char* pathID = "GAME");
     bool selfTest();
     void look(float yaw, float pitch);
+    void frame(float seconds);
     void move(float forward, float right, float seconds);
     void resetCamera();
     std::vector<SourceVertex> vertices(float aspect) const;

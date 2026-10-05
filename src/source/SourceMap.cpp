@@ -6,6 +6,7 @@
 #include "tier2/tier2.h"
 #include "tier3/tier3.h"
 #include "vphysics_interface.h"
+#include "vphysics/constraints.h"
 #include "gametrace.h"
 #include "cmodel_engine.h"
 #include "gl_model_private.h"
@@ -29,6 +30,33 @@ struct CollisionDelete {
     void operator()(CPhysCollide* p) const { if(p && g_pPhysicsCollision) g_pPhysicsCollision->DestroyCollide(p); }
 };
 using Collision = std::shared_ptr<CPhysCollide>;
+struct PhysicsScene {
+    IPhysics* physics=nullptr;IPhysicsEnvironment* environment=nullptr;
+    IPhysicsObject* level=nullptr;IPhysicsObject* anchor=nullptr;IPhysicsObject* body=nullptr;
+    IPhysicsConstraint* joint=nullptr;Collision levelShape,bodyShape;
+    ~PhysicsScene(){
+        if(environment){if(joint)environment->DestroyConstraint(joint);if(body)environment->DestroyObject(body);
+            if(anchor)environment->DestroyObject(anchor);if(level)environment->DestroyObject(level);physics->DestroyEnvironment(environment);}
+    }
+};
+std::unique_ptr<PhysicsScene> physicsScene(Collision shape){
+    auto scene=std::make_unique<PhysicsScene>();scene->levelShape=std::move(shape);
+    scene->physics=static_cast<IPhysics*>(Sys_GetFactoryThis()(VPHYSICS_INTERFACE_VERSION,nullptr));
+    scene->environment=scene->physics?scene->physics->CreateEnvironment():nullptr;if(!scene->environment)return nullptr;
+    scene->environment->SetGravity(Vector(0,0,-600));
+    objectparams_t params{nullptr,5,1,0,0,.05f,"Source iOS scene",nullptr,0,1,true};
+    scene->level=scene->environment->CreatePolyObjectStatic(scene->levelShape.get(),0,Vector(0,0,0),QAngle(0,0,0),&params);
+    scene->bodyShape=Collision(g_pPhysicsCollision->BBoxToCollide(Vector(-8,-8,-8),Vector(8,8,8)),CollisionDelete{});
+    if(!scene->level || !scene->bodyShape)return nullptr;
+    scene->anchor=scene->environment->CreatePolyObjectStatic(scene->bodyShape.get(),0,Vector(-32,64,144),QAngle(0,0,0),&params);
+    scene->body=scene->environment->CreatePolyObject(scene->bodyShape.get(),0,Vector(-32,64,96),QAngle(0,0,0),&params);
+    if(!scene->anchor || !scene->body)return nullptr;
+    constraint_ragdollparams_t joint;joint.Defaults();
+    MatrixSetColumn(Vector(0,0,-24),3,joint.constraintToReference);MatrixSetColumn(Vector(0,0,24),3,joint.constraintToAttached);
+    for(auto& axis:joint.axes)axis.SetAxisFriction(-45,45,0);
+    scene->joint=scene->environment->CreateRagdollConstraint(scene->anchor,scene->body,nullptr,joint);if(!scene->joint)return nullptr;
+    scene->body->Wake();scene->body->ApplyForceCenter(Vector(3500,0,0));return scene;
+}
 // Only trusted, bounded sections reach the legacy Source loader. Validate raw
 // disk ranges before it allocates buffers; unsupported compressed lumps fail.
 bool headerValid(const dheader_t& h, size_t size) {
@@ -102,7 +130,7 @@ std::vector<unsigned char> fixture() {
 }
 namespace source1ios {
 struct SourceMap::Impl {
-    std::vector<MeshPoint> mesh;Collision collision, fixtureCollision;
+    std::vector<MeshPoint> mesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::string builtin;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
@@ -110,7 +138,8 @@ SourceMap::~SourceMap(){stop();}
 bool SourceMap::start(const std::filesystem::path& root) {
     if(impl_)return false;
     Msg("Source BSP startup: creating texture\n");
-    impl_=std::make_unique<Impl>();impl_->builtin=(root/"selftest"/"ios_geometry.bsp").string();
+    impl_=std::make_unique<Impl>();impl_->builtin="__source1ios_geometry.bsp";
+    g_pFullFileSystem->AddSearchPath((root/"selftest").c_str(),"PORT_BSP_PREVIEW",PATH_ADD_TO_HEAD);
     // Serialize a genuine VTF, read it through Source filesystem, then decode
     // the texture for the native Metal adapter. No shaderapiempty drawing implied.
     using VTF=std::unique_ptr<IVTFTexture,decltype(&DestroyVTFTexture)>;
@@ -121,15 +150,15 @@ bool SourceMap::start(const std::filesystem::path& root) {
         for(int y=0;y<h;++y)for(int x=0;x<w;++x){auto* pixel=pixels+(y*w+x)*4;const bool alternate=((x*64/w)/8+(y*64/h)/8)%2;pixel[0]=pixel[1]=pixel[2]=alternate?210:120;pixel[3]=255;}}
     Msg("Source BSP startup: serializing VTF\n");
     CUtlBuffer encoded;if(!source->Serialize(encoded)){stop();return false;}
-    const auto texturePath=(root/"selftest"/"ios_checker.vtf").string();auto textureFile=g_pFullFileSystem->Open(texturePath.c_str(),"wb");
+    const std::string texturePath="__source1ios_checker.vtf";auto textureFile=g_pFullFileSystem->Open(texturePath.c_str(),"wb","PORT_BSP_PREVIEW");
     bool textureOK=textureFile && g_pFullFileSystem->Write(encoded.Base(),encoded.TellPut(),textureFile)==encoded.TellPut();if(textureFile)g_pFullFileSystem->Close(textureFile);
     Msg("Source BSP startup: reading VTF from filesystem\n");
-    CUtlBuffer disk;if(!textureOK || !g_pFullFileSystem->ReadFile(texturePath.c_str(),nullptr,disk) || !decoded->Unserialize(disk)){stop();return false;}
+    CUtlBuffer disk;if(!textureOK || !g_pFullFileSystem->ReadFile(texturePath.c_str(),"PORT_BSP_PREVIEW",disk) || !decoded->Unserialize(disk)){stop();return false;}
     Msg("Source BSP startup: converting VTF\n");
     decoded->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);impl_->texture.width=decoded->Width();impl_->texture.height=decoded->Height();
     impl_->texture.pixels.assign(decoded->ImageData(0,0,0),decoded->ImageData(0,0,0)+64*64*4);
     Msg("Source BSP startup: generating BSP\n");
-    const auto bytes=fixture();auto file=g_pFullFileSystem->Open(impl_->builtin.c_str(),"wb");
+    const auto bytes=fixture();auto file=g_pFullFileSystem->Open(impl_->builtin.c_str(),"wb","PORT_BSP_PREVIEW");
     bool ok=file && g_pFullFileSystem->Write(bytes.data(),bytes.size(),file)==int(bytes.size());if(file)g_pFullFileSystem->Close(file);
     if(!ok || !load(impl_->builtin.c_str(),nullptr)){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
@@ -178,6 +207,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     auto* soup=g_pPhysicsCollision->PolysoupCreate();if(!soup)return false;
     for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
     Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
+    auto live=physicsScene(collision);if(!live)return false;
+    impl_->scene=std::move(live);
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
@@ -193,11 +224,20 @@ void SourceMap::move(float forward,float right,float seconds){
     else g_pPhysicsCollision->TraceBox(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8),impl_->collision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
     if(!trace.startsolid)impl_->camera+=delta*std::max(0.f,trace.fraction-.001f);
 }
+void SourceMap::frame(float seconds){if(impl_ && impl_->scene && seconds>0 && std::isfinite(seconds))impl_->scene->environment->Simulate(std::min(seconds,.05f));}
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
-    for(const auto& v:impl_->mesh){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
-        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1},{v.uv[0],v.uv[1]}});}return out;
+    auto append=[&](const MeshPoint& v){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
+        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1},{v.uv[0],v.uv[1]}});};
+    for(const auto& v:impl_->mesh)append(v);
+    if(impl_->scene){
+        const Vector corners[]={ {-8,-8,-8},{8,-8,-8},{8,8,-8},{-8,8,-8},{-8,-8,8},{8,-8,8},{8,8,8},{-8,8,8} };
+        const int indices[]={0,2,1,0,3,2,4,5,6,4,6,7,0,1,5,0,5,4,3,7,6,3,6,2,0,4,7,0,7,3,1,2,6,1,6,5};
+        for(auto* object:{impl_->scene->anchor,impl_->scene->body}){matrix3x4_t pose;object->GetPositionMatrix(&pose);
+            for(int index:indices){Vector point;VectorTransform(corners[index],pose,point);append({point,{1,.8f,.2f},{float(index%2),float((index/2)%2)}});}}
+    }
+    return out;
 }
 const SourceTexture& SourceMap::texture() const { static const SourceTexture empty; return impl_?impl_->texture:empty; }
 bool SourceMap::selfTest(){
@@ -214,6 +254,10 @@ bool SourceMap::selfTest(){
     all&=report("engine CM floor trace",trace.fraction>.49f && trace.fraction<.51f);
     all&=report("engine CM point contents",CM_PointContents(Vector(-190,-160,80),0)==CONTENTS_EMPTY && (CM_PointContents(Vector(-190,-160,-8),0)&CONTENTS_SOLID));
     all&=report("engine worldspawn entities",CM_EntityString() && std::strstr(CM_EntityString(),"worldspawn"));
+    auto testScene=physicsScene(impl_->fixtureCollision);
+    if(!testScene)return report("live physics body pose advances",false);
+    Vector oldPosition,newPosition;testScene->body->GetPosition(&oldPosition,nullptr);testScene->environment->Simulate(.02f);testScene->body->GetPosition(&newPosition,nullptr);
+    all&=report("live physics body pose advances",newPosition.IsValid() && (newPosition-oldPosition).Length()>1e-5f);
     auto before=vertices(1);const auto saved=impl_->angles;look(10,0);auto after=vertices(1);impl_->angles=saved;
     all&=report("Source camera projection",before.size()==after.size()&&!before.empty()&&before[0].position[0]!=after[0].position[0]);return all;
 }
