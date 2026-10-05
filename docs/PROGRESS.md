@@ -7,7 +7,7 @@
 адаптированными материалами/рендерингом и камерой на iPhone. Готовая CS:GO не входит
 в этот критерий.
 
-Подключены 23 оригинальные библиотеки (539 единиц компиляции), filesystem/VPK,
+Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
 Оригинальные Host_Init и Host_RunFrame работают с -nogamedll, без игровой DLL.
 Пользовательский лог iPhone 16e подтверждает 39 проверок и два pause/resume.
@@ -27,6 +27,7 @@ GPU A18, смену ориентации и два pause/resume на iPhone 16e,
 
 Остаются графический shaderapi/materialsystem Source, настоящие материалы карт,
 PVS, lightmaps, графический displacement LOD, skinning/анимация studio-моделей,
-аудио и игровая DLL.
+аудио и игровая DLL. Версия 0.12.0/build 15 прошла Linux Debug, iPhone ARM64 и
+симулятор: 121 PASS, завершённый GPU-кадр, видимая статическая модель и pause/resume.
 Пользовательские BSP пока открываются только как ограниченный polygon preview;
 engine brush-мир загружается только из нашей проверенной встроенной карты.

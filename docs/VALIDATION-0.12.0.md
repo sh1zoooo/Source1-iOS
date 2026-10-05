@@ -23,4 +23,17 @@ animation, flex, material selection, VMT/VTF binding, PHY collision or original
 graphical studiorender. A compatible imported model is placed at a fixed point
 inside the test room. Version 48 and non-DX90 companion variants are rejected.
 
-GitHub Actions and physical iPhone validation: pending.
+## GitHub Actions evidence
+
+Run `37307565789`, code `74bc248d7b3a5da3dcb860f4998c57e6e156df59`:
+Linux Debug runtime contracts, iPhone ARM64 build and simulator build all passed.
+The simulator log contains exactly 121 PASS entries (two 60-check sets plus the
+runtime contract), no FAIL, completed Metal GPU frame, terrain load and pause/resume.
+The screenshot was visually inspected: the enlarged green studio fixture is fully
+visible in the checker-textured room beside both live physics bodies.
+
+Artifact `11344089914` was downloaded and inspected. Info.plist is 0.12.0/build 15;
+the IPA SHA256 agrees with `SHA256SUMS.txt`:
+`92dcc389ac30a8bd1018f657533160d5da4cb0c843f56de10690ba8bda9aa3ab`.
+
+Physical iPhone validation: pending; the user is currently unavailable to test.
