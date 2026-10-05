@@ -42,3 +42,8 @@ PVS, lightmaps, графический displacement LOD, полный evaluator 
 симулятор: 121 PASS, завершённый GPU-кадр, видимая статическая модель и pause/resume.
 Пользовательские BSP пока открываются только как ограниченный polygon preview;
 engine brush-мир загружается только из нашей проверенной встроенной карты.
+
+Версия 0.15.0/build 18 прошла Linux Debug и ARM64 iPhone/simulator builds;
+симулятор дал 135 PASS, texture upload, GPU completion и pause/resume.
+Артефакт и скриншот проверены отдельно. [Отчёт 0.15](VALIDATION-0.15.0.md).
+На физическом iPhone эта новая версия пока не подтверждена.

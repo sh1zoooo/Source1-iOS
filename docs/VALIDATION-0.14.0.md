@@ -19,4 +19,8 @@ skipping is not a claim that they play. Root motion is not extracted.
 
 Local Debug runtime passed. Checks cover interpolation at a known half-frame,
 loop identity, malformed zero-length RLE rejection, clip selection, pause/resume,
-finite skinned geometry and restart. 65 startup checks expected; Actions pending.
+finite skinned geometry and restart. 65 startup checks were added at this stage.
+Its Actions run was superseded by 0.15 before simulator completion, not counted
+as a successful smoke run. Combined 0.15 run 37347804152 subsequently passed
+Linux runtime contracts, device/simulator builds and 135 PASS with GPU completion
+and background/foreground checks, including the animation tests introduced here.
