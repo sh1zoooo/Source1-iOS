@@ -27,6 +27,8 @@ int main() {
         check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
+        check(host.executeSource("source_model_reset"),"Built-in Source studio model reload failed");
+        check(!host.executeSource("source_model_load models/missing.mdl"),"Missing studio companions accepted");
         check(!host.executeSource("source_bsp_load \"\""), "Empty BSP name accepted");
         check(!host.executeSource("source_bsp_load maps/../../outside.bsp"), "BSP path traversal accepted");
         check(!host.executeSource("source_bsp_load maps/missing.bsp"), "Missing map accepted");
@@ -60,6 +62,13 @@ int main() {
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         check(host.executeSource("source_bsp_load maps/imported.bsp"), "Valid user BSP preview failed");
         const auto imported=host.vertices(1);
+        const auto models=directory/"Source1IOS/game/models";
+        std::filesystem::copy_file(models/"__source1ios_static_probe.mdl",models/"bad.mdl");
+        std::filesystem::copy_file(models/"__source1ios_static_probe.vvd",models/"bad.vvd");
+        std::filesystem::copy_file(models/"__source1ios_static_probe.dx90.vtx",models/"bad.dx90.vtx");
+        {std::fstream bad(models/"bad.vvd",std::ios::in|std::ios::out|std::ios::binary);bad.seekg(8);int checksum=0;bad.read(reinterpret_cast<char*>(&checksum),4);checksum^=1;bad.seekp(8);bad.write(reinterpret_cast<const char*>(&checksum),4);}
+        check(!host.executeSource("source_model_load models/bad.mdl"),"Mismatched studio companions accepted");
+        check(host.vertices(1).size()==imported.size(),"Rejected studio model replaced visible geometry");
         std::ifstream bspFile(maps/"imported.bsp",std::ios::binary);
         std::vector<unsigned char> bsp((std::istreambuf_iterator<char>(bspFile)),{});
         auto put32=[&](size_t offset,uint32_t value){std::memcpy(bsp.data()+offset,&value,4);};

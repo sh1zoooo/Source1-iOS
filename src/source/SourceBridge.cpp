@@ -144,6 +144,12 @@ bool SourceBridge::execute(const std::string& input) {
     if (!std::strcmp(args[0], "source_bsp_selftest")) return map_.selfTest();
     if (!std::strcmp(args[0], "source_bsp_reset")) return map_.resetMap();
     if (!std::strcmp(args[0], "source_bsp_terrain")) return map_.demoTerrain();
+    if (!std::strcmp(args[0], "source_model_reset")) return map_.resetModel();
+    if (!std::strcmp(args[0], "source_model_load") && args.ArgC()==2) {
+        const std::string path=args[1];
+        if(path.empty()||path.find("..")!=std::string::npos||path.front()=='/'||path.find('\\')!=std::string::npos||path.rfind("models/",0)!=0)return false;
+        return map_.loadModel(path.c_str());
+    }
     if (!std::strcmp(args[0], "source_camera_reset")) { map_.resetCamera(); return true; }
     if (!std::strcmp(args[0], "source_physics_reset")) return map_.resetPhysics();
     if (!std::strcmp(args[0], "source_physics_impulse")) return map_.impulsePhysics();

@@ -15,6 +15,8 @@ public:
     bool load(const char* filename, const char* pathID = "GAME");
     bool resetMap();
     bool demoTerrain();
+    bool loadModel(const char* filename, const char* pathID = "GAME");
+    bool resetModel();
     bool selfTest();
     void look(float yaw, float pitch);
     void frame(float seconds);

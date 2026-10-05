@@ -35,6 +35,8 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_physics_reset` — заново создать сцену с двумя телами и шарниром.
 - `source_physics_impulse` — толкнуть подвижное тело.
 - `source_bsp_load maps/name.bsp` — предпросмотр полигонов своего BSP.
+- `source_model_load models/name.mdl` — загрузить статическую модель вместе с
+  `name.vvd` и `name.dx90.vtx`; `source_model_reset` возвращает встроенный fixture.
 
 Оригинальный `VFileSystem022` подключён к `Documents/Source1IOS/game` с path ID
 `GAME` и `DEFAULT_WRITE_PATH`. Каталог доступен через приложение «Файлы».
@@ -53,7 +55,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 50% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 52% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -181,7 +183,7 @@ Vertices, edges, surfedges и faces могут быть несжатыми ил�
 **Полная CS:S — отдельная цель, не «50% готова».** Предыдущие ~50% относятся к
 минимальному engine/viewer-этапу. Для игры остаются оригинальный клиентский host,
 графический materialsystem/shader backend, VMT/VTF карты, displacement/PVS/lightmaps,
-MDL/VVD/VTX и анимация, ввод/звук/UI, совместимые client/server игровые модули,
+скелетная анимация MDL, ввод/звук/UI, совместимые client/server игровые модули,
 загрузка карты как игрового мира и проверка реального матча. Наличие tier-библиотек
 и headless Host_Init не равно готовой CS:S. Игровые ресурсы предоставляет пользователь.
 
@@ -204,3 +206,18 @@ face, start corner, выпуклость/плоскость quad, конечно
 диагностический IVP point/hull trace по отдельному slope soup не дал правильной
 высоты; камера использует специализированный путь Source. Также остаются IVP
 contact-rescue warnings в длительных прогонах и рост RSS после restart.
+
+### Static studio model preview (0.12.0, build 15)
+
+Загрузчик читает согласованную тройку Source studio model v49: `.mdl`, `.vvd` v4
+и `.dx90.vtx` v7. Проверяются checksum, иерархия body/model/mesh/strip group,
+все смещения и индексы, конечность вершин и лимиты. Поддержаны VVD fixup-таблицы,
+VTX triangle lists/strips и v49 extended strip layout. LOD 0 превращается в
+треугольники и выводится существующим Metal-адаптером. Настоящий MDLCache отдельно
+открывает тот же заголовок fixture-модели.
+
+Это позволяет показать статическую геометрию совместимой модели персонажа, оружия
+или prop, если пользователь положит все три файла в `Documents/Source1IOS/game/models`.
+Пока не применяются кости, skinning, анимации, bodygroup/skin selection, VMT/VTF
+материалы, прозрачность и физическая collision-модель. Модель рисуется в фиксированной
+точке тестовой комнаты единой checker-текстурой; это ещё не Source studiorender.

@@ -1,5 +1,8 @@
 #include "SourceMap.hpp"
 #include "BspLzmaFixture.hpp"
+#include "SourceStudio.hpp"
+#include "studio.h"
+#include "optimize.h"
 #include "quakedef.h"
 #include "bspfile.h"
 #include "builddisp.h"
@@ -18,6 +21,7 @@
 #include "tier1/utlbuffer.h"
 #include "tier1/lzmaDecoder.h"
 #include "tier0/dbg.h"
+#include "datacache/imdlcache.h"
 #include <algorithm>
 #include <array>
 #include <cmath>
@@ -25,6 +29,7 @@
 #include <limits>
 
 namespace {
+constexpr int idStudioHeader=(('T'<<24)+('S'<<16)+('D'<<8)+'I');
 constexpr size_t maximumFile = 128 * 1024 * 1024;
 constexpr size_t maximumVertices = 300000;
 bool report(const char* name, bool ok) {
@@ -215,16 +220,16 @@ std::vector<unsigned char> fixture(bool displaced=false) {
 }
 namespace source1ios {
 struct SourceMap::Impl {
-    std::vector<MeshPoint> mesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
+    std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
-    std::string builtin;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
 bool SourceMap::start(const std::filesystem::path& root) {
     if(impl_)return false;
     Msg("Source BSP startup: creating texture\n");
-    impl_=std::make_unique<Impl>();impl_->builtin="__source1ios_geometry.bsp";
+    impl_=std::make_unique<Impl>();impl_->builtin="__source1ios_geometry.bsp";impl_->builtinModel="models/__source1ios_static_probe.mdl";
     g_pFullFileSystem->AddSearchPath((root/"selftest").c_str(),"PORT_BSP_PREVIEW",PATH_ADD_TO_HEAD);
     // Serialize a genuine VTF, read it through Source filesystem, then decode
     // the texture for the native Metal adapter. No shaderapiempty drawing implied.
@@ -248,7 +253,10 @@ bool SourceMap::start(const std::filesystem::path& root) {
     bool ok=file && g_pFullFileSystem->Write(bytes.data(),bytes.size(),file)==int(bytes.size());if(file)g_pFullFileSystem->Close(file);
     const auto terrain=fixture(true);auto terrainFile=g_pFullFileSystem->Open("__source1ios_displacement.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok && terrainFile && g_pFullFileSystem->Write(terrain.data(),terrain.size(),terrainFile)==int(terrain.size());if(terrainFile)g_pFullFileSystem->Close(terrainFile);
-    if(!ok || !load(impl_->builtin.c_str(),nullptr)){stop();return false;}
+    std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
+    auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
+    ok=ok&&writeModel(impl_->builtinModel.c_str(),studio.mdl)&&writeModel("models/__source1ios_static_probe.vvd",studio.vvd)&&writeModel("models/__source1ios_static_probe.dx90.vtx",studio.vtx);
+    if(!ok || !load(impl_->builtin.c_str(),nullptr) || !loadModel(impl_->builtinModel.c_str())){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
     if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
     Msg("Source engine brush world loaded: %d vertices, %d surfaces, %d leaves\n",impl_->world->brush.pShared->numvertexes,impl_->world->brush.pShared->numsurfaces,impl_->world->brush.pShared->numleafs);
@@ -259,6 +267,17 @@ bool SourceMap::start(const std::filesystem::path& root) {
 void SourceMap::stop(){impl_.reset();}
 bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);}
 bool SourceMap::demoTerrain(){return impl_ && load("__source1ios_displacement.bsp",nullptr);}
+bool SourceMap::resetModel(){return impl_&&loadModel(impl_->builtinModel.c_str());}
+bool SourceMap::loadModel(const char* filename,const char* pathID){
+    if(!impl_||!filename||std::strlen(filename)>=MAX_PATH)return false;std::string mdlPath=filename;
+    if(mdlPath.size()<5||mdlPath.substr(mdlPath.size()-4)!=".mdl"){Warning("Source studio: expected .mdl path: %s\n",filename);return false;}
+    const auto base=mdlPath.substr(0,mdlPath.size()-4);auto read=[&](const std::string& path,std::vector<std::uint8_t>& bytes){CUtlBuffer data;if(!g_pFullFileSystem->ReadFile(path.c_str(),pathID,data)||data.TellPut()<=0)return false;bytes.assign(static_cast<std::uint8_t*>(data.Base()),static_cast<std::uint8_t*>(data.Base())+data.TellPut());return true;};
+    std::vector<std::uint8_t> mdl,vvd,vtx;if(!read(mdlPath,mdl)||!read(base+".vvd",vvd)||!read(base+".dx90.vtx",vtx)){Warning("Source studio: missing MDL/VVD/DX90.VTX companion for %s\n",filename);return false;}
+    StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
+    std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(96,80,0);
+    for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{.2f*light,.85f*light,.35f*light},{v.uv.x,v.uv.y}});}
+    impl_->modelMesh=std::move(staged);Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",parsed.sourceVertices,parsed.triangles.size()/3,parsed.meshes,filename);return true;
+}
 bool SourceMap::load(const char* filename,const char* pathID) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
     auto file=g_pFullFileSystem->Open(filename,"rb",pathID);if(!file){Warning("Source BSP: file not found: %s\n",filename);return false;}
@@ -348,11 +367,12 @@ void SourceMap::move(float forward,float right,float seconds){
 }
 void SourceMap::frame(float seconds){if(impl_ && impl_->scene && seconds>0 && std::isfinite(seconds))impl_->scene->environment->Simulate(std::min(seconds,.05f));}
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
-    std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
+    std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
         out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1},{v.uv[0],v.uv[1]}});};
     for(const auto& v:impl_->mesh)append(v);
+    for(const auto& v:impl_->modelMesh)append(v);
     if(impl_->scene){
         constexpr int rings=6,slices=12;
         constexpr float pi=3.14159265358979323846f;
@@ -385,6 +405,24 @@ bool SourceMap::selfTest(){
     rejects&=!decodeLump(encoded,maximumLump+1,decoded,reason);
     broken=encoded;broken[17]=255;rejects&=!decodeLump(broken,672,decoded,reason);
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
+    const auto studio=makeStudioFixture();StudioMesh model;std::string modelError;
+    all&=report("MDL/VVD/VTX static mesh",parseStudioModel(studio.mdl,studio.vvd,studio.vtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==36&&model.meshes==1);
+    auto fixedVvd=studio.vvd;const auto originalVvd=*reinterpret_cast<const vertexFileHeader_t*>(studio.vvd.data());
+    fixedVvd.resize(sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t)+8*sizeof(mstudiovertex_t));
+    auto* fixedHeader=reinterpret_cast<vertexFileHeader_t*>(fixedVvd.data());*fixedHeader=originalVvd;fixedHeader->numFixups=1;fixedHeader->fixupTableStart=sizeof(vertexFileHeader_t);fixedHeader->vertexDataStart=sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t);
+    auto* fixup=reinterpret_cast<vertexFileFixup_t*>(fixedVvd.data()+fixedHeader->fixupTableStart);fixup->lod=0;fixup->sourceVertexID=0;fixup->numVertexes=8;
+    std::memcpy(fixedVvd.data()+fixedHeader->vertexDataStart,studio.vvd.data()+originalVvd.vertexDataStart,8*sizeof(mstudiovertex_t));
+    auto stripVtx=studio.vtx;auto* stripHeader=reinterpret_cast<OptimizedModel::FileHeader_t*>(stripVtx.data());auto* strip=stripHeader->pBodyPart(0)->pModel(0)->pLOD(0)->pMesh(0)->pStripGroup(0)->pStrip(0);strip->flags=OptimizedModel::STRIP_IS_TRISTRIP;strip->numIndices=4;
+    all&=report("VVD fixups and VTX triangle strip",parseStudioModel(studio.mdl,fixedVvd,stripVtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==6);
+    auto wrongVvd=studio.vvd;reinterpret_cast<vertexFileHeader_t*>(wrongVvd.data())->checksum^=1;
+    bool modelRejects=!parseStudioModel(studio.mdl,wrongVvd,studio.vtx,model,modelError);
+    auto wrongVtx=studio.vtx;auto* header=reinterpret_cast<OptimizedModel::FileHeader_t*>(wrongVtx.data());header->bodyPartOffset=std::numeric_limits<int>::max();modelRejects&=!parseStudioModel(studio.mdl,studio.vvd,wrongVtx,model,modelError);
+    auto wrongMdl=studio.mdl;reinterpret_cast<studiohdr_t*>(wrongMdl.data())->length=std::numeric_limits<int>::max();modelRejects&=!parseStudioModel(wrongMdl,studio.vvd,studio.vtx,model,modelError);
+    all&=report("MDL companion mismatch/ranges rejected",modelRejects);
+    const MDLHandle_t handle=g_pMDLCache->FindMDL(impl_->builtinModel.c_str());const auto* cached=handle==MDLHANDLE_INVALID?nullptr:g_pMDLCache->GetStudioHdr(handle);
+    all&=report("original MDLCache studio header",cached&&cached->id==idStudioHeader&&cached->version==STUDIO_VERSION&&cached->checksum==0x510510);
+    if(handle!=MDLHANDLE_INVALID)g_pMDLCache->Release(handle);
+    all&=report("Metal static model geometry staged",impl_->modelMesh.size()==36);
     const std::vector<Vector> quad={Vector(-64,-64,0),Vector(-64,64,0),Vector(64,64,0),Vector(64,-64,0)};
     ddispinfo_t disp{};disp.startPosition=quad[0];disp.power=2;disp.smoothingAngle=45;
     std::vector<CDispVert> dv(25);for(auto& v:dv){v.m_vVector=Vector(0,0,1);v.m_flDist=0;v.m_flAlpha=0;}dv[12].m_flDist=32;

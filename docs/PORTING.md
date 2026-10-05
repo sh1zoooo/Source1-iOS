@@ -82,7 +82,7 @@ then background for 20 seconds and resume. Export the log after these actions.
 ## Remaining engine work
 
 Original graphical shaderapi/materialsystem, map materials/lightmaps/PVS,
-original graphical displacement LOD/material integration, studio model drawing/animation,
+original graphical displacement LOD/material integration, studio model skinning/animation,
 audio and a genuine game DLL remain. Full-resolution displacement geometry and specialized
 Source ray/hull camera collision are covered by the v0.11 preview, not by a running game.
 The dedicated host runs without a fabricated server interface. The Metal adapter
@@ -177,3 +177,19 @@ surface properties must be parsed before contact simulation in the no-game harne
 Resources use short relative paths through a dedicated filesystem search path: legacy
 BSP loading reopens files without the caller path ID, and absolute iOS container
 paths interact badly with Source path normalization.
+
+
+## Static studio geometry (v0.12)
+
+The preview validates a matching Source studio v49 MDL, VVD v4 and DX90 VTX v7
+set before replacing visible model geometry. It follows the MDL body/model/mesh
+hierarchy, reconstructs root-LOD VVD vertex order with the original fixup semantics,
+and expands VTX triangle lists or strips. Standard and v49 extended strip records
+are bounds-checked. A generated eight-vertex fixture also passes through the
+original MDLCache header path; its LOD 0 triangles are appended to the Metal adapter.
+
+This is intentionally not a replacement implementation of studiorender. Bone
+transforms, weighted skinning, animation sequences, flexes, body/skin selection,
+materials, shadowing and PHY collision are not applied. Imported geometry is drawn
+at a fixed test-room origin with the preview texture. Rejected or incomplete model
+companions leave the previously displayed model intact.
