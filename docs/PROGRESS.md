@@ -1,7 +1,8 @@
 # Прогресс Source 1 → iOS
 
 Ориентировочно **58%**: BSP-сцена, камера, столкновения, VTF, живая физика и
-статическая геометрия Source studio model.
+геометрия Source studio model, weighted skinning, встроенные animation tracks и
+первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
 Это не декодирование игровых MDL animation sequences и не физический скелет.
 Этап 0.14 читает встроенные локальные animation tracks MDL: RLE rotation/position,
@@ -11,14 +12,15 @@ delta, IK и blend sequences пока пропускаются, модель о�
 VMT `$basetexture`, оригинальный VTF decoder и отдельную texture slot Metal.
 Несколько материалов, skins, shader features и материалы BSP пока впереди.
 Процент — инженерная оценка оставшейся работы, а не число тестов или исходников.
-100% означает минимальный порт с реальным engine, загрузкой тестовой BSP-карты,
+100% здесь означает минимальный порт с реальным engine, загрузкой тестовой BSP-карты,
 адаптированными материалами/рендерингом и камерой на iPhone. Готовая CS:GO не входит
-в этот критерий.
+в этот критерий; полный запуск CS:S также требует отдельного игрового этапа.
 
 Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
 Оригинальные Host_Init и Host_RunFrame работают с -nogamedll, без игровой DLL.
-Пользовательский лог iPhone 16e подтверждает 39 проверок и два pause/resume.
+Последний пользовательский лог iPhone 16e подтверждает 63 проверки версии 0.13,
+GPU A18 и смену ориентации; пользователь подтвердил плавную деформацию модели.
 
 Новый этап: настоящий CModelLoader и CM_LoadMap загружают встроенный BSP-мир,
 CM_BoxTrace ограничивает движение камеры. VTF читается оригинальной библиотекой;
@@ -31,10 +33,11 @@ CM_BoxTrace ограничивает движение камеры. VTF чита
 GPU A18, смену ориентации и два pause/resume на iPhone 16e, iOS 18.6.2. [Отчёт проверки](VALIDATION-0.9.1.md).
 
 Загрузчик studio model v49 проверяет MDL/VVD/VTX, VVD fixups, triangle lists/strips
-и передаёт LOD 0 в Metal-адаптер. Это статическая геометрия без костей и материалов.
+и передаёт LOD 0 в Metal-адаптер. В 0.13–0.15 добавлены кости, веса, ограниченный
+декодер встроенных анимаций и первый материал; это ещё не полный studio renderer.
 
 Остаются графический shaderapi/materialsystem Source, настоящие материалы карт,
-PVS, lightmaps, графический displacement LOD, skinning/анимация studio-моделей,
+PVS, lightmaps, графический displacement LOD, полный evaluator sequences/ANI/IK,
 аудио и игровая DLL. Версия 0.12.0/build 15 прошла Linux Debug, iPhone ARM64 и
 симулятор: 121 PASS, завершённый GPU-кадр, видимая статическая модель и pause/resume.
 Пользовательские BSP пока открываются только как ограниченный polygon preview;

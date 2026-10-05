@@ -37,6 +37,30 @@ bool readBounded(const char* path,const char* pathID,size_t limit,std::vector<st
     auto file=g_pFullFileSystem->Open(path,"rb",pathID);if(!file)return false;const unsigned size=g_pFullFileSystem->Size(file);bool ok=size>0&&size<=limit;if(ok){bytes.resize(size);ok=g_pFullFileSystem->Read(bytes.data(),size,file)==int(size);}g_pFullFileSystem->Close(file);if(!ok)bytes.clear();return ok;
 }
 bool materialPath(const std::string& path){return !path.empty()&&path.size()<240&&path.front()!='/'&&path.find("..") == std::string::npos&&path.find('\\')==std::string::npos&&path.find(':')==std::string::npos;}
+bool vtfResourceRangesValid(const std::vector<std::uint8_t>& bytes){
+    // The legacy decoder allocates auxiliary chunks before checking their
+    // payload range. Validate those ranges and the aggregate budget first.
+    if(bytes.size()<sizeof(VTFFileBaseHeader_t))return false;
+    VTFFileBaseHeader_t base{};std::memcpy(&base,bytes.data(),sizeof(base));
+    if(std::memcmp(base.fileTypeString,"VTF\0",4)||base.version[0]!=7||base.version[1]<0||base.version[1]>VTF_MINOR_VERSION)return false;
+    const size_t fixed=base.version[1]>=3?sizeof(VTFFileHeader_t):base.version[1]==2?sizeof(VTFFileHeaderV7_2_t):sizeof(VTFFileHeaderV7_1_t);
+    if(bytes.size()<fixed||base.headerSize<int(fixed)||size_t(base.headerSize)>bytes.size())return false;
+    VTFFileHeader_t header{};std::memcpy(&header,bytes.data(),fixed);
+    if(!header.width||!header.height||header.width>2048||header.height>2048||header.numFrames!=1||(base.version[1]>=2&&header.depth!=1))return false;
+    if(base.version[1]<3)return true;
+    if(header.numResources>32)return false;
+    const size_t end=fixed+size_t(header.numResources)*sizeof(ResourceEntryInfo);
+    if(end>size_t(base.headerSize))return false;
+    size_t budget=0;
+    for(unsigned i=0;i<header.numResources;++i){ResourceEntryInfo entry{};std::memcpy(&entry,bytes.data()+fixed+i*sizeof(entry),sizeof(entry));
+        if(entry.eType&RSRCF_HAS_NO_DATA_CHUNK)continue;
+        const size_t offset=entry.resData;if(offset<size_t(base.headerSize)||offset>=bytes.size())return false;
+        if(entry.eType==VTF_LEGACY_RSRC_IMAGE||entry.eType==VTF_LEGACY_RSRC_LOW_RES_IMAGE)continue;
+        if(bytes.size()-offset<4)return false;int length=0;std::memcpy(&length,bytes.data()+offset,4);
+        if(length<0||size_t(length)>bytes.size()-offset-4||size_t(length)>16*1024*1024-budget)return false;
+        budget+=size_t(length);
+    }return true;
+}
 bool decodeModelMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture){
     for(const auto& name:candidates){if(!materialPath(name))continue;std::vector<std::uint8_t> vmt;const std::string path="materials/"+name+".vmt";if(!readBounded(path.c_str(),"GAME",65536,vmt))continue;
         // Bound parser recursion before using the original KeyValues implementation.
@@ -44,6 +68,7 @@ bool decodeModelMaterial(const std::vector<std::string>& candidates,source1ios::
         if(!valid||quoted||depth)continue;std::string text(vmt.begin(),vmt.end());auto* kv=new KeyValues("model");const bool loaded=kv->LoadFromBuffer(path.c_str(),text.c_str());const std::string shader=kv->GetName(),base=kv->GetString("$basetexture","");kv->deleteThis();
         if(!loaded||(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric"))||!materialPath(base))continue;
         std::vector<std::uint8_t> vtf;const std::string texturePath="materials/"+base+".vtf";if(!readBounded(texturePath.c_str(),"GAME",16*1024*1024,vtf))continue;
+        if(!vtfResourceRangesValid(vtf))continue;
         auto* image=CreateVTFTexture();if(!image)continue;CUtlBuffer buffer(vtf.data(),vtf.size(),CUtlBuffer::READ_ONLY);
         bool ok=image->Unserialize(buffer,true)&&image->Width()>0&&image->Height()>0&&image->Width()<=2048&&image->Height()<=2048&&image->Depth()==1&&image->FrameCount()==1&&image->FaceCount()==1;
         if(ok){buffer.SeekGet(CUtlBuffer::SEEK_HEAD,0);ok=image->Unserialize(buffer);}

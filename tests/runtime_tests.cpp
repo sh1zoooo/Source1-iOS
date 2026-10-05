@@ -79,6 +79,20 @@ int main() {
         check(host.modelTexture().pixels==host.texture().pixels,"Invalid material did not use checker fallback");
         {std::ofstream restoredVmt(vmt);restoredVmt<<"VertexLitGeneric { \"$basetexture\" \"models/source1ios/__source1ios_model\" }";}
         check(host.executeSource("source_model_reset")&&host.modelTexture().pixels==textureBefore.pixels,"Studio texture restore failed");
+        const auto vtf=vmt.parent_path()/"__source1ios_model.vtf";
+        std::ifstream textureFile(vtf,std::ios::binary);
+        std::vector<unsigned char> textureBytes((std::istreambuf_iterator<char>(textureFile)),{});
+        textureFile.close();auto malformedTexture=textureBytes;
+        check(malformedTexture.size()>88,"Fixture VTF resource table missing");
+        const uint32_t resourceType=0x10,resourceOffset=malformedTexture.size(),hugeLength=0x7fffffff;
+        std::memcpy(malformedTexture.data()+80,&resourceType,4);
+        std::memcpy(malformedTexture.data()+84,&resourceOffset,4);
+        const auto* lengthBytes=reinterpret_cast<const unsigned char*>(&hugeLength);
+        malformedTexture.insert(malformedTexture.end(),lengthBytes,lengthBytes+4);
+        {std::ofstream out(vtf,std::ios::binary);out.write(reinterpret_cast<const char*>(malformedTexture.data()),malformedTexture.size());}
+        check(host.executeSource("source_model_reset")&&host.modelTexture().pixels==host.texture().pixels,"Oversized auxiliary VTF chunk was not rejected safely");
+        {std::ofstream out(vtf,std::ios::binary);out.write(reinterpret_cast<const char*>(textureBytes.data()),textureBytes.size());}
+        check(host.executeSource("source_model_reset")&&host.modelTexture().pixels==textureBefore.pixels,"Texture recovery after malformed resource failed");
         std::ifstream bspFile(maps/"imported.bsp",std::ios::binary);
         std::vector<unsigned char> bsp((std::istreambuf_iterator<char>(bspFile)),{});
         auto put32=[&](size_t offset,uint32_t value){std::memcpy(bsp.data()+offset,&value,4);};

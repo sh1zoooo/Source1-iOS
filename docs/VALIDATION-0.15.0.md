@@ -11,6 +11,10 @@ Missing or rejected optional materials fall back to checker. Model parse failure
 preserves existing geometry, pixels and upload revision. Reads are bounded before
 file allocation: model companions 32 MiB, VMT 64 KiB, VTF 16 MiB. Texture dimension
 limit is 2048x2048, one frame, face and depth. KeyValues nesting is limited to 16.
+VTF resource dictionary ranges and aggregate auxiliary allocation budget are
+validated before invoking the legacy decoder (which otherwise allocates chunks
+before validating their payload). A forged INT_MAX chunk falls back safely and
+restoring the texture recovers the original pixels.
 
 Local Debug runtime passed with material resolution, fallback on traversal paths,
 pixel restoration, invalid model preservation, weighted pose and animation tests.
