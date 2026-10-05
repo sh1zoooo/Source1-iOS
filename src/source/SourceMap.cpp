@@ -220,6 +220,7 @@ std::vector<unsigned char> fixture(bool displaced=false) {
 }
 namespace source1ios {
 struct SourceMap::Impl {
+    StudioMesh studio;float poseTime=0;bool animateFixture=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
@@ -276,7 +277,9 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
     std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(0,64,0);
     for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{.2f*light,.85f*light,.35f*light},{v.uv.x,v.uv.y}});}
-    impl_->modelMesh=std::move(staged);Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",parsed.sourceVertices,parsed.triangles.size()/3,parsed.meshes,filename);return true;
+    impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animateFixture=mdlPath==impl_->builtinModel;
+    Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
+    Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %s\n",impl_->studio.bones.size(),impl_->animateFixture?"procedural fixture pose active":"bind pose (MDL sequences pending)");return true;
 }
 bool SourceMap::load(const char* filename,const char* pathID) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
@@ -365,7 +368,12 @@ void SourceMap::move(float forward,float right,float seconds){
     }
     if(!trace.startsolid)impl_->camera+=delta*std::max(0.f,trace.fraction-.001f);
 }
-void SourceMap::frame(float seconds){if(impl_ && impl_->scene && seconds>0 && std::isfinite(seconds))impl_->scene->environment->Simulate(std::min(seconds,.05f));}
+void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(seconds))return;seconds=std::min(seconds,.05f);
+    if(impl_->scene)impl_->scene->environment->Simulate(seconds);
+    if(impl_->animateFixture){impl_->poseTime=std::remainder(impl_->poseTime+seconds,6.2831853f);std::vector<Quaternion> rotations;for(const auto& bone:impl_->studio.bones)rotations.push_back(bone.rotation);
+        if(rotations.size()>1)AngleQuaternion(QAngle(0,0,25*std::sin(impl_->poseTime*2)),rotations[1]);std::vector<StudioVertex> posed;
+        if(skinStudioModel(impl_->studio,rotations,posed)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);impl_->modelMesh[i].color[0]=.2f*light;impl_->modelMesh[i].color[1]=.85f*light;impl_->modelMesh[i].color[2]=.35f*light;}}}
+}
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
@@ -407,6 +415,16 @@ bool SourceMap::selfTest(){
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
     const auto studio=makeStudioFixture();StudioMesh model;std::string modelError;
     all&=report("MDL/VVD/VTX static mesh",parseStudioModel(studio.mdl,studio.vvd,studio.vtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==36&&model.meshes==1);
+    std::vector<StudioVertex> bindPose;bool bindOK=skinStudioModel(model,{},bindPose)&&bindPose.size()==model.triangles.size();
+    for(size_t i=0;bindOK&&i<bindPose.size();++i)bindOK&=(bindPose[i].position-model.triangles[i].position).LengthSqr()<1e-6f;
+    all&=report("studio inverse bind pose identity",bindOK&&model.bones.size()==2);
+    std::vector<Quaternion> bent={Quaternion(0,0,0,1),Quaternion(0,0,0,1)};AngleQuaternion(QAngle(0,0,90),bent[1]);std::vector<StudioVertex> bentPose;
+    bool bentOK=skinStudioModel(model,bent,bentPose);bool rootStill=false,childMoves=false;
+    for(size_t i=0;bentOK&&i<bentPose.size();++i){const float delta=(bentPose[i].position-model.triangles[i].position).Length();if(model.triangles[i].bones[0]==0)rootStill|=delta<.001f;else childMoves|=delta>20;}
+    all&=report("studio parent hierarchy weighted skinning",bentOK&&rootStill&&childMoves);
+    auto blend=model;for(auto& vertex:blend.triangles){vertex.influences=2;vertex.bones={0,1,0};vertex.weights={.5f,.5f,0};}std::vector<StudioVertex> blendPose;
+    bool blendOK=skinStudioModel(blend,bent,blendPose);for(size_t i=0;blendOK&&i<blendPose.size();++i){Vector moved;matrix3x4_t rotation;QuaternionMatrix(bent[1],rotation);VectorRotate(model.triangles[i].position-Vector(0,0,32),rotation,moved);const auto expected=(model.triangles[i].position+moved+Vector(0,0,32))*.5f;blendOK&=(blendPose[i].position-expected).LengthSqr()<1e-5f;}
+    all&=report("studio two bone weight blend",blendOK);
     auto fixedVvd=studio.vvd;const auto originalVvd=*reinterpret_cast<const vertexFileHeader_t*>(studio.vvd.data());
     fixedVvd.resize(sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t)+8*sizeof(mstudiovertex_t));
     auto* fixedHeader=reinterpret_cast<vertexFileHeader_t*>(fixedVvd.data());*fixedHeader=originalVvd;fixedHeader->numFixups=1;fixedHeader->fixupTableStart=sizeof(vertexFileHeader_t);fixedHeader->vertexDataStart=sizeof(vertexFileHeader_t)+sizeof(vertexFileFixup_t);
@@ -416,6 +434,8 @@ bool SourceMap::selfTest(){
     all&=report("VVD fixups and VTX triangle strip",parseStudioModel(studio.mdl,fixedVvd,stripVtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==6);
     auto wrongVvd=studio.vvd;reinterpret_cast<vertexFileHeader_t*>(wrongVvd.data())->checksum^=1;
     bool modelRejects=!parseStudioModel(studio.mdl,wrongVvd,studio.vtx,model,modelError);
+    auto badBones=studio.mdl;auto* badBoneHeader=reinterpret_cast<studiohdr_t*>(badBones.data());badBoneHeader->pBone(0)->parent=1;modelRejects&=!parseStudioModel(badBones,studio.vvd,studio.vtx,model,modelError);
+    auto badWeights=studio.vvd;auto* badWeightHeader=reinterpret_cast<vertexFileHeader_t*>(badWeights.data());auto* badVertex=reinterpret_cast<mstudiovertex_t*>(badWeights.data()+badWeightHeader->vertexDataStart);badVertex[0].m_BoneWeights.weight[0]=std::numeric_limits<float>::quiet_NaN();modelRejects&=!parseStudioModel(studio.mdl,badWeights,studio.vtx,model,modelError);
     auto wrongVtx=studio.vtx;auto* header=reinterpret_cast<OptimizedModel::FileHeader_t*>(wrongVtx.data());header->bodyPartOffset=std::numeric_limits<int>::max();modelRejects&=!parseStudioModel(studio.mdl,studio.vvd,wrongVtx,model,modelError);
     auto wrongMdl=studio.mdl;reinterpret_cast<studiohdr_t*>(wrongMdl.data())->length=std::numeric_limits<int>::max();modelRejects&=!parseStudioModel(wrongMdl,studio.vvd,studio.vtx,model,modelError);
     all&=report("MDL companion mismatch/ranges rejected",modelRejects);

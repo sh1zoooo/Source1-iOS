@@ -142,7 +142,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
         withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
     _runtime.log("Source VTF preview texture uploaded to Metal");
-    self.status.text = @"Source 1 iOS · minimal milestone ~52%\nEngine · BSP · static studio model\nSource self-tests: 60 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~54%\nEngine · BSP · weighted studio pose\nSource self-tests: 63 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -240,7 +240,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~52%%\nBSP · static model · live physics\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~54%%\nBSP · weighted pose · live physics\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

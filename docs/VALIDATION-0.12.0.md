@@ -36,4 +36,7 @@ Artifact `11344089914` was downloaded and inspected. Info.plist is 0.12.0/build 
 the IPA SHA256 agrees with `SHA256SUMS.txt`:
 `92dcc389ac30a8bd1018f657533160d5da4cb0c843f56de10690ba8bda9aa3ab`.
 
-Physical iPhone validation: pending; the user is currently unavailable to test.
+Physical iPhone validation: user log confirms 60 startup checks, A18 GPU frame
+completion and portrait-to-landscape drawable change on iOS 18.6.2. The supplied
+landscape screenshot shows the studio fixture and both physics bodies. This log
+does not include a foreground/background cycle.

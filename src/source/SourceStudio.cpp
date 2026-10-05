@@ -41,16 +41,20 @@ StudioFixture makeStudioFixture(){
     StudioFixture f;constexpr int checksum=0x510510;
     studiohdr_t mdl{};mdl.id=idStudioHeader;mdl.version=STUDIO_VERSION;mdl.checksum=checksum;
     std::strncpy(mdl.name,"source1ios_static_probe.mdl",sizeof(mdl.name)-1);mdl.numbodyparts=1;
-    const size_t mdlHeader=append(f.mdl,mdl),bodyOffset=f.mdl.size();mstudiobodyparts_t body{};body.nummodels=1;append(f.mdl,body);
+    const size_t mdlHeader=append(f.mdl,mdl),boneOffset=f.mdl.size();
+    mstudiobone_t bones[2]{};for(auto& bone:bones){bone.quat=Quaternion(0,0,0,1);SetIdentityMatrix(bone.poseToBone);for(auto& controller:bone.bonecontroller)controller=-1;}
+    bones[0].parent=-1;bones[1].parent=0;bones[1].pos=Vector(0,0,32);bones[1].poseToBone[2][3]=-32;appendMany(f.mdl,bones,2);
+    const size_t bodyOffset=f.mdl.size();mstudiobodyparts_t body{};body.nummodels=1;append(f.mdl,body);
     const size_t modelOffset=f.mdl.size();mstudiomodel_t model{};std::strncpy(model.name,"static_probe",sizeof(model.name)-1);model.nummeshes=1;model.numvertices=8;model.vertexindex=0;append(f.mdl,model);
     const size_t meshOffset=f.mdl.size();mstudiomesh_t mesh{};mesh.numvertices=8;mesh.vertexoffset=0;mesh.modelindex=int(modelOffset-meshOffset);append(f.mdl,mesh);
     auto* mh=at<studiohdr_t>(f.mdl,mdlHeader);auto* bp=at<mstudiobodyparts_t>(f.mdl,bodyOffset);auto* mo=at<mstudiomodel_t>(f.mdl,modelOffset);
-    mh->bodypartindex=bodyOffset;mh->length=f.mdl.size();bp->modelindex=modelOffset-bodyOffset;mo->meshindex=meshOffset-modelOffset;
+    mh->numbones=2;mh->boneindex=boneOffset;mh->bodypartindex=bodyOffset;mh->length=f.mdl.size();bp->modelindex=modelOffset-bodyOffset;mo->meshindex=meshOffset-modelOffset;
 
     vertexFileHeader_t vh{};vh.id=MODEL_VERTEX_FILE_ID;vh.version=MODEL_VERTEX_FILE_VERSION;vh.checksum=checksum;vh.numLODs=1;vh.numLODVertexes[0]=8;
     const size_t vvdHeader=append(f.vvd,vh);const Vector positions[]={
         {-12,-8,0},{12,-8,0},{12,8,0},{-12,8,0},{-8,-5,64},{8,-5,64},{8,5,64},{-8,5,64}};
     mstudiovertex_t vertices[8]{};for(int i=0;i<8;++i){vertices[i].m_vecPosition=positions[i];vertices[i].m_vecNormal=Vector(positions[i].x,positions[i].y,i<4?-8:8);VectorNormalize(vertices[i].m_vecNormal);vertices[i].m_vecTexCoord=Vector2D((i&1)?1:0,(i&2)?1:0);vertices[i].m_BoneWeights.numbones=1;vertices[i].m_BoneWeights.weight[0]=1;}
+    for(int i=4;i<8;++i)vertices[i].m_BoneWeights.bone[0]=1;
     const size_t vertexOffset=appendMany(f.vvd,vertices,8);auto* vhp=at<vertexFileHeader_t>(f.vvd,vvdHeader);vhp->vertexDataStart=vertexOffset;vhp->tangentDataStart=0;
 
     using namespace OptimizedModel;FileHeader_t fh{};fh.version=OPTIMIZED_MODEL_FILE_VERSION;fh.checkSum=checksum;fh.numLODs=1;fh.numBodyParts=1;
@@ -78,6 +82,14 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
         ||vh->numFixups<0||vh->numFixups>int(maximumModelVertices))return fail("unsupported VVD header or fixups");
     if(fh->version!=OPTIMIZED_MODEL_FILE_VERSION||fh->numLODs<1||fh->numLODs>MAX_NUM_LODS)return fail("unsupported VTX header");
     if(mh->checksum!=vh->checksum||mh->checksum!=fh->checkSum)return fail("MDL/VVD/VTX checksum mismatch");
+    if(mh->numbones<0||mh->numbones>256)return fail("invalid studio bone count");
+    const auto* bones=at<mstudiobone_t>(mdl,mh->boneindex,mh->numbones);if(!bones)return fail("studio bones outside file");
+    for(int i=0;i<mh->numbones;++i){const auto& bone=bones[i];
+        if(bone.parent < -1||bone.parent>=i||!bone.pos.IsValid()||bone.pos.LengthSqr()>32768.f*32768.f)return fail("invalid bone hierarchy or position");
+        float norm=0;for(int q=0;q<4;++q){if(!std::isfinite(bone.quat[q]))return fail("nonfinite bone quaternion");norm+=bone.quat[q]*bone.quat[q];}if(std::abs(norm-1)>.01f)return fail("nonunit bone quaternion");
+        for(int row=0;row<3;++row)for(int col=0;col<4;++col)if(!std::isfinite(bone.poseToBone[row][col])||std::abs(bone.poseToBone[row][col])>32768)return fail("invalid inverse bind matrix");
+        result.bones.push_back({bone.parent,bone.pos,bone.quat,bone.poseToBone});
+    }
     const int totalVertices=vh->numLODVertexes[0];if(totalVertices<=0||totalVertices>int(maximumModelVertices))return fail("invalid VVD vertex count");
     const auto* vertices=at<mstudiovertex_t>(vvd,vh->vertexDataStart,totalVertices);if(!vertices)return fail("VVD vertices outside file");
     std::vector<const mstudiovertex_t*> orderedVertices;orderedVertices.reserve(totalVertices);
@@ -88,6 +100,7 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
                 ||size_t(fixup.sourceVertexID)>size_t(totalVertices)||size_t(fixup.numVertexes)>size_t(totalVertices)-size_t(fixup.sourceVertexID))return fail("invalid VVD fixup range");
             // Root LOD 0 keeps every range and reconstructs the mesh-ordered pool
             // exactly like Studio_LoadVertexes in the original engine.
+            if(size_t(fixup.numVertexes)>size_t(totalVertices)-orderedVertices.size())return fail("VVD fixup output exceeds root LOD");
             for(int j=0;j<fixup.numVertexes;++j)orderedVertices.push_back(vertices+fixup.sourceVertexID+j);
         }
         if(orderedVertices.size()!=size_t(totalVertices))return fail("VVD fixups do not rebuild root LOD");
@@ -113,7 +126,11 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
                     if(!at<std::uint8_t>(vtx,stripBase,size_t(group->numStrips)*stripStride))return fail("strips outside file");
                     auto emit=[&](unsigned mapIndex){if(mapIndex>=unsigned(group->numVerts)){error="VTX index outside vertex map";return false;}const unsigned local=maps[mapIndex].origMeshVertID;if(local>=unsigned(mesh.numvertices)){error="VTX remap outside MDL mesh";return false;}
                         const size_t first=size_t(model.vertexindex)/sizeof(mstudiovertex_t);if(first>size_t(totalVertices)||size_t(mesh.vertexoffset)>size_t(totalVertices)-first||size_t(local)>size_t(totalVertices)-first-size_t(mesh.vertexoffset)){error="invalid VVD vertex";return false;}
-                        const size_t global=first+size_t(mesh.vertexoffset)+size_t(local);if(global>=orderedVertices.size()||!finiteVertex(*orderedVertices[global])){error="invalid VVD vertex";return false;}const auto& source=*orderedVertices[global];result.triangles.push_back({source.m_vecPosition,source.m_vecNormal,source.m_vecTexCoord});return true;};
+                        const size_t global=first+size_t(mesh.vertexoffset)+size_t(local);if(global>=orderedVertices.size()||!finiteVertex(*orderedVertices[global])){error="invalid VVD vertex";return false;}const auto& source=*orderedVertices[global];
+                        StudioVertex vertex{source.m_vecPosition,source.m_vecNormal,source.m_vecTexCoord};
+                        if(!result.bones.empty()){const auto& bw=source.m_BoneWeights;if(bw.numbones<1||bw.numbones>3){error="invalid bone influence count";return false;}float sum=0;vertex.influences=bw.numbones;
+                            for(unsigned b=0;b<vertex.influences;++b){if(bw.bone[b]>=result.bones.size()||!std::isfinite(bw.weight[b])||bw.weight[b]<0||bw.weight[b]>1){error="invalid bone weight or index";return false;}vertex.bones[b]=bw.bone[b];vertex.weights[b]=bw.weight[b];sum+=bw.weight[b];}if(std::abs(sum-1)>.01f){error="bone weights do not sum to one";return false;}}
+                        result.triangles.push_back(vertex);return true;};
                     for(int si=0;si<group->numStrips;++si){const auto* strip=at<OptimizedModel::StripHeader_t>(vtx,stripBase+size_t(si)*stripStride);if(!strip)return fail("strip outside file");const unsigned topology=strip->flags&(OptimizedModel::STRIP_IS_TRILIST|OptimizedModel::STRIP_IS_TRISTRIP);
                         if((topology!=OptimizedModel::STRIP_IS_TRILIST&&topology!=OptimizedModel::STRIP_IS_TRISTRIP)||strip->numIndices<3||strip->indexOffset<0||strip->indexOffset>group->numIndices||strip->numIndices>group->numIndices-strip->indexOffset||
                             (topology==OptimizedModel::STRIP_IS_TRILIST&&strip->numIndices%3))return fail("unsupported or invalid VTX strip");
@@ -126,5 +143,15 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
         }
     }
     if(result.triangles.empty())return fail("model contains no triangles");result.sourceVertices=totalVertices;output=std::move(result);error.clear();return true;
+}
+bool skinStudioModel(const StudioMesh& model,const std::vector<Quaternion>& rotations,std::vector<StudioVertex>& output){
+    if(!rotations.empty()&&rotations.size()!=model.bones.size())return false;
+    std::vector<matrix3x4_t> world(model.bones.size()),skin(model.bones.size());
+    for(size_t i=0;i<model.bones.size();++i){const auto& bone=model.bones[i];if(bone.parent < -1||bone.parent>=int(i))return false;const auto& q=rotations.empty()?bone.rotation:rotations[i];float norm=0;for(int j=0;j<4;++j){if(!std::isfinite(q[j]))return false;norm+=q[j]*q[j];}if(std::abs(norm-1)>.01f)return false;
+        matrix3x4_t local;QuaternionMatrix(q,bone.position,local);if(bone.parent>=0)ConcatTransforms(world[bone.parent],local,world[i]);else MatrixCopy(local,world[i]);ConcatTransforms(world[i],bone.poseToBone,skin[i]);}
+    auto staged=model.triangles;for(auto& vertex:staged){if(!vertex.influences)continue;if(vertex.influences>3)return false;Vector position(0,0,0),normal(0,0,0);
+        for(unsigned b=0;b<vertex.influences;++b){if(vertex.bones[b]>=skin.size()||!std::isfinite(vertex.weights[b]))return false;Vector p,n;VectorTransform(vertex.position,skin[vertex.bones[b]],p);VectorRotate(vertex.normal,skin[vertex.bones[b]],n);position+=p*vertex.weights[b];normal+=n*vertex.weights[b];}
+        if(!position.IsValid()||!normal.IsValid()||normal.LengthSqr()<1e-8f)return false;VectorNormalize(normal);vertex.position=position;vertex.normal=normal;}
+    output=std::move(staged);return true;
 }
 }

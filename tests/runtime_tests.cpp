@@ -110,6 +110,8 @@ int main() {
         host.frame(0.01);
         const auto after = host.vertices(1);
         check(before[0].position[0] == after[0].position[0], "Stationary camera changed without input");
+        bool modelMoves=false;for(size_t i=252;i<288;++i)for(int axis=0;axis<4;++axis){check(std::isfinite(after[i].position[axis]),"Studio pose produced nonfinite draw vertex");modelMoves|=before[i].position[axis]!=after[i].position[axis];}
+        check(modelMoves,"Weighted studio pose did not advance with host frame");
         check(before.back().position[0]!=after.back().position[0], "Visible physics pose did not advance");
         check(!host.executeSource("missing_source_command"), "Unknown command accepted");
         check(!host.start(directory), "Duplicate start accepted");
