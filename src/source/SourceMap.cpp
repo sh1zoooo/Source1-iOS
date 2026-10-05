@@ -274,7 +274,7 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     const auto base=mdlPath.substr(0,mdlPath.size()-4);auto read=[&](const std::string& path,std::vector<std::uint8_t>& bytes){CUtlBuffer data;if(!g_pFullFileSystem->ReadFile(path.c_str(),pathID,data)||data.TellPut()<=0)return false;bytes.assign(static_cast<std::uint8_t*>(data.Base()),static_cast<std::uint8_t*>(data.Base())+data.TellPut());return true;};
     std::vector<std::uint8_t> mdl,vvd,vtx;if(!read(mdlPath,mdl)||!read(base+".vvd",vvd)||!read(base+".dx90.vtx",vtx)){Warning("Source studio: missing MDL/VVD/DX90.VTX companion for %s\n",filename);return false;}
     StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
-    std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(96,80,0);
+    std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(0,64,0);
     for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{.2f*light,.85f*light,.35f*light},{v.uv.x,v.uv.y}});}
     impl_->modelMesh=std::move(staged);Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",parsed.sourceVertices,parsed.triangles.size()/3,parsed.meshes,filename);return true;
 }

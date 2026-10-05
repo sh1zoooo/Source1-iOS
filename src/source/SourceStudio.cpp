@@ -49,7 +49,7 @@ StudioFixture makeStudioFixture(){
 
     vertexFileHeader_t vh{};vh.id=MODEL_VERTEX_FILE_ID;vh.version=MODEL_VERTEX_FILE_VERSION;vh.checksum=checksum;vh.numLODs=1;vh.numLODVertexes[0]=8;
     const size_t vvdHeader=append(f.vvd,vh);const Vector positions[]={
-        {-10,-8,0},{10,-8,0},{10,8,0},{-10,8,0},{-7,-5,38},{7,-5,38},{7,5,38},{-7,5,38}};
+        {-12,-8,0},{12,-8,0},{12,8,0},{-12,8,0},{-8,-5,64},{8,-5,64},{8,5,64},{-8,5,64}};
     mstudiovertex_t vertices[8]{};for(int i=0;i<8;++i){vertices[i].m_vecPosition=positions[i];vertices[i].m_vecNormal=Vector(positions[i].x,positions[i].y,i<4?-8:8);VectorNormalize(vertices[i].m_vecNormal);vertices[i].m_vecTexCoord=Vector2D((i&1)?1:0,(i&2)?1:0);vertices[i].m_BoneWeights.numbones=1;vertices[i].m_BoneWeights.weight[0]=1;}
     const size_t vertexOffset=appendMany(f.vvd,vertices,8);auto* vhp=at<vertexFileHeader_t>(f.vvd,vvdHeader);vhp->vertexDataStart=vertexOffset;vhp->tangentDataStart=0;
 
