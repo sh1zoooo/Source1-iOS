@@ -24,6 +24,8 @@ int main() {
         check(host.frames() == 0, "Stopped host accepted a frame");
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
+        const auto bspTexture=host.texture();const auto bspTextureRevision=host.textureRevision();
+        check(bspTexture.width==64&&bspTexture.height==64&&bspTexture.pixels.size()==64*64*4,"BSP material texture missing");
         check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
@@ -34,6 +36,7 @@ int main() {
         check(!host.executeSource("source_bsp_load \"\""), "Empty BSP name accepted");
         check(!host.executeSource("source_bsp_load maps/../../outside.bsp"), "BSP path traversal accepted");
         check(!host.executeSource("source_bsp_load maps/missing.bsp"), "Missing map accepted");
+        check(host.texture().pixels==bspTexture.pixels,"Rejected map replaced BSP texture");
         check(host.executeSource("source_host_selftest"), "Original Host_Init / idle frame contracts failed");
         check(host.executeSource("source_engine_selftest"), "Engine subsystem contracts failed");
         check(host.executeSource("source_assets_selftest"), "Assets/physics contracts failed");
@@ -63,6 +66,7 @@ int main() {
         std::filesystem::create_directories(maps);
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         check(host.executeSource("source_bsp_load maps/imported.bsp"), "Valid user BSP preview failed");
+        check(host.texture().pixels==bspTexture.pixels&&host.textureRevision()>bspTextureRevision,"Imported BSP material did not resolve or advance revision");
         const auto imported=host.vertices(1);
         const auto models=directory/"Source1IOS/game/models";
         std::filesystem::copy_file(models/"__source1ios_static_probe.mdl",models/"bad.mdl");

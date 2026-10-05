@@ -55,7 +55,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 58% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 61% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -257,3 +257,11 @@ VMT `$basetexture` для VertexLitGeneric/UnlitGeneric; оригинальна�
 При отсутствующем или неподдержанном материале используется checker. Эта версия
 не реализует полноценный VertexLitGeneric: нет normal/specular/envmap, прозрачности,
 многоматериальных draw batches, skin tables, Patch/Proxies и BSP-материалов.
+
+### First BSP material (0.16.0, build 19)
+
+Preview читает BSP `TEXINFO`/`TEXDATA`/string table, вычисляет UV оригинальными
+texture vectors и разрешает первый `LightmappedGeneric` VMT `$basetexture` в VTF.
+Встроенная комната получает отдельную кирпичную текстуру; успешная смена карты
+обновляет Metal-текстуру по revision, а отклонённая карта не меняет активные
+пиксели. Это первый material slot, ещё без multi-material batching и lightmaps.

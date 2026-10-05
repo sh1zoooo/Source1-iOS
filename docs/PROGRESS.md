@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **58%**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **61%**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -10,7 +10,10 @@ raw Quaternion48/64 и Vector48, интерполяция кадров и loop. 
 delta, IK и blend sequences пока пропускаются, модель остаётся доступной в bind pose.
 Этап 0.15 разрешает первый материал модели через MDL/CD texture directories,
 VMT `$basetexture`, оригинальный VTF decoder и отдельную texture slot Metal.
-Несколько материалов, skins, shader features и материалы BSP пока впереди.
+Несколько материалов, skins и shader features пока впереди.
+Этап 0.16 читает первый материал поверхности из BSP TEXINFO/TEXDATA/string table,
+вычисляет UV по Source texture vectors и загружает LightmappedGeneric VMT/VTF.
+Пока это один base-texture slot на всю preview-сцену, без lightmap.
 Процент — инженерная оценка оставшейся работы, а не число тестов или исходников.
 100% здесь означает минимальный порт с реальным engine, загрузкой тестовой BSP-карты,
 адаптированными материалами/рендерингом и камерой на iPhone. Готовая CS:GO не входит

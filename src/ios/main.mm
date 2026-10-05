@@ -31,6 +31,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     CGPoint _movement;
     BOOL _movingGesture;
     BOOL _smokeRequested;
+    std::uint64_t _mapTextureRevision;
     std::uint64_t _modelTextureRevision;
 }
 @property(nonatomic, strong) MTKView *metalView;
@@ -137,15 +138,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    const auto& decoded = _runtime.texture();
-    MTLTextureDescriptor *textureDescriptor = [MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm
-        width:decoded.width height:decoded.height mipmapped:NO];
-    self.mapTexture = [device newTextureWithDescriptor:textureDescriptor];
-    if (!self.mapTexture) { [self fail:@"VTF texture upload failed"]; return; }
-    [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
-        withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
-    _runtime.log("Source VTF preview texture uploaded to Metal");
-    self.status.text = @"Source 1 iOS · minimal milestone ~58%\nBSP · MDL animation · VMT/VTF model\nSource self-tests: 67 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~61%\nBSP VMT/VTF · MDL animation/material\nSource self-tests: 68 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -194,6 +187,13 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     MTLRenderPassDescriptor *pass = view.currentRenderPassDescriptor;
     id<CAMetalDrawable> drawable = view.currentDrawable;
     if (!pass || !drawable || !self.pipeline) return;
+    if (_mapTextureRevision != _runtime.textureRevision()) {
+        const auto& decoded=_runtime.texture();
+        MTLTextureDescriptor *descriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:decoded.width height:decoded.height mipmapped:NO];
+        id<MTLTexture> staged=[view.device newTextureWithDescriptor:descriptor];if(!staged){[self fail:@"BSP texture upload failed"];return;}
+        [staged replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0 withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
+        self.mapTexture=staged;_mapTextureRevision=_runtime.textureRevision();_runtime.log("Source BSP VMT/VTF base texture uploaded to Metal");
+    }
     if (_modelTextureRevision != _runtime.modelTextureRevision()) {
         const auto& decoded=_runtime.modelTexture();
         MTLTextureDescriptor *descriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:decoded.width height:decoded.height mipmapped:NO];
@@ -251,7 +251,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~58%%\nBSP · MDL animation · VMT/VTF model\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~61%%\nBSP VMT/VTF · MDL animation/material\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

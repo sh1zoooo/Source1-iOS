@@ -28,6 +28,7 @@ public:
     bool impulsePhysics();
     std::vector<SourceVertex> vertices(float aspect) const;
     const SourceTexture& texture() const;
+    std::uint64_t textureRevision() const;
     const SourceTexture& modelTexture() const;
     std::uint64_t modelTextureRevision() const;
 private:
