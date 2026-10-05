@@ -52,6 +52,7 @@ int main() {
         check(contents.find("Host paused") != std::string::npos, "Pause log missing");
         check(contents.find("Host stopped after 3 frames") != std::string::npos, "Shutdown log missing");
         check(contents.find("Source Host_Shutdown completed; host_initialized=0") != std::string::npos, "Original host did not shut down");
+        check(contents.find("Source host GAME directory: " + (directory / "Source1IOS" / "game").string()) != std::string::npos, "Host path differs from the mounted game path");
         check(contents.find("Recursive shutdown") == std::string::npos, "Recursive shutdown guard persisted");
         check(host.start(directory), "Restart failed");
         check(host.frames() == 0 && host.elapsed() == 0, "Restart retained simulation state");

@@ -4,6 +4,7 @@
 #include "host_cmd.h"
 #include "common.h"
 #include "cmd.h"
+#include "filesystem.h"
 #include "filesystem/IQueuedLoader.h"
 #include "tier2/tier2.h"
 #include "tier0/icommandline.h"
@@ -17,11 +18,12 @@ bool report(const char* name, bool passed) {
 }
 }
 namespace source1ios {
-bool SourceHost::start(const std::filesystem::path& documents) {
+bool SourceHost::start(const std::filesystem::path& root) {
     if (started_ || host_initialized || !g_pQueuedLoader) return false;
-    base_ = (documents / "Source1IOS").string();
-    game_ = (documents / "Source1IOS" / "game").string();
+    base_ = root.string();
+    game_ = (root / "game").string();
     if (game_.size() >= sizeof(com_gamedir) || base_.size() >= sizeof(com_basedir)) return false;
+    if (!g_pFullFileSystem || !g_pFullFileSystem->IsDirectory(game_.c_str())) return false;
     // Filesystem search paths are already mounted by SourceFiles. Keep stable
     // backing storage for Source's raw host_parms pointers throughout its life.
     host_parms.basedir = const_cast<char*>(base_.c_str());
@@ -29,6 +31,7 @@ bool SourceHost::start(const std::filesystem::path& documents) {
     host_parms.memsize = 128 * 1024 * 1024;
     V_strncpy(com_basedir, base_.c_str(), sizeof(com_basedir));
     V_strncpy(com_gamedir, game_.c_str(), sizeof(com_gamedir));
+    Msg("Source host GAME directory: %s\n", com_gamedir);
     CommandLine()->CreateCmdLine("source1-ios -dedicated -nogamedll -insecure -noip -noipx -nobreakpad -noshaderapi -nosound -nowatchdog");
     Msg("Source host: calling original Host_Init(true), -nogamedll, networking disabled\n");
     Host_Init(true);
