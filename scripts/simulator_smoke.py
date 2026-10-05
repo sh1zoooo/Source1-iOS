@@ -39,4 +39,11 @@ try:
     else:
         raise RuntimeError(f"C++ / Metal startup timed out. Log:\n{text}")
 finally:
+    Path("artifacts").mkdir(exist_ok=True)
+    if "log" in globals() and log.exists():
+        Path("artifacts/simulator-runtime.log").write_text(log.read_text())
+    crash_directory=Path.home()/"Library/Logs/DiagnosticReports"
+    if crash_directory.exists():
+        for crash in crash_directory.glob("Source1IOS*.ips"):
+            Path("artifacts",crash.name).write_bytes(crash.read_bytes())
     subprocess.run(["xcrun", "simctl", "shutdown", udid], check=False)

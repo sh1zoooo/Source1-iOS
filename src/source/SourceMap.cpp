@@ -7,6 +7,8 @@
 #include "tier3/tier3.h"
 #include "vphysics_interface.h"
 #include "gametrace.h"
+#include "cmodel_engine.h"
+#include "gl_model_private.h"
 #include "vtf/vtf.h"
 #include "tier1/utlbuffer.h"
 #include "tier0/dbg.h"
@@ -70,38 +72,72 @@ std::vector<unsigned char> fixture() {
     auto append=[&](int id,const void* data,size_t length){h.lumps[id].fileofs=bytes.size();h.lumps[id].filelen=length;auto p=static_cast<const unsigned char*>(data);bytes.insert(bytes.end(),p,p+length);};
     append(LUMP_VERTEXES,vertices.data(),vertices.size()*sizeof(dvertex_t));append(LUMP_EDGES,edges.data(),edges.size()*sizeof(dedge_t));
     append(LUMP_SURFEDGES,surfedges.data(),surfedges.size()*sizeof(int));append(LUMP_FACES,faces.data(),faces.size()*sizeof(dface_t));
+    const Vector lows[]={ {-256,-256,-16},{256,-256,0},{-272,256,0},{-272,-272,0},{-256,-272,0},{16,-48,0},{-96,80,0} };
+    const Vector highs[]={ {256,256,0},{272,272,192},{256,272,192},{-256,256,192},{256,-256,192},{80,16,64},{-32,144,96} };
+    std::vector<dplane_t> planes;std::vector<dbrushside_t> sides;std::vector<dbrush_t> brushes;
+    const int facePlanes[]={5,4,3,2,1,0};
+    for(unsigned box=0;box<7;++box){dbrush_t brush{};brush.firstside=sides.size();brush.numsides=6;brush.contents=CONTENTS_SOLID;brushes.push_back(brush);
+        for(int axis=0;axis<3;++axis)for(int sign=0;sign<2;++sign){dplane_t plane{};plane.normal[axis]=sign?-1:1;plane.type=axis;plane.dist=sign?-lows[box][axis]:highs[box][axis];planes.push_back(plane);
+            dbrushside_t side{};side.planenum=planes.size()-1;side.texinfo=0;side.dispinfo=-1;sides.push_back(side);}
+        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=0;}
+    }
+    // The geometry section was appended above; replace it with updated planes/texinfo.
+    std::memcpy(bytes.data()+h.lumps[LUMP_FACES].fileofs,faces.data(),faces.size()*sizeof(dface_t));
+    dleaf_t leaves[2]{};leaves[0].contents=CONTENTS_SOLID;leaves[0].cluster=-1;leaves[1].cluster=0;
+    for(auto& leaf:leaves){leaf.area=1;leaf.numleafbrushes=7;leaf.leafWaterDataID=-1;for(int i=0;i<3;++i){leaf.mins[i]=-272;leaf.maxs[i]=272;}}
+    dnode_t node{};node.planenum=4;node.children[0]=-2;node.children[1]=-1;
+    dmodel_t model{};model.mins=Vector(-272,-272,-16);model.maxs=Vector(272,272,192);model.headnode=0;model.numfaces=faces.size();
+    texinfo_t info{};info.textureVecsTexelsPerWorldUnits[0][0]=info.textureVecsTexelsPerWorldUnits[1][1]=1;info.lightmapVecsLuxelsPerWorldUnits[0][0]=info.lightmapVecsLuxelsPerWorldUnits[1][1]=1;
+    dtexdata_t tex{};tex.width=tex.height=tex.view_width=tex.view_height=64;tex.reflectivity=Vector(1,1,1);
+    std::vector<unsigned short> leafFaces;for(unsigned i=0;i<faces.size();++i)leafFaces.push_back(i);leaves[1].numleaffaces=faces.size();
+    append(LUMP_LEAFFACES,leafFaces.data(),leafFaces.size()*sizeof(unsigned short));
+    darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};int nameIndex=0;const char name[]="debug/debugempty";const char entities[]="{ \"classname\" \"worldspawn\" }\n";
+    append(LUMP_PLANES,planes.data(),planes.size()*sizeof(dplane_t));append(LUMP_BRUSHSIDES,sides.data(),sides.size()*sizeof(dbrushside_t));append(LUMP_BRUSHES,brushes.data(),brushes.size()*sizeof(dbrush_t));
+    append(LUMP_LEAFS,leaves,sizeof(leaves));h.lumps[LUMP_LEAFS].version=1;append(LUMP_LEAFBRUSHES,leafbrush,sizeof(leafbrush));
+    append(LUMP_NODES,&node,sizeof(node));append(LUMP_MODELS,&model,sizeof(model));append(LUMP_TEXINFO,&info,sizeof(info));
+    append(LUMP_TEXDATA,&tex,sizeof(tex));append(LUMP_TEXDATA_STRING_TABLE,&nameIndex,sizeof(nameIndex));append(LUMP_TEXDATA_STRING_DATA,name,sizeof(name));
+    append(LUMP_AREAS,areas,sizeof(areas));append(LUMP_ENTITIES,entities,sizeof(entities));
     std::memcpy(bytes.data(),&h,sizeof(h));return bytes;
 }
 }
 namespace source1ios {
 struct SourceMap::Impl {
     std::vector<MeshPoint> mesh;Collision collision, fixtureCollision;
-    std::string builtin;Vector camera;QAngle angles;SourceTexture texture;
+    std::string builtin;Vector camera;QAngle angles;SourceTexture texture;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
 bool SourceMap::start(const std::filesystem::path& root) {
     if(impl_)return false;
+    Msg("Source BSP startup: creating texture\n");
     impl_=std::make_unique<Impl>();impl_->builtin=(root/"selftest"/"ios_geometry.bsp").string();
     // Serialize a genuine VTF, read it through Source filesystem, then decode
     // the texture for the native Metal adapter. No shaderapiempty drawing implied.
     using VTF=std::unique_ptr<IVTFTexture,decltype(&DestroyVTFTexture)>;
     VTF source(CreateVTFTexture(),DestroyVTFTexture), decoded(CreateVTFTexture(),DestroyVTFTexture);
     if(!source || !decoded || !source->Init(64,64,1,IMAGE_FORMAT_RGBA8888,0,1)){stop();return false;}
+    Msg("Source BSP startup: filling texture mipmaps\n");
     for(int mip=0;mip<source->MipCount();++mip){int w=std::max(1,64>>mip),h=w;auto* pixels=source->ImageData(0,0,mip);
         for(int y=0;y<h;++y)for(int x=0;x<w;++x){auto* pixel=pixels+(y*w+x)*4;const bool alternate=((x*64/w)/8+(y*64/h)/8)%2;pixel[0]=pixel[1]=pixel[2]=alternate?210:120;pixel[3]=255;}}
+    Msg("Source BSP startup: serializing VTF\n");
     CUtlBuffer encoded;if(!source->Serialize(encoded)){stop();return false;}
     const auto texturePath=(root/"selftest"/"ios_checker.vtf").string();auto textureFile=g_pFullFileSystem->Open(texturePath.c_str(),"wb");
     bool textureOK=textureFile && g_pFullFileSystem->Write(encoded.Base(),encoded.TellPut(),textureFile)==encoded.TellPut();if(textureFile)g_pFullFileSystem->Close(textureFile);
+    Msg("Source BSP startup: reading VTF from filesystem\n");
     CUtlBuffer disk;if(!textureOK || !g_pFullFileSystem->ReadFile(texturePath.c_str(),nullptr,disk) || !decoded->Unserialize(disk)){stop();return false;}
+    Msg("Source BSP startup: converting VTF\n");
     decoded->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);impl_->texture.width=decoded->Width();impl_->texture.height=decoded->Height();
     impl_->texture.pixels.assign(decoded->ImageData(0,0,0),decoded->ImageData(0,0,0)+64*64*4);
+    Msg("Source BSP startup: generating BSP\n");
     const auto bytes=fixture();auto file=g_pFullFileSystem->Open(impl_->builtin.c_str(),"wb");
     bool ok=file && g_pFullFileSystem->Write(bytes.data(),bytes.size(),file)==int(bytes.size());if(file)g_pFullFileSystem->Close(file);
     if(!ok || !load(impl_->builtin.c_str(),nullptr)){stop();return false;}
+    impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
+    if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
+    Msg("Source engine brush world loaded: %d vertices, %d surfaces, %d leaves\n",impl_->world->brush.pShared->numvertexes,impl_->world->brush.pShared->numsurfaces,impl_->world->brush.pShared->numleafs);
     impl_->fixtureCollision=impl_->collision;
     if(!selfTest()){stop();return false;}
-    Msg("Source BSP preview ready: original lump loader + polygon collision + Metal adapter. Full engine world/material rendering remains pending.\n");return true;
+    Msg("Source BSP preview ready: original lump loader + polygon collision + Metal adapter. Engine brush world loaded; original graphical materialsystem and game remain pending.\n");return true;
 }
 void SourceMap::stop(){impl_.reset();}
 bool SourceMap::load(const char* filename,const char* pathID) {
@@ -142,7 +178,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     auto* soup=g_pPhysicsCollision->PolysoupCreate();if(!soup)return false;
     for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
     Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
-    impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);resetCamera();
+    impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=Vector(-190,-160,80);impl_->angles=QAngle(8,35,0);}}
@@ -152,7 +188,9 @@ void SourceMap::move(float forward,float right,float seconds){
     Vector f,r;AngleVectors(QAngle(0,impl_->angles.y,0),&f,&r,nullptr);Vector delta=f*forward+r*right;
     if(delta.LengthSqr()>1)VectorNormalize(delta);delta*=160*std::min(seconds,.1f);
     // Swept hull against the actual IVP polygon collision avoids wall tunneling.
-    trace_t trace{};g_pPhysicsCollision->TraceBox(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8),impl_->collision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
+    trace_t trace{};
+    if(impl_->builtinActive && impl_->world){Ray_t hull;hull.Init(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8));CM_BoxTrace(hull,0,MASK_PLAYERSOLID,true,trace);}
+    else g_pPhysicsCollision->TraceBox(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8),impl_->collision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
     if(!trace.startsolid)impl_->camera+=delta*std::max(0.f,trace.fraction-.001f);
 }
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
@@ -171,6 +209,11 @@ bool SourceMap::selfTest(){
     g_pPhysicsCollision->TraceBox(Vector(-190,-160,80),Vector(400,-160,80),Vector(-8,-8,-24),Vector(8,8,8),impl_->fixtureCollision.get(),Vector(0,0,0),QAngle(0,0,0),&trace);
     all&=report("IVP swept camera wall",trace.fraction>0 && trace.fraction<.8f && !trace.startsolid);
     all&=report("VTF preview texture decoded",impl_->texture.width==64 && impl_->texture.height==64 && impl_->texture.pixels.size()==64*64*4);
+    all&=report("engine brush model loaded",impl_->world && modelloader->IsLoaded(impl_->world) && impl_->world->type==mod_brush && impl_->world->brush.pShared->numvertexes==56 && impl_->world->brush.pShared->numsurfaces==42);
+    Ray_t ray;ray.Init(Vector(-190,-160,80),Vector(-190,-160,-80));CM_BoxTrace(ray,0,MASK_SOLID,true,trace);
+    all&=report("engine CM floor trace",trace.fraction>.49f && trace.fraction<.51f);
+    all&=report("engine CM point contents",CM_PointContents(Vector(-190,-160,80),0)==CONTENTS_EMPTY && (CM_PointContents(Vector(-190,-160,-8),0)&CONTENTS_SOLID));
+    all&=report("engine worldspawn entities",CM_EntityString() && std::strstr(CM_EntityString(),"worldspawn"));
     auto before=vertices(1);const auto saved=impl_->angles;look(10,0);auto after=vertices(1);impl_->angles=saved;
     all&=report("Source camera projection",before.size()==after.size()&&!before.empty()&&before[0].position[0]!=after[0].position[0]);return all;
 }

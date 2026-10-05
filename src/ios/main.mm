@@ -138,7 +138,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self.mapTexture replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0
         withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
     _runtime.log("Source VTF preview texture uploaded to Metal");
-    self.status.text = @"Source 1 iOS · progress ~35%\nEngine · materials (headless) · physics\nSource self-tests: 45 PASS\nBSP preview · left move / right look";
+    self.status.text = @"Source 1 iOS · progress ~35%\nEngine · materials (headless) · physics\nSource self-tests: 49 PASS\nBSP preview · left move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
