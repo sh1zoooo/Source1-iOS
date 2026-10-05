@@ -21,7 +21,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 }
 )metal";
 
-@interface LabController : UIViewController <MTKViewDelegate> {
+@interface LabController : UIViewController <MTKViewDelegate, UITextFieldDelegate> {
     source1ios::Runtime _runtime;
     std::chrono::steady_clock::time_point _previous;
     BOOL _hasPrevious;
@@ -65,6 +65,8 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.commandInput.borderStyle = UITextBorderStyleRoundedRect;
     self.commandInput.autocapitalizationType = UITextAutocapitalizationTypeNone;
     self.commandInput.autocorrectionType = UITextAutocorrectionTypeNo;
+    self.commandInput.delegate = self;
+    self.commandInput.returnKeyType = UIReturnKeyGo;
     self.commandInput.translatesAutoresizingMaskIntoConstraints = NO;
     [self.view addSubview:self.commandInput];
     UIButton *run = [UIButton buttonWithType:UIButtonTypeSystem];
@@ -229,6 +231,10 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         _runtime.cameraLook((float)-delta.x * .18f, (float)delta.y * .18f);
         [gesture setTranslation:CGPointZero inView:self.metalView];
     }
+}
+- (BOOL)textFieldShouldReturn:(UITextField *)textField {
+    [self runCommand:nil];
+    return YES;
 }
 - (void)runCommand:(UIButton *)sender {
     NSString *command = self.commandInput.text ?: @"";
