@@ -1,7 +1,7 @@
 # Source1-iOS
 
 Экспериментальный перенос Source 1 на iOS ARM64. Базовые библиотеки Source проверены
-на физическом iPhone 16e с iOS 18.6.2. В версии 0.7 оригинальный appframework запускает зависимости, затем вызываются настоящий Host_Init и кадры dedicated-движка в штатном режиме -nogamedll.
+на физическом iPhone 16e с iOS 18.6.2. В версии 0.7.1 оригинальный appframework запускает зависимости, затем вызываются настоящий Host_Init и кадры dedicated-движка в штатном режиме -nogamedll.
 
 **Текущий этап: движок запускает dedicated host без игровой DLL. Загрузка карт и графический рендерер ещё отсутствуют.**
 
@@ -21,10 +21,10 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 Поле консоли работает через реальные `CCommand`, `ConCommand` и `ConVar`:
 
 - `source_status` — перечень подключённых библиотек и границы текущего порта.
-- `source_selftest` — повторить все 38 проверок Source.
+- `source_selftest` — повторить все 39 проверок Source.
 - `source_host_selftest` — настоящий Host_Init, queued loader и idle ticks.
 - `source_app_selftest` — проверить фабрику, порядок остановки и откат ошибок.
-- `source_assets_selftest` — VTF, data cache, физические коллизии и симуляция.
+- `source_assets_selftest` — VTF, data cache, физические коллизии, симуляция и ragdoll-сочленение.
 - `source_engine_selftest` — семь проверок оригинального engine.
 - `source_fs_selftest` — повторить семь проверок файловой системы.
 - `ios_rotation_speed 0` — остановить куб.

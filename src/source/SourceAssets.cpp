@@ -12,6 +12,7 @@
 #include "datacache/imdlcache.h"
 #include "materialsystem/imaterialsystem.h"
 #include "vphysics_interface.h"
+#include "vphysics/constraints.h"
 #include "gametrace.h"
 
 namespace {
@@ -103,6 +104,41 @@ bool sourceAssetsSelfTest() {
         physics->DestroyEnvironment(environment);
     }
     all &= report("physics gravity simulation", simulated);
+    // Exercise the actual Havana ragdoll solver, not only unconstrained bodies.
+    // A fixed reference and a moving body share a joint with three angular limits.
+    environment = physics ? physics->CreateEnvironment() : nullptr;
+    bool constrained = false;
+    if (environment) {
+        environment->SetGravity(Vector(0,0,-600));
+        objectparams_t params{nullptr,1,1,0,0,.05f,"iOS ragdoll probe",nullptr,0,1,true};
+        auto* anchor = environment->CreateSphereObject(1,0,Vector(0,0,64),QAngle(0,0,0),&params,true);
+        auto* body = environment->CreateSphereObject(1,0,Vector(0,0,56),QAngle(0,0,0),&params,false);
+        IPhysicsConstraint* joint = nullptr;
+        if (anchor && body) {
+            constraint_ragdollparams_t limits;
+            limits.Defaults();
+            MatrixSetColumn(Vector(0,0,-4),3,limits.constraintToReference);
+            MatrixSetColumn(Vector(0,0,4),3,limits.constraintToAttached);
+            for (auto& axis : limits.axes) axis.SetAxisFriction(-45,45,0);
+            joint = environment->CreateRagdollConstraint(anchor,body,nullptr,limits);
+            if (joint) {
+                body->Wake();
+                body->ApplyForceCenter(Vector(250,0,0));
+                for (unsigned i = 0; i < 100; ++i) environment->Simulate(.01f);
+                Vector referencePoint, attachedPoint, position;
+                anchor->LocalToWorld(&referencePoint,Vector(0,0,-4));
+                body->LocalToWorld(&attachedPoint,Vector(0,0,4));
+                body->GetPosition(&position,nullptr);
+                constrained = position.IsValid() && std::abs(position.x) > .01f
+                    && (referencePoint-attachedPoint).Length() < .2f;
+            }
+        }
+        if (joint) environment->DestroyConstraint(joint);
+        if (body) environment->DestroyObject(body);
+        if (anchor) environment->DestroyObject(anchor);
+        physics->DestroyEnvironment(environment);
+    }
+    all &= report("physics ragdoll joint under impulse", constrained);
     if (all) Msg("Source dependencies initialized: materialsystem/shaderapiempty, datacache/MDLCache, studiorender, vphysics/IVP, VTF.\n");
     return all;
 }

@@ -123,7 +123,7 @@ fragment float4 fragmentMain(Output in [[stage_in]]) { return float4(in.color, 1
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · progress ~25%\nEngine · materials (headless) · physics\nSource self-tests: 38 PASS\nHost_Init ready · dedicated idle frames";
+    self.status.text = @"Source 1 iOS · progress ~25%\nEngine · materials (headless) · physics\nSource self-tests: 39 PASS\nHost_Init ready · dedicated idle frames";
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)

@@ -138,7 +138,17 @@ dedicated warning is expected in this engine-only harness.
 The shutdown recursion guard now resets after successful shutdown. The hunk stack
 terminates its reservation on shutdown rather than retaining a base that prevents
 reinitialization. Command-buffer tests preserve a live host's buffer lifetime.
-38 startup checks include queued loader, Host_Init and idle tick advancement.
+39 startup checks include queued loader, Host_Init and idle tick advancement.
 Linux contracts exercise repeat tests, pause/resume, shutdown and restart.
-The previous 35-check IPA passed ARM64 simulator startup; physical iPhone evidence
-currently covers the preceding 26-check build.
+The 35-check v0.6 IPA passed startup and all checks on the physical iPhone 16e
+(A18, iOS 18.6.2); the v0.7 Host_Init / idle tick build passed ARM64 simulator startup.
+
+
+## Ragdoll solver validation (v0.7.1)
+
+CreateRagdollConstraint joins two original physics bodies with three angular limits.
+After a lateral impulse and one second under gravity, transformed joint anchors
+must remain within 0.2 Source units while the dynamic body moves. This exercises
+Havana on ARM64, a prerequisite for a physical character skeleton. It is one joint,
+not a loaded or rendered character. Constraint and bodies are destroyed before
+the environment, also during repeated self-tests and host restarts.
