@@ -79,7 +79,8 @@ bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
         const size_t decoded=l.uncompressedSize?l.uncompressedSize:l.filelen;
         if(decoded>maximumLump || size_t(l.filelen)>maximumLump)return fail("geometry lump exceeds 16 MiB limit",geometryLumps[i]);
         if(decoded%geometryStrides[i])return fail("geometry record size mismatch",geometryLumps[i]);
-        if(l.version!=0)return fail("unsupported geometry lump version",geometryLumps[i]);
+        const bool supportedVersion=l.version==0 || (geometryLumps[i]==LUMP_FACES && l.version==LUMP_FACES_VERSION);
+        if(!supportedVersion)return fail("unsupported geometry lump version",geometryLumps[i]);
     }
     return true;
 }

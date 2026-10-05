@@ -63,6 +63,7 @@ int main() {
         auto put32=[&](size_t offset,uint32_t value){std::memcpy(bsp.data()+offset,&value,4);};
         const auto compressed=source1ios::bspLzmaVertices();
         put32(8+3*16,bsp.size());put32(8+3*16+4,compressed.size());put32(8+3*16+12,672);
+        put32(8+7*16+8,1); // Source's declared LUMP_FACES_VERSION.
         bsp.insert(bsp.end(),compressed.begin(),compressed.end());
         auto writeBsp=[&](const char* name){std::ofstream out(maps/name,std::ios::binary);out.write(reinterpret_cast<const char*>(bsp.data()),bsp.size());};
         writeBsp("compressed.bsp");
