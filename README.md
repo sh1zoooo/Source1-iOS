@@ -62,6 +62,9 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
+Проверенная сборка: [0.9.1, build 11 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37271487560/artifacts/11328731422).
+[Результаты проверок](docs/VALIDATION-0.9.1.md).
+
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный
 запуск **iOS host build** и скачайте артефакт `Source1IOS-<commit>`.
 В ZIP находятся `Source1IOS-unsigned.ipa`, SHA256, лог и скриншот симулятора.
