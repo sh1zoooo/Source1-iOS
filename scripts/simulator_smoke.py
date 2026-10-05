@@ -34,8 +34,10 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 139:
-                raise RuntimeError(f"Expected two sets of 69 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 147:
+                raise RuntimeError(f"Expected two sets of 73 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP LDR lightmap atlas uploaded to Metal" not in text:
+                raise RuntimeError("BSP LDR lightmaps were not staged and uploaded to Metal")
             if "Source BSP VMT/VTF base texture uploaded to Metal" not in text:
                 raise RuntimeError("BSP base texture did not reach Metal")
             if "Source BSP material atlas ready: 2 slots, 128x64 RGBA" not in text:

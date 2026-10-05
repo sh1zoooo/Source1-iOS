@@ -79,7 +79,7 @@ bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::Sourc
 bool report(const char* name, bool ok) {
     Msg("Source BSP self-test %s: %s\n",name,ok?"PASS":"FAIL");return ok;
 }
-struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; };
+struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; float lightmap[3]{}; };
 struct CollisionDelete {
     void operator()(CPhysCollide* p) const { if(p && g_pPhysicsCollision) g_pPhysicsCollision->DestroyCollide(p); }
 };
@@ -119,8 +119,8 @@ constexpr size_t maximumLump = 16 * 1024 * 1024;
 constexpr int geometryLumps[]={LUMP_VERTEXES,LUMP_EDGES,LUMP_SURFEDGES,LUMP_FACES,LUMP_DISPINFO,LUMP_DISP_VERTS,LUMP_DISP_TRIS};
 constexpr size_t geometryStrides[]={sizeof(dvertex_t),sizeof(dedge_t),sizeof(int),sizeof(dface_t),sizeof(ddispinfo_t),sizeof(CDispVert),sizeof(CDispTri)};
 constexpr size_t geometryLumpCount=sizeof(geometryLumps)/sizeof(*geometryLumps);
-constexpr int materialLumps[]={LUMP_TEXINFO,LUMP_TEXDATA,LUMP_TEXDATA_STRING_TABLE,LUMP_TEXDATA_STRING_DATA};
-constexpr size_t materialStrides[]={sizeof(texinfo_t),sizeof(dtexdata_t),sizeof(int),1};
+constexpr int materialLumps[]={LUMP_TEXINFO,LUMP_TEXDATA,LUMP_TEXDATA_STRING_TABLE,LUMP_TEXDATA_STRING_DATA,LUMP_LIGHTING};
+constexpr size_t materialStrides[]={sizeof(texinfo_t),sizeof(dtexdata_t),sizeof(int),1,sizeof(ColorRGBExp32)};
 constexpr size_t materialLumpCount=sizeof(materialLumps)/sizeof(*materialLumps);
 bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
     auto fail=[&](const char* reason,int id=-1){if(file)Warning("Source BSP rejected %s: %s; version=%d, lump=%d, file bytes=%zu\n",file,reason,h.version,id,size);return false;};
@@ -141,7 +141,7 @@ bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
     for(size_t i=0;i<materialLumpCount;++i){const auto& l=h.lumps[materialLumps[i]];const size_t decoded=l.uncompressedSize?l.uncompressedSize:l.filelen;
         if(decoded>maximumLump||size_t(l.filelen)>maximumLump)return fail("material lump exceeds 16 MiB limit",materialLumps[i]);
         if(decoded%materialStrides[i])return fail("material record size mismatch",materialLumps[i]);
-        if(l.version!=0)return fail("unsupported material lump version",materialLumps[i]);}
+        if(l.version!=0 && !(materialLumps[i]==LUMP_LIGHTING && l.version==1))return fail("unsupported material lump version",materialLumps[i]);}
     return true;
 }
 // Use the original bounded streaming decoder, not legacy Uncompress(), which
@@ -172,10 +172,12 @@ struct LoaderScope {
     ~LoaderScope(){ CMapLoadHelper::Shutdown(); }
 };
 struct BspMaterials {std::vector<texinfo_t> infos;std::vector<dtexdata_t> data;std::vector<int> table;std::vector<char> strings;std::vector<std::string> names;std::vector<unsigned> slots;unsigned slotCount=0;};
-bool bspMaterials(BspMaterials& out){
-    out.infos=lump<texinfo_t>(LUMP_TEXINFO,{});out.data=lump<dtexdata_t>(LUMP_TEXDATA,{});out.table=lump<int>(LUMP_TEXDATA_STRING_TABLE,{});out.strings=lump<char>(LUMP_TEXDATA_STRING_DATA,{});
+bool bspMaterials(BspMaterials& out,const std::array<std::vector<unsigned char>,HEADER_LUMPS>& decoded){
+    out.infos=lump<texinfo_t>(LUMP_TEXINFO,decoded[LUMP_TEXINFO]);out.data=lump<dtexdata_t>(LUMP_TEXDATA,decoded[LUMP_TEXDATA]);out.table=lump<int>(LUMP_TEXDATA_STRING_TABLE,decoded[LUMP_TEXDATA_STRING_TABLE]);out.strings=lump<char>(LUMP_TEXDATA_STRING_DATA,decoded[LUMP_TEXDATA_STRING_DATA]);
     if(out.infos.empty()||out.infos.size()>65536||out.data.empty()||out.data.size()>MAX_MAP_TEXDATA||out.table.empty()||out.table.size()>MAX_MAP_TEXDATA_STRING_TABLE||out.strings.empty())return false;
-    for(const auto& info:out.infos)if(info.texdata<0||size_t(info.texdata)>=out.data.size())return false;
+    for(const auto& info:out.infos){if(info.texdata<0||size_t(info.texdata)>=out.data.size())return false;
+        for(int axis=0;axis<2;++axis)for(int component=0;component<4;++component)
+            if(!std::isfinite(info.textureVecsTexelsPerWorldUnits[axis][component])||!std::isfinite(info.lightmapVecsLuxelsPerWorldUnits[axis][component]))return false;}
     for(const auto& data:out.data){if(data.nameStringTableID<0||size_t(data.nameStringTableID)>=out.table.size()||data.width<=0||data.height<=0||data.width>2048||data.height>2048)return false;
         const int offset=out.table[data.nameStringTableID];if(offset<0||size_t(offset)>=out.strings.size())return false;std::string name;
         for(size_t i=offset;i<out.strings.size()&&name.size()<240&&out.strings[i];++i)name.push_back(out.strings[i]);
@@ -195,6 +197,34 @@ source1ios::SourceTexture bspAtlas(const BspMaterials& materials,const source1io
             std::memcpy(atlas.pixels.data()+(size_t(y)*atlas.width+slot*tile+x)*4,decoded.pixels.data()+(size_t(sy)*decoded.width+sx)*4,4);}
     }return atlas;
 }
+bool lightmapRange(const dface_t& face,const texinfo_t& info,size_t bytes,unsigned& width,unsigned& height){
+    if(face.lightofs==-1){width=height=0;return true;}
+    if(face.lightofs<0 || face.lightofs%sizeof(ColorRGBExp32))return false;
+    for(int i=0;i<2;++i)if(face.m_LightmapTextureSizeInLuxels[i]<0 || face.m_LightmapTextureSizeInLuxels[i]>255)return false;
+    width=face.m_LightmapTextureSizeInLuxels[0]+1;height=face.m_LightmapTextureSizeInLuxels[1]+1;
+    unsigned styles=0;while(styles<MAXLIGHTMAPS&&face.styles[styles]!=255)++styles;
+    if(!styles)return false;
+    const size_t required=size_t(width)*height*styles*((info.flags&SURF_BUMPLIGHT)?4:1)*sizeof(ColorRGBExp32);
+    return size_t(face.lightofs)<=bytes && required<=bytes-size_t(face.lightofs);
+}
+// LDR preview: the first static lightstyle, gamma-encoded for multiplication
+// with the existing base-texture adapter. HDR, animated styles and bump maps
+// require the original graphical materialsystem and are not reproduced here.
+struct LightmapAtlas {
+    source1ios::SourceTexture texture{1024,1024,std::vector<std::uint8_t>(1024*1024*4,255)};
+    unsigned x=0,y=0,row=0,faces=0;
+    bool add(const dface_t& face,const texinfo_t& info,const std::vector<ColorRGBExp32>& samples,unsigned& ox,unsigned& oy,unsigned& w,unsigned& h){
+        if(!lightmapRange(face,info,samples.size()*sizeof(ColorRGBExp32),w,h))return false;
+        if(!w)return true;
+        if(x+w+2>texture.width){x=0;y+=row;row=0;}
+        if(y+h+2>texture.height)return false;
+        ox=x+1;oy=y+1;const auto* source=samples.data()+face.lightofs/sizeof(ColorRGBExp32);
+        for(unsigned sy=0;sy<h+2;++sy)for(unsigned sx=0;sx<w+2;++sx){const auto& c=source[size_t(std::min(h-1,sy?sy-1:0))*w+std::min(w-1,sx?sx-1:0)];
+            auto* pixel=texture.pixels.data()+(size_t(y+sy)*texture.width+x+sx)*4;
+            const unsigned channels[]={c.r,c.g,c.b};for(int k=0;k<3;++k){const double linear=std::ldexp(double(channels[k])/255.0,int(c.exponent));pixel[k]=std::lround(std::pow(std::clamp(linear,0.0,1.0),1.0/2.2)*255);}}
+        x+=w+2;row=std::max(row,h+2);++faces;return true;
+    }
+};
 using Triangle=std::array<Vector,3>;
 bool boundedPoint(const Vector& p){return p.IsValid() && std::abs(p.x)<=32768 && std::abs(p.y)<=32768 && std::abs(p.z)<=32768;}
 bool displacementTriangles(const std::vector<Vector>& polygon,size_t face,const ddispinfo_t& d,
@@ -262,7 +292,7 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     for(unsigned box=0;box<7;++box){dbrush_t brush{};brush.firstside=sides.size();brush.numsides=6;brush.contents=CONTENTS_SOLID;brushes.push_back(brush);
         for(int axis=0;axis<3;++axis)for(int sign=0;sign<2;++sign){dplane_t plane{};plane.normal[axis]=sign?-1:1;plane.type=axis;plane.dist=sign?-lows[box][axis]:highs[box][axis];planes.push_back(plane);
             dbrushside_t side{};side.planenum=planes.size()-1;side.texinfo=0;side.dispinfo=-1;sides.push_back(side);}
-        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=(box+f)%2;}
+        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=(f/2)*2+(box+f)%2;}
     }
     if(displaced){
         faces[1].dispinfo=0;ddispinfo_t disp{};disp.startPosition=vertices[4].point;disp.power=2;disp.m_iMapFace=1;disp.smoothingAngle=45;disp.contents=CONTENTS_SOLID;
@@ -280,8 +310,25 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     for(auto& leaf:leaves){leaf.area=1;leaf.numleafbrushes=7;leaf.leafWaterDataID=-1;for(int i=0;i<3;++i){leaf.mins[i]=-272;leaf.maxs[i]=272;}}
     dnode_t node{};node.planenum=4;node.children[0]=-2;node.children[1]=-1;
     dmodel_t model{};model.mins=Vector(-272,-272,-16);model.maxs=Vector(272,272,192);model.headnode=0;model.numfaces=faces.size();
-    texinfo_t infos[2]{};for(int i=0;i<2;++i){infos[i].textureVecsTexelsPerWorldUnits[0][0]=infos[i].textureVecsTexelsPerWorldUnits[1][1]=1;infos[i].lightmapVecsLuxelsPerWorldUnits[0][0]=infos[i].lightmapVecsLuxelsPerWorldUnits[1][1]=1;infos[i].texdata=i;}
+    // Each face uses axes in its own plane. XY on a vertical wall would
+    // collapse one UV coordinate, turning brick/grid textures into stripes.
+    texinfo_t infos[6]{};for(int i=0;i<6;++i){const int s=i/2==2?1:0,t=i/2==0?1:2;
+        infos[i].textureVecsTexelsPerWorldUnits[0][s]=infos[i].textureVecsTexelsPerWorldUnits[1][t]=1;
+        infos[i].lightmapVecsLuxelsPerWorldUnits[0][s]=infos[i].lightmapVecsLuxelsPerWorldUnits[1][t]=1.f/16;infos[i].texdata=i%2;}
     dtexdata_t tex[2]{};for(int i=0;i<2;++i){tex[i].width=tex[i].height=tex[i].view_width=tex[i].view_height=64;tex[i].reflectivity=Vector(1,1,1);tex[i].nameStringTableID=i;}
+    // Synthetic baked gradient stored in the real BSP lighting format. This
+    // fixture exercises loading/sampling, not a radiosity/light compiler.
+    std::vector<ColorRGBExp32> lighting;
+    for(auto& face:faces){const auto& info=infos[face.texinfo];std::fill(std::begin(face.styles),std::end(face.styles),255);face.styles[0]=0;face.lightofs=lighting.size()*sizeof(ColorRGBExp32);
+        for(int axis=0;axis<2;++axis){float minimum=1e9f,maximum=-1e9f;const auto& v=info.lightmapVecsLuxelsPerWorldUnits[axis];
+            for(int edge=0;edge<face.numedges;++edge){const int se=surfedges[face.firstedge+edge];const auto& p=vertices[edges[std::abs(se)].v[se<0?1:0]].point;
+                const float luxel=p.x*v[0]+p.y*v[1]+p.z*v[2]+v[3];minimum=std::min(minimum,luxel);maximum=std::max(maximum,luxel);}
+            face.m_LightmapTextureMinsInLuxels[axis]=int(std::floor(minimum));face.m_LightmapTextureSizeInLuxels[axis]=int(std::ceil(maximum))-face.m_LightmapTextureMinsInLuxels[axis];}
+        const unsigned w=face.m_LightmapTextureSizeInLuxels[0]+1,hgt=face.m_LightmapTextureSizeInLuxels[1]+1;
+        for(unsigned y=0;y<hgt;++y)for(unsigned x=0;x<w;++x){const unsigned value=70+185*x/std::max(1u,w-1);lighting.push_back({static_cast<unsigned char>(value),static_cast<unsigned char>(value),static_cast<unsigned char>(value),0});}
+    }
+    append(LUMP_LIGHTING,lighting.data(),lighting.size()*sizeof(ColorRGBExp32));h.lumps[LUMP_LIGHTING].version=1;
+    std::memcpy(bytes.data()+h.lumps[LUMP_FACES].fileofs,faces.data(),faces.size()*sizeof(dface_t));
     std::vector<unsigned short> leafFaces;for(unsigned i=0;i<faces.size();++i)leafFaces.push_back(i);leaves[1].numleaffaces=faces.size();
     append(LUMP_LEAFFACES,leafFaces.data(),leafFaces.size()*sizeof(unsigned short));
     darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};const char names[]="debug/debugempty\0debug/debugblue\0";const int nameIndex[]={0,17};const char entities[]="{ \"classname\" \"worldspawn\" }\n";
@@ -298,7 +345,7 @@ struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
-    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture;unsigned mapMaterialCount=1;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
@@ -380,33 +427,41 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     const auto size=g_pFullFileSystem->Size(file);dheader_t h{};
     const bool read=g_pFullFileSystem->Read(&h,sizeof(h),file)==sizeof(h);
     if(!read || !headerValid(h,size,filename)){if(!read)Warning("Source BSP rejected %s: truncated BSP header (%u bytes)\n",filename,size);g_pFullFileSystem->Close(file);return false;}
-    std::array<std::vector<unsigned char>,geometryLumpCount> decoded;
-    for(size_t i=0;i<geometryLumpCount;++i){const auto& l=h.lumps[geometryLumps[i]];if(!l.uncompressedSize)continue;
+    std::array<std::vector<unsigned char>,HEADER_LUMPS> decoded;
+    size_t decodedTotal=0;
+    // Material lumps must use the same bounded decoder as geometry. Passing
+    // compressed materials to CMapLoadHelper invokes legacy Uncompress().
+    for(size_t i=0;i<geometryLumpCount+materialLumpCount;++i){const int id=i<geometryLumpCount?geometryLumps[i]:materialLumps[i-geometryLumpCount];const auto& l=h.lumps[id];
+        const size_t decodedSize=l.uncompressedSize?l.uncompressedSize:l.filelen;
+        if(decodedSize>64u*1024*1024-decodedTotal){Warning("Source BSP rejected %s: decoded lump budget exceeds 64 MiB\n",filename);g_pFullFileSystem->Close(file);return false;}decodedTotal+=decodedSize;
+        if(!l.uncompressedSize)continue;
         std::vector<unsigned char> raw(l.filelen);g_pFullFileSystem->Seek(file,l.fileofs,FILESYSTEM_SEEK_HEAD);
         const char* reason="short compressed lump read";
-        if(g_pFullFileSystem->Read(raw.data(),raw.size(),file)!=int(raw.size()) || !decodeLump(raw,l.uncompressedSize,decoded[i],reason)){
-            Warning("Source BSP rejected %s: %s; lump=%d\n",filename,reason,geometryLumps[i]);g_pFullFileSystem->Close(file);return false;
+        if(g_pFullFileSystem->Read(raw.data(),raw.size(),file)!=int(raw.size()) || !decodeLump(raw,l.uncompressedSize,decoded[id],reason)){
+            Warning("Source BSP rejected %s: %s; lump=%d\n",filename,reason,id);g_pFullFileSystem->Close(file);return false;
         }
-        Msg("Source BSP LZMA lump %d decoded: %d -> %zu bytes\n",geometryLumps[i],l.filelen,decoded[i].size());
+        Msg("Source BSP LZMA lump %d decoded: %d -> %zu bytes\n",id,l.filelen,decoded[id].size());
     }
     g_pFullFileSystem->Close(file);
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
     if(g_pFullFileSystem->FileExists(overlay,pathID)){Warning("Source BSP: external lump overlays unsupported\n");return false;}
-    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;
+    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;LightmapAtlas lightmaps;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     {
         LoaderScope scope(filename);
-        auto points=lump<dvertex_t>(LUMP_VERTEXES,decoded[0]);auto edges=lump<dedge_t>(LUMP_EDGES,decoded[1]);
-        auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[2]);auto faces=lump<dface_t>(LUMP_FACES,decoded[3]);
-        auto disps=lump<ddispinfo_t>(LUMP_DISPINFO,decoded[4]);auto dispVerts=lump<CDispVert>(LUMP_DISP_VERTS,decoded[5]);auto dispTris=lump<CDispTri>(LUMP_DISP_TRIS,decoded[6]);
-        BspMaterials materials;if(!bspMaterials(materials))return false;
+        auto points=lump<dvertex_t>(LUMP_VERTEXES,decoded[LUMP_VERTEXES]);auto edges=lump<dedge_t>(LUMP_EDGES,decoded[LUMP_EDGES]);
+        auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[LUMP_SURFEDGES]);auto faces=lump<dface_t>(LUMP_FACES,decoded[LUMP_FACES]);
+        auto disps=lump<ddispinfo_t>(LUMP_DISPINFO,decoded[LUMP_DISPINFO]);auto dispVerts=lump<CDispVert>(LUMP_DISP_VERTS,decoded[LUMP_DISP_VERTS]);auto dispTris=lump<CDispTri>(LUMP_DISP_TRIS,decoded[LUMP_DISP_TRIS]);
+        BspMaterials materials;if(!bspMaterials(materials,decoded))return false;
+        const auto lighting=lump<ColorRGBExp32>(LUMP_LIGHTING,decoded[LUMP_LIGHTING]);
         stagedMapTexture=bspAtlas(materials,impl_->checkerTexture);stagedMaterialCount=materials.slotCount;
         Msg("Source BSP material atlas ready: %u slots, %ux%u RGBA\n",materials.slotCount,stagedMapTexture.width,stagedMapTexture.height);
         for(const auto& p:points)if(!p.point.IsValid() || std::abs(p.point.x)>32768 || std::abs(p.point.y)>32768 || std::abs(p.point.z)>32768)return false;
         for(size_t face=0;face<faces.size();++face){const auto& f=faces[face];
             if(f.numedges<3 || f.numedges>256 || f.firstedge<0 || size_t(f.firstedge)>surfedges.size() || size_t(f.numedges)>surfedges.size()-size_t(f.firstedge))return false;
             if(f.texinfo<0||size_t(f.texinfo)>=materials.infos.size())return false;const auto& texinfo=materials.infos[f.texinfo];const auto& texdata=materials.data[texinfo.texdata];
+            unsigned lx=0,ly=0,lw=0,lh=0;if(!lightmaps.add(f,texinfo,lighting,lx,ly,lw,lh)){Warning("Source BSP rejected %s: invalid lightmap range or atlas capacity; face=%zu\n",filename,face);return false;}
             std::vector<Vector> polygon;
             for(int i=0;i<f.numedges;++i){const int se=surfedges[f.firstedge+i];if(se==std::numeric_limits<int>::min())return false;
                 const size_t e=se<0?size_t(-se):size_t(se);if(e>=edges.size())return false;
@@ -427,7 +482,11 @@ bool SourceMap::load(const char* filename,const char* pathID) {
                     const float tx=(p.x*s[0]+p.y*s[1]+p.z*s[2]+s[3])/texdata.width;
                     const float ty=(p.x*t[0]+p.y*t[1]+p.z*t[2]+t[3])/texdata.height;
                     if(!std::isfinite(tx)||!std::isfinite(ty)||std::abs(tx)>65536||std::abs(ty)>65536)return false;
-                    mesh.push_back({p,{palette[face%6][0]*shade,palette[face%6][1]*shade,palette[face%6][2]*shade},{tx,ty},materials.slots[texinfo.texdata]});
+                    MeshPoint vertex{p,{palette[face%6][0]*shade,palette[face%6][1]*shade,palette[face%6][2]*shade},{tx,ty},materials.slots[texinfo.texdata]};
+                    if(lw){for(int axis=0;axis<2;++axis){const auto& v=texinfo.lightmapVecsLuxelsPerWorldUnits[axis];const float local=p.x*v[0]+p.y*v[1]+p.z*v[2]+v[3]-f.m_LightmapTextureMinsInLuxels[axis];
+                            if(!std::isfinite(local))return false;const unsigned extent=axis?lh:lw,origin=axis?ly:lx;vertex.lightmap[axis]=(origin+.5f+std::clamp(local,0.f,float(extent-1)))/1024.f;}
+                        vertex.lightmap[2]=1;for(float& color:vertex.color)color=1;}
+                    mesh.push_back(vertex);
                 }
             }
         }
@@ -439,6 +498,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     auto live=physicsScene(collision);if(!live)return false;
     impl_->scene=std::move(live);
     impl_->displacementCollision=std::move(displacementCollision);
+    impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;
+    Msg("Source BSP LDR lightmap atlas ready: %u faces, 1024x1024 RGBA\n",impl_->lightmappedFaces);
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
@@ -476,7 +537,7 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
-        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-1.f:float(v.material),float(impl_->mapMaterialCount)}});};
+        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-1.f:float(v.material),float(impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
     for(const auto& v:impl_->mesh)append(v);
     for(const auto& v:impl_->modelMesh)append(v,true);
     if(impl_->scene){
@@ -497,6 +558,7 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
 }
 const SourceTexture& SourceMap::texture() const { static const SourceTexture empty; return impl_?impl_->texture:empty; }
 std::uint64_t SourceMap::textureRevision() const { return impl_?impl_->textureRevision:0; }
+const SourceTexture& SourceMap::lightmapTexture() const { static const SourceTexture empty;return impl_?impl_->lightmapTexture:empty; }
 const SourceTexture& SourceMap::modelTexture() const { static const SourceTexture empty;return impl_?impl_->modelTexture:empty; }
 std::uint64_t SourceMap::modelTextureRevision() const { return impl_?impl_->modelTextureRevision:0; }
 bool SourceMap::selfTest(){
@@ -504,6 +566,16 @@ bool SourceMap::selfTest(){
     bool materialSlots=impl_->mapMaterialCount==2&&impl_->texture.width==128&&impl_->texture.height==64&&impl_->texture.pixels.size()==128*64*4;
     all&=report("BSP texinfo multi-material VMT VTF atlas",materialSlots&&impl_->texture.pixels!=impl_->checkerTexture.pixels);
     all&=report("BSP material atlas slots remain distinct",materialSlots&&std::memcmp(impl_->texture.pixels.data(),impl_->texture.pixels.data()+64*4,64*4));
+    bool planarUV=true;for(size_t i=0;i<impl_->mesh.size();i+=3){const auto& a=impl_->mesh[i];const auto& b=impl_->mesh[i+1];const auto& c=impl_->mesh[i+2];
+        const float area=(b.uv[0]-a.uv[0])*(c.uv[1]-a.uv[1])-(c.uv[0]-a.uv[0])*(b.uv[1]-a.uv[1]);planarUV&=std::isfinite(area)&&std::abs(area)>1e-6f;}
+    all&=report("BSP fixture planar UVs on floors and walls",planarUV);
+    all&=report("BSP LDR lightmap atlas and surface coordinates",impl_->lightmappedFaces==42&&impl_->lightmapTexture.pixels.size()==1024*1024*4&&impl_->mesh[0].lightmap[2]==1);
+    bool gradients=false;for(size_t i=0;i<impl_->lightmapTexture.pixels.size();i+=4)gradients|=impl_->lightmapTexture.pixels[i]>0&&impl_->lightmapTexture.pixels[i]<255;
+    all&=report("BSP RGBExp32 lightmap gradient decoded",gradients);
+    dface_t badLight{};texinfo_t lightInfo{};badLight.lightofs=0;std::fill(std::begin(badLight.styles),std::end(badLight.styles),255);badLight.styles[0]=0;unsigned lightW=0,lightH=0;
+    bool lightRejects=lightmapRange(badLight,lightInfo,4,lightW,lightH);badLight.lightofs=4;lightRejects&=!lightmapRange(badLight,lightInfo,4,lightW,lightH);badLight.lightofs=0;badLight.m_LightmapTextureSizeInLuxels[0]=256;lightRejects&=!lightmapRange(badLight,lightInfo,4,lightW,lightH);
+    badLight.m_LightmapTextureSizeInLuxels[0]=0;lightInfo.flags=SURF_BUMPLIGHT;lightRejects&=!lightmapRange(badLight,lightInfo,4,lightW,lightH);
+    all&=report("BSP malformed lightmap offsets sizes and bump ranges rejected",lightRejects);
     dheader_t bad{};bad.ident=IDBSPHEADER;bad.version=BSPVERSION;bad.lumps[LUMP_VERTEXES].fileofs=sizeof(bad);bad.lumps[LUMP_VERTEXES].filelen=12;
     all&=report("truncated lump range rejected",!headerValid(bad,sizeof(bad)));
     auto encoded=bspLzmaVertices();std::vector<unsigned char> decoded;const char* reason=nullptr;

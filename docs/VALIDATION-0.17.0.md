@@ -29,4 +29,7 @@ artifact 11364222411 was checked independently. Screenshot shows blue grid and
 brown brick surfaces together with the separately textured posed model.
 IPA SHA256 matches its manifest:
 `abfca004935c73f74a192d7837122279efbc4339a5adeb629b6a36994cb63a09`.
-Physical-phone confirmation remains at 0.15; 0.17 is simulator-verified.
+The user's subsequent physical iPhone 16e log confirms 69 PASS, the two-slot BSP
+atlas, studio texture upload, GPU completion on A18/iOS 18.6.2 and orientation
+change. The screenshot shows the BSP/model scene. This log does not include
+pause/resume. It also exposed collapsed UVs on fixture walls, fixed in 0.18.

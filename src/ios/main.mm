@@ -6,8 +6,8 @@
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Output { float4 position [[position]]; float3 color; float2 uv; int material [[flat]]; uint materialCount [[flat]]; };
-struct Input { float4 position; float4 color; float2 uv; float2 material; };
+struct Output { float4 position [[position]]; float3 color; float2 uv; float3 lightmap; int material [[flat]]; uint materialCount [[flat]]; };
+struct Input { float4 position; float4 color; float2 uv; float2 material; float4 lightmap; };
 vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
     out.position = vertices[id].position;
@@ -15,16 +15,18 @@ vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffe
     out.uv = vertices[id].uv;
     out.material = int(vertices[id].material.x);
     out.materialCount = max(1u,uint(vertices[id].material.y));
+    out.lightmap = vertices[id].lightmap.xyz;
     return out;
 }
-fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]]) {
+fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]], texture2d<float> lightmapTexture [[texture(2)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
     if (in.material < 0) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
     constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
     float tile=float(texture.get_height());
     float2 local=(fract(in.uv)*(tile-1.0)+0.5)/tile;
     float2 atlasUV=float2((float(in.material)+local.x)/float(in.materialCount),local.y);
-    return float4(in.color,1) * texture.sample(clampSample,atlasUV);
+    float3 light=in.lightmap.z > 0.5 ? lightmapTexture.sample(clampSample,in.lightmap.xy).rgb : float3(1);
+    return float4(in.color*light,1) * texture.sample(clampSample,atlasUV);
 }
 )metal";
 
@@ -46,6 +48,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 @property(nonatomic, strong) id<MTLDepthStencilState> depthState;
 @property(nonatomic, strong) id<MTLTexture> mapTexture;
 @property(nonatomic, strong) id<MTLTexture> modelTexture;
+@property(nonatomic, strong) id<MTLTexture> lightmapTexture;
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UITextField *commandInput;
 @end
@@ -144,7 +147,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~64%\nBSP multi-material · MDL animation/material\nSource self-tests: 69 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~66%\nBSP LDR lightmaps · MDL animation/material\nSource self-tests: 73 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -198,7 +201,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         MTLTextureDescriptor *descriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:decoded.width height:decoded.height mipmapped:NO];
         id<MTLTexture> staged=[view.device newTextureWithDescriptor:descriptor];if(!staged){[self fail:@"BSP texture upload failed"];return;}
         [staged replaceRegion:MTLRegionMake2D(0,0,decoded.width,decoded.height) mipmapLevel:0 withBytes:decoded.pixels.data() bytesPerRow:decoded.width*4];
-        self.mapTexture=staged;_mapTextureRevision=_runtime.textureRevision();_runtime.log("Source BSP VMT/VTF base texture uploaded to Metal");
+        const auto& lighting=_runtime.lightmapTexture();
+        MTLTextureDescriptor *lightDescriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:lighting.width height:lighting.height mipmapped:NO];
+        id<MTLTexture> stagedLight=[view.device newTextureWithDescriptor:lightDescriptor];if(!stagedLight){[self fail:@"BSP lightmap upload failed"];return;}
+        [stagedLight replaceRegion:MTLRegionMake2D(0,0,lighting.width,lighting.height) mipmapLevel:0 withBytes:lighting.pixels.data() bytesPerRow:lighting.width*4];
+        self.mapTexture=staged;self.lightmapTexture=stagedLight;_mapTextureRevision=_runtime.textureRevision();_runtime.log("Source BSP VMT/VTF base texture uploaded to Metal");_runtime.log("Source BSP LDR lightmap atlas uploaded to Metal");
     }
     if (_modelTextureRevision != _runtime.modelTextureRevision()) {
         const auto& decoded=_runtime.modelTexture();
@@ -214,6 +221,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [encoder setDepthStencilState:self.depthState];
     [encoder setFragmentTexture:self.mapTexture atIndex:0];
     [encoder setFragmentTexture:self.modelTexture atIndex:1];
+    [encoder setFragmentTexture:self.lightmapTexture atIndex:2];
     float aspect = (float)(view.drawableSize.width / MAX(view.drawableSize.height, 1.0));
     auto vertices = _runtime.vertices(aspect);
     id<MTLBuffer> geometry = [view.device newBufferWithBytes:vertices.data()
@@ -257,7 +265,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~64%%\nBSP multi-material · MDL animation/material\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~66%%\nBSP LDR lightmaps · MDL animation/material\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

@@ -20,6 +20,7 @@ public:
     std::vector<SourceVertex> vertices(float aspect) const { return source_.vertices(aspect); }
     const SourceTexture& texture() const { return source_.texture(); }
     std::uint64_t textureRevision() const { return source_.textureRevision(); }
+    const SourceTexture& lightmapTexture() const { return source_.lightmapTexture(); }
     const SourceTexture& modelTexture() const { return source_.modelTexture(); }
     std::uint64_t modelTextureRevision() const { return source_.modelTextureRevision(); }
     void cameraLook(float yaw, float pitch) { source_.cameraLook(yaw,pitch); }

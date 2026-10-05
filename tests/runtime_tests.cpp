@@ -28,6 +28,13 @@ int main() {
         check(bspTexture.width==128&&bspTexture.height==64&&bspTexture.pixels.size()==128*64*4,"BSP material atlas missing");
         bool material0=false,material1=false;for(const auto& vertex:host.vertices(1)){material0|=vertex.material[0]==0;material1|=vertex.material[0]==1;}
         check(material0&&material1,"BSP surface material slots were not preserved in render vertices");
+        static_assert(sizeof(source1ios::SourceVertex)==64,"Metal/C++ vertex layout diverged");
+        const auto bakedTexture=host.lightmapTexture();
+        check(bakedTexture.width==1024&&bakedTexture.height==1024&&bakedTexture.pixels.size()==1024*1024*4,"BSP lightmap atlas missing");
+        const auto roomVertices=host.vertices(1);
+        for(size_t i=0;i<252;++i)check(roomVertices[i].lightmap[2]==1&&roomVertices[i].lightmap[0]>0&&roomVertices[i].lightmap[0]<1&&roomVertices[i].lightmap[1]>0&&roomVertices[i].lightmap[1]<1,"BSP lit vertex lacks bounded atlas coordinates");
+        for(size_t i=252;i<288;++i)check(roomVertices[i].lightmap[2]==0,"Studio model incorrectly samples world lightmap");
+        check(bakedTexture.pixels[0]==bakedTexture.pixels[4]&&bakedTexture.pixels[0]<bakedTexture.pixels[33*4],"Lightmap border or gradient sampling incorrect");
         check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
@@ -117,6 +124,28 @@ int main() {
         bsp[bsp.size()-compressed.size()+17]=255;writeBsp("damaged-compressed.bsp");
         check(!host.executeSource("source_bsp_load maps/damaged-compressed.bsp"),"Damaged LZMA stream accepted");
         check(host.vertices(1)[0].position[0]==compressedView[0].position[0],"Damaged compressed map replaced scene");
+        // Raw LZMA1 stream: lc=3/lp=0/pb=2, 64 KiB dictionary, followed
+        // by the Source 17-byte header. Decodes both material names and NULs.
+        const unsigned char compressedNames[]={76,90,77,65,34,0,0,0,33,0,0,0,93,0,0,1,0,0,50,25,72,110,4,71,75,143,54,22,99,82,67,204,200,57,88,183,107,100,195,203,141,72,114,70,255,255,171,164,0,0};
+        std::ifstream materialSource(maps/"imported.bsp",std::ios::binary);bsp.assign(std::istreambuf_iterator<char>(materialSource),{});
+        const auto originalMaterials=bsp;
+        uint32_t facesOffset=0;std::memcpy(&facesOffset,bsp.data()+8+7*16,4);
+        // Source dface_t.lightofs is byte 20. Rejected lighting must retain
+        // the last valid CPU scene and both GPU upload inputs.
+        put32(facesOffset+20,0x7ffffffc);writeBsp("bad-lightmap-offset.bsp");
+        const auto priorLightRevision=host.textureRevision();
+        check(!host.executeSource("source_bsp_load maps/bad-lightmap-offset.bsp")&&host.textureRevision()==priorLightRevision&&host.lightmapTexture().pixels==bakedTexture.pixels,"Invalid lightmap offset replaced scene or lighting");
+        bsp=originalMaterials;
+        put32(8+43*16,bsp.size());put32(8+43*16+4,sizeof(compressedNames));put32(8+43*16+12,34);
+        bsp.insert(bsp.end(),std::begin(compressedNames),std::end(compressedNames));writeBsp("compressed-materials.bsp");
+        check(host.executeSource("source_bsp_load maps/compressed-materials.bsp"),"Compressed BSP material names rejected");
+        check(host.texture().pixels==bspTexture.pixels,"Compressed BSP changed resolved materials");
+        const auto materialRevision=host.textureRevision();
+        bsp.back()^=255;writeBsp("bad-material-stream.bsp");
+        check(!host.executeSource("source_bsp_load maps/bad-material-stream.bsp")&&host.textureRevision()==materialRevision&&host.texture().pixels==bspTexture.pixels,"Corrupt compressed materials replaced scene or texture");
+        bsp=originalMaterials;uint32_t texinfoOffset=0;std::memcpy(&texinfoOffset,bsp.data()+8+6*16,4);
+        const float nonfinite=std::numeric_limits<float>::quiet_NaN();std::memcpy(bsp.data()+texinfoOffset,&nonfinite,4);writeBsp("nonfinite-texinfo.bsp");
+        check(!host.executeSource("source_bsp_load maps/nonfinite-texinfo.bsp")&&host.textureRevision()==materialRevision,"Nonfinite texture axes accepted or replaced scene");
         // Compression metadata in unused sections must not block geometry preview.
         std::ifstream originalFile(maps/"imported.bsp",std::ios::binary);
         bsp.assign(std::istreambuf_iterator<char>(originalFile),{});

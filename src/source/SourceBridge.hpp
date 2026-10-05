@@ -19,6 +19,7 @@ public:
     std::vector<SourceVertex> vertices(float aspect) const;
     const SourceTexture& texture() const { return map_.texture(); }
     std::uint64_t textureRevision() const { return map_.textureRevision(); }
+    const SourceTexture& lightmapTexture() const { return map_.lightmapTexture(); }
     const SourceTexture& modelTexture() const { return map_.modelTexture(); }
     std::uint64_t modelTextureRevision() const { return map_.modelTextureRevision(); }
     void cameraLook(float yaw, float pitch) { map_.look(yaw, pitch); }
