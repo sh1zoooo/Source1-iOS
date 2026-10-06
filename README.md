@@ -32,6 +32,8 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_bsp_reset` — вернуться к встроенной комнате.
 - `source_bsp_terrain` — встроенный пример displacement-рельефа.
 - `source_bsp_materials` — встроенный BSP с 17 материалами, включая вторую строку atlas.
+- `source_content_mount cm` — добавить распакованные ресурсы из `Source1IOS/content/cm`.
+- `source_content_unmount cm` — отключить эту папку от GAME search paths.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
 - `source_physics_reset` — заново создать сцену с двумя телами и шарниром.
 - `source_physics_impulse` — толкнуть подвижное тело.
@@ -66,9 +68,9 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Проверенная автоматическими тестами сборка: [0.17.0, build 20 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37354477235/artifacts/11364222411).
-69 стартовых проверок; симулятор повторяет их и проверяет GPU, terrain,
-BSP multi-material, MDL animation/VMT/VTF и background/resume (139 PASS).
+Проверенная автоматическими тестами сборка: [0.20.0, build 23 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37414521675/artifacts/11390712968).
+77 стартовых проверок; симулятор повторяет их и проверяет GPU, terrain,
+BSP material grid/lightmaps, внешнюю ANI-анимацию и background/resume (155 PASS).
 Версия 0.17 подтверждена пользовательским логом и кадром на iPhone 16e:
 69 PASS, загрузка двух BSP-материалов и studio texture, GPU A18, iOS 18.6.2,
 смена ориентации. Пользователь ранее подтвердил плавную деформацию модели.
@@ -82,6 +84,8 @@ Enter / Go в консоли теперь выполняет команду и �
 sequence evaluator. [Проверки и границы ANI](docs/VALIDATION-0.19.0.md).
 Этап 0.20/build 23 расширяет atlas до 512 различных материалов и проверяет
 завершение обновлённой сцены на GPU. [Проверки 0.20](docs/VALIDATION-0.20.0.md).
+Этап 0.21/build 24 подключает распакованные каталоги игровых ресурсов к Source
+filesystem. [Размещение ресурсов и команды импорта](docs/CONTENT-IMPORT.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

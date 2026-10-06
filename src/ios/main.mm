@@ -194,6 +194,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
             || !_runtime.executeSource("source_model_load models/__source1ios_external_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) {
             [self fail:@"Simulator runtime contracts FAIL"]; return;
         }
+        const auto root=_runtime.logPath().parent_path();std::error_code error;
+        std::filesystem::create_directories(root/"content/smoke/maps",error);
+        if(!error)std::filesystem::copy_file(root/"selftest/__source1ios_material_grid.bsp",root/"content/smoke/maps/cache_smoke.bsp",std::filesystem::copy_options::overwrite_existing,error);
+        if(error || !_runtime.executeSource("source_content_mount smoke") || !_runtime.executeSource("source_bsp_load maps/cache_smoke.bsp")
+            || !_runtime.executeSource("source_content_unmount smoke")){[self fail:@"Simulator content import FAIL"];return;}
         _runtime.cameraLook(10, 0);
         _runtime.cameraMove(1, 0, .1f);
         _runtime.executeSource("source_camera_reset");

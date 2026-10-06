@@ -26,3 +26,15 @@ Limits remain: base textures are downsampled to 64x64; lightmaps use a separate
 bounded LDR atlas and the first static style. This is a Metal preview adapter,
 not the original graphical shaderapi/materialsystem. Full maps, PVS, material
 shader features, sequence blending, audio and game modules still need work.
+
+## Verified artifact
+
+Commit `566247edc7a6c07bda3aa232099eeb59f1b65e6b`,
+[run 37414521675](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37414521675)
+passed Linux runtime/mutation contracts, iPhone ARM64 build and simulator smoke.
+Artifact 11390712968 was downloaded independently: version 0.20.0/build 23,
+155 PASS, no FAIL, external ANI loading, lightmap upload, map revision 4 GPU
+completion and pause/resume. Screenshot confirms textured walls/brushes, floor,
+posed model and physics probes. It is simulator evidence, not a physical test.
+IPA SHA256 matches the manifest:
+`7bace4808e0df1e5ba57d00e5c599bb90411066a934d8924087fd46497e60aea`.

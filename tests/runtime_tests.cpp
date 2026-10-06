@@ -1,6 +1,7 @@
 #include "Runtime.hpp"
 #include "BspLzmaFixture.hpp"
 #include <cstdint>
+#include <algorithm>
 #include <cstring>
 #include <vector>
 #include <cmath>
@@ -89,6 +90,30 @@ int main() {
         const auto maps=directory/"Source1IOS/game/maps";
         std::filesystem::create_directories(maps);
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
+        const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
+        std::filesystem::copy_file(maps/"imported.bsp",cm/"maps/cache_probe.bsp");
+        std::filesystem::create_directories(cm/"models");std::filesystem::create_directories(cm/"materials/models/source1ios");
+        const auto gameModels=directory/"Source1IOS/game/models";
+        std::ifstream modelInput(gameModels/"__source1ios_static_probe.mdl",std::ios::binary);std::vector<char> cacheMdl((std::istreambuf_iterator<char>(modelInput)),{});
+        const std::string oldMaterial="__source1ios_model",newMaterial="__cache_texture";const auto materialName=std::search(cacheMdl.begin(),cacheMdl.end(),oldMaterial.begin(),oldMaterial.end());check(materialName!=cacheMdl.end(),"Fixture model material name missing");
+        std::fill(materialName,materialName+oldMaterial.size(),0);std::copy(newMaterial.begin(),newMaterial.end(),materialName);
+        {std::ofstream cachedModel(cm/"models/cache_probe.mdl",std::ios::binary);cachedModel.write(cacheMdl.data(),cacheMdl.size());}
+        std::filesystem::copy_file(gameModels/"__source1ios_static_probe.vvd",cm/"models/cache_probe.vvd");std::filesystem::copy_file(gameModels/"__source1ios_static_probe.dx90.vtx",cm/"models/cache_probe.dx90.vtx");
+        std::filesystem::copy_file(directory/"Source1IOS/game/materials/debug/debugblue.vtf",cm/"materials/models/source1ios/__cache_texture.vtf");
+        {std::ofstream cacheVmt(cm/"materials/models/source1ios/__cache_texture.vmt");cacheVmt<<"VertexLitGeneric { \"$basetexture\" \"models/source1ios/__cache_texture\" }";}
+        check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content leaked into GAME search paths");
+        check(host.executeSource("source_content_mount cm")&&host.executeSource("source_content_mount cm"),"Loose cache directory mount was not idempotent");
+        check(host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Mounted cache BSP could not be read through Source filesystem");
+        check(host.executeSource("source_model_load models/cache_probe.mdl")&&host.modelTexture().width==64&&host.modelTexture().pixels[0]==90&&host.modelTexture().pixels[1]==150&&host.modelTexture().pixels[2]==210,"Mounted cache MDL companions or VMT/VTF material did not resolve");
+        check(!host.executeSource("source_content_mount ../game")&&!host.executeSource("source_content_mount /tmp")&&!host.executeSource("source_content_mount missing")&&!host.executeSource("source_content_mount cm/archive.vpk"),"Invalid content path accepted");
+        check(host.executeSource("source_content_unmount cm")&&!host.executeSource("source_content_unmount cm"),"Content unmount did not remove its search path");
+        check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content remained visible");
+        check(!host.executeSource("source_model_load models/cache_probe.mdl"),"Unmounted model remained visible in search paths");
+        check(host.executeSource("source_model_reset"),"Built-in model restore after content import failed");
+        std::filesystem::create_directory_symlink(maps,content/"outside_alias");check(!host.executeSource("source_content_mount outside_alias"),"Symlink content root accepted");
+        std::filesystem::create_directory_symlink(maps,cm/"nested_alias");check(!host.executeSource("source_content_mount cm"),"Symlink inside content accepted");std::filesystem::remove(cm/"nested_alias");
+        {std::ofstream zip(cm/"zip0.zip");zip<<"malformed auto-pack";}check(!host.executeSource("source_content_mount cm"),"Implicit legacy zip archive mount accepted");std::filesystem::remove(cm/"zip0.zip");
+        check(host.executeSource("source_content_mount cm"),"Valid content mount did not recover after rejected import");
         check(host.executeSource("source_bsp_load maps/imported.bsp"), "Valid user BSP preview failed");
         check(host.texture().pixels==bspTexture.pixels&&host.textureRevision()>bspTextureRevision,"Imported BSP material did not resolve or advance revision");
         const auto imported=host.vertices(1);
@@ -214,6 +239,7 @@ int main() {
         check(contents.find("Source host GAME directory: " + (directory / "Source1IOS" / "game").string()) != std::string::npos, "Host path differs from the mounted game path");
         check(contents.find("Recursive shutdown") == std::string::npos, "Recursive shutdown guard persisted");
         check(host.start(directory), "Restart failed");
+        check(host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Known cm resource folder was not mounted after restart");
         check(host.frames() == 0 && host.elapsed() == 0, "Restart retained simulation state");
         check(host.executeSource("source_host_selftest"), "Original host failed after restart");
         host.stop();

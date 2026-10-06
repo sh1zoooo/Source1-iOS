@@ -46,8 +46,10 @@ try:
                 raise RuntimeError("BSP multi-material atlas was not built")
             if "Source BSP material atlas ready: 17 slots, 1024x128 RGBA" not in text or "Source BSP polygons loaded: 84 triangles from __source1ios_material_grid.bsp" not in text:
                 raise RuntimeError("Second-row material grid was not loaded for the GPU smoke test")
-            if "Source Metal scene completed on GPU: map revision 4" not in text:
-                raise RuntimeError("Updated seventeen-material/ANI scene did not complete on GPU")
+            if "Source Metal scene completed on GPU: map revision 5" not in text:
+                raise RuntimeError("Imported seventeen-material/ANI scene did not complete on GPU")
+            if "Source content mounted: smoke" not in text or "Source content unmounted: smoke" not in text or "Source BSP polygons loaded: 84 triangles from maps/cache_smoke.bsp" not in text:
+                raise RuntimeError("Loose content import did not mount/load/unmount on iOS")
             if "Source studio VTF base texture uploaded to Metal" not in text:
                 raise RuntimeError("Studio base texture did not reach Metal")
             if "Source studio model loaded: 8 source vertices, 12 triangles, 1 meshes" not in text:

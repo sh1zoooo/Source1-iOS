@@ -140,6 +140,8 @@ bool SourceBridge::execute(const std::string& input) {
     if (!ready_ || input.size() > 255) return false;
     CCommand args;
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
+    if (!std::strcmp(args[0], "source_content_mount") && args.ArgC()==2) return files_.mountContent(args[1]);
+    if (!std::strcmp(args[0], "source_content_unmount") && args.ArgC()==2) return files_.unmountContent(args[1]);
     if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest() && host_.selfTest() && map_.selfTest();
     if (!std::strcmp(args[0], "source_bsp_selftest")) return map_.selfTest();
     if (!std::strcmp(args[0], "source_bsp_reset")) return map_.resetMap();
