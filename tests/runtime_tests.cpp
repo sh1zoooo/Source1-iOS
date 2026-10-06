@@ -47,8 +47,11 @@ int main() {
         const auto beforeProps=host.vertices(1);check(host.executeSource("source_bsp_props"),"Static prop BSP load failed");const auto withProps=host.vertices(1);
         check(withProps.size()==beforeProps.size()+72&&host.texture().width==192,"Static prop instances or atlas missing");
         for(size_t i=252;i<324;++i)check(withProps[i].material[0]==2&&withProps[i].material[1]==3&&withProps[i].lightmap[2]==0,"Static prop texture slot or lighting incorrect");
+        const auto portraitProps=host.vertices(.46f);for(size_t first:{size_t(252),size_t(288)}){float center[4]{};for(size_t i=first;i<first+36;++i)for(int axis=0;axis<4;++axis)center[axis]+=portraitProps[i].position[axis]/36;check(center[3]>1&&std::abs(center[0])<center[3]&&std::abs(center[1])<center[3],"Static prop centroid is outside portrait viewport");}
         check(host.executeSource("source_bsp_reset")&&host.vertices(1).size()==beforeProps.size()&&host.texture().width==128,"Static props survived map reset");
         check(host.executeSource("source_model_reset"),"Built-in Source studio model reload failed");
+        check(host.executeSource("source_model_load models/__source1ios_legacy_probe.mdl")&&host.executeSource("source_anim_play 0"),"MDL48 embedded model load/clip failed");
+        check(host.executeSource("source_model_load models/__source1ios_external48_probe.mdl")&&host.executeSource("source_anim_play 0"),"MDL48 external ANI model load/clip failed");
         check(host.executeSource("source_model_load models/__source1ios_external_probe.mdl"),"External ANI model load failed");
         check(host.executeSource("source_anim_play 0"),"External ANI clip unavailable");const auto aniBefore=host.vertices(1);host.frame(.03);const auto aniAfter=host.vertices(1);
         bool aniMoved=false;for(size_t i=252;i<288;++i)for(int axis=0;axis<4;++axis)aniMoved|=aniBefore[i].position[axis]!=aniAfter[i].position[axis];check(aniMoved,"External ANI pose did not animate geometry");

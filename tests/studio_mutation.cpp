@@ -1,6 +1,7 @@
 #include "SourceStudio.hpp"
 #include <iostream>
 #include <stdexcept>
+#include <cstring>
 
 // A deterministic bounds probe, not exhaustive fuzzing or leak validation.
 // LeakSanitizer cannot enumerate tasks in the restricted local workspace.
@@ -10,7 +11,7 @@ int main(){
     MathLib_Init(2.2f,2.2f,0,2);
     unsigned accepted=0,rejected=0;std::uint32_t state=0x510519;
     auto random=[&](){state^=state<<13;state^=state>>17;state^=state<<5;return state;};
-    for(unsigned external=0;external<2;++external){const auto fixture=source1ios::makeStudioFixture(external);
+    for(unsigned legacy=0;legacy<2;++legacy)for(unsigned external=0;external<2;++external){auto fixture=source1ios::makeStudioFixture(external);if(legacy){const int version=48;std::memcpy(fixture.mdl.data()+4,&version,4);}
         for(unsigned i=0;i<3000;++i){auto changed=fixture;const unsigned slot=i%(external?4:3);
             auto& file=slot==0?changed.mdl:slot==1?changed.vvd:slot==2?changed.vtx:changed.ani;
             if(i%5==0)file.resize(random()%file.size());
@@ -23,5 +24,5 @@ int main(){
             for(const auto& vertex:output)if(!vertex.position.IsValid()||!vertex.normal.IsValid())throw std::runtime_error("nonfinite output");
         }
     }
-    std::cout<<"Studio mutation checks passed: 6000 cases, "<<accepted<<" accepted, "<<rejected<<" rejected\n";
+    std::cout<<"Studio mutation checks passed: 12000 cases (MDL48/49), "<<accepted<<" accepted, "<<rejected<<" rejected\n";
 }

@@ -29,4 +29,13 @@ additional startup checks cover dictionaries, versions, rejected ranges and atla
 preservation. ASan/UBSan passed 10,000 deterministic payload mutations with
 transactional output checks (leak detection disabled in this sandbox).
 
-GitHub Actions iPhone ARM64, simulator GPU and artifact verification: pending.
+GitHub Actions [37424243312](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37424243312)
+passed four Linux CTest sets, iPhone ARM64 and simulator builds and simulator
+startup/GPU/lifecycle checks. Artifact 11395305318 independently verified:
+version 0.24.0/build 27, 175 PASS, no FAIL, two staged static props, GPU revision
+6 and SHA256 `9abea2bdb2b3a513415f025ff33c4183b9797e624c2c9ee6c662f3142db03a06`.
+The portrait screenshot shows the animated model and textured world, but the
+two static prop fixture positions are outside/occluded in that camera view.
+Version 0.25 moves these objects into view and adds a projected-centroid runtime
+assertion. No physical iPhone test of this release is claimed. Additional local
+ASan/UBSan checks passed 132 prop version/scale/range cases.

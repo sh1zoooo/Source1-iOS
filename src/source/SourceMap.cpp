@@ -417,7 +417,7 @@ std::vector<std::uint8_t> propFixture(){
     std::vector<std::uint8_t> payload;auto append=[&](const void* p,size_t n){const auto* b=static_cast<const std::uint8_t*>(p);payload.insert(payload.end(),b,b+n);};
     int count=1;append(&count,4);char name[128]="models/__source1ios_static_probe.mdl";append(name,128);
     count=0;append(&count,4);count=2;append(&count,4);
-    for(unsigned i=0;i<2;++i){std::array<std::uint8_t,56> record{};const float origin[3]={i?-120.f:70.f,i?90.f:-80.f,0};const float angles[3]={0,i?90.f:30.f,0};
+    for(unsigned i=0;i<2;++i){std::array<std::uint8_t,56> record{};const float origin[3]={i?-140.f:-100.f,i?-90.f:-100.f,0};const float angles[3]={0,i?90.f:30.f,0};
         std::memcpy(record.data(),origin,12);std::memcpy(record.data()+12,angles,12);append(record.data(),record.size());}
     auto& lump=header.lumps[LUMP_GAME_LUMP];lump.fileofs=bytes.size();lump.filelen=4+sizeof(dgamelump_t)+payload.size();
     dgamelump_t entry{};entry.id=0x73707270;entry.version=4;entry.fileofs=lump.fileofs+4+sizeof(entry);entry.filelen=payload.size();count=1;
@@ -474,6 +474,9 @@ bool SourceMap::start(const std::filesystem::path& root) {
     const auto externalStudio=makeStudioFixture(true);
     ok=ok&&writeModel("models/__source1ios_external_probe.mdl",externalStudio.mdl)&&writeModel("models/__source1ios_external_probe.vvd",externalStudio.vvd)
         &&writeModel("models/__source1ios_external_probe.dx90.vtx",externalStudio.vtx)&&writeModel("models/__source1ios_external_probe.ani",externalStudio.ani);
+    auto legacyStudio=studio,legacyExternal=externalStudio;const int legacyVersion=48;std::memcpy(legacyStudio.mdl.data()+4,&legacyVersion,4);std::memcpy(legacyExternal.mdl.data()+4,&legacyVersion,4);
+    ok=ok&&writeModel("models/__source1ios_legacy_probe.mdl",legacyStudio.mdl)&&writeModel("models/__source1ios_legacy_probe.vvd",legacyStudio.vvd)&&writeModel("models/__source1ios_legacy_probe.dx90.vtx",legacyStudio.vtx)
+        &&writeModel("models/__source1ios_external48_probe.mdl",legacyExternal.mdl)&&writeModel("models/__source1ios_external48_probe.vvd",legacyExternal.vvd)&&writeModel("models/__source1ios_external48_probe.dx90.vtx",legacyExternal.vtx);
     for(int mip=0;mip<source->MipCount();++mip){const int size=std::max(1,64>>mip);auto* pixels=source->ImageData(0,0,mip);for(int y=0;y<size;++y)for(int x=0;x<size;++x){const bool stripe=((y*64/size)/8)%2;auto* p=pixels+(y*size+x)*4;p[0]=stripe?240:20;p[1]=stripe?100:200;p[2]=stripe?30:240;p[3]=255;}}
     CUtlBuffer modelVtf;ok=ok&&source->Serialize(modelVtf);std::vector<std::uint8_t> modelVtfBytes(static_cast<std::uint8_t*>(modelVtf.Base()),static_cast<std::uint8_t*>(modelVtf.Base())+modelVtf.TellPut());
     const std::string modelVmt="VertexLitGeneric { \"$basetexture\" \"models/source1ios/__source1ios_model\" }";
@@ -533,6 +536,7 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     impl_->modelTexture=std::move(modelTexture);++impl_->modelTextureRevision;
     impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
+    int loadedVersion=0;std::memcpy(&loadedVersion,mdl.data()+4,4);Msg("Source studio MDL version: %d\n",loadedVersion);
     Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %zu animation clips\n",impl_->studio.bones.size(),impl_->studio.animations.size());
     for(size_t i=0;i<impl_->studio.animations.size();++i){const auto& clip=impl_->studio.animations[i];Msg("Source studio clip %zu: %s; %zu frames at %.2f fps\n",i,clip.name.c_str(),clip.frames.size(),clip.fps);}return true;
 }
@@ -732,7 +736,7 @@ bool SourceMap::selfTest(){
     all&=report("BSP material atlas slots remain distinct",materialSlots&&std::memcmp(impl_->texture.pixels.data(),impl_->texture.pixels.data()+64*4,64*4));
     const auto propBytes=propFixture();dheader_t propHeader;std::memcpy(&propHeader,propBytes.data(),sizeof(propHeader));dgamelump_t propEntry;std::memcpy(&propEntry,propBytes.data()+propHeader.lumps[LUMP_GAME_LUMP].fileofs+4,sizeof(propEntry));
     std::vector<std::uint8_t> propPayload(propBytes.begin()+propEntry.fileofs,propBytes.begin()+propEntry.fileofs+propEntry.filelen);std::vector<PreviewProp> parsedProps;
-    all&=report("BSP static prop dictionary and instances",parsePreviewProps(propPayload,4,propHeader.version,parsedProps)&&parsedProps.size()==2&&parsedProps[0].origin[0]==70&&parsedProps[1].angles[1]==90);
+    all&=report("BSP static prop dictionary and instances",parsePreviewProps(propPayload,4,propHeader.version,parsedProps)&&parsedProps.size()==2&&parsedProps[0].origin[0]==-100&&parsedProps[1].angles[1]==90);
     bool propVersions=true;for(unsigned version=4;version<=11;++version){const unsigned stride=version==4?56:version==5?60:version==6?64:version<=8?68:version<=10?72:80;std::vector<std::uint8_t> upgraded(propPayload.begin(),propPayload.begin()+140);upgraded.resize(140+2*stride);for(unsigned i=0;i<2;++i){std::memcpy(upgraded.data()+140+i*stride,propPayload.data()+140+i*56,56);if(version==11){float scale=1.5f;std::memcpy(upgraded.data()+140+i*stride+76,&scale,4);}}propVersions&=parsePreviewProps(upgraded,version,20,parsedProps)&&parsedProps.size()==2;}
     all&=report("BSP static prop versions 4 through 11",propVersions);
     auto badProps=propPayload;std::uint16_t invalidPropModel=1;std::memcpy(badProps.data()+140+24,&invalidPropModel,2);bool propRejects=!parsePreviewProps(badProps,4,20,parsedProps)&&parsedProps.size()==2;badProps=propPayload;badProps.pop_back();propRejects&=!parsePreviewProps(badProps,4,20,parsedProps);badProps=propPayload;float badPropOrigin=std::numeric_limits<float>::quiet_NaN();std::memcpy(badProps.data()+140,&badPropOrigin,4);propRejects&=!parsePreviewProps(badProps,4,20,parsedProps);
@@ -768,6 +772,10 @@ bool SourceMap::selfTest(){
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
     const auto studio=makeStudioFixture();StudioMesh model;std::string modelError;
     all&=report("MDL/VVD/VTX static mesh",parseStudioModel(studio.mdl,studio.vvd,studio.vtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==36&&model.meshes==1);
+    auto mdl48=studio.mdl;const int version48=48;std::memcpy(mdl48.data()+4,&version48,4);StudioMesh legacy;StudioPose legacyPose;
+    all&=report("studio MDL48 geometry and embedded clip",parseStudioModel(mdl48,studio.vvd,studio.vtx,legacy,modelError)&&legacy.triangles.size()==36&&legacy.bones.size()==2&&sampleStudioAnimation(legacy,0,.375,legacyPose));
+    bool unsupportedVersions=true;for(int version:{47,50}){auto unsupported=mdl48;std::memcpy(unsupported.data()+4,&version,4);unsupportedVersions&=!parseStudioModel(unsupported,studio.vvd,studio.vtx,legacy,modelError);}
+    all&=report("studio unsupported MDL versions rejected",unsupportedVersions);
     std::vector<StudioVertex> bindPose;bool bindOK=skinStudioModel(model,{},bindPose)&&bindPose.size()==model.triangles.size();
     for(size_t i=0;bindOK&&i<bindPose.size();++i)bindOK&=(bindPose[i].position-model.triangles[i].position).LengthSqr()<1e-6f;
     all&=report("studio inverse bind pose identity",bindOK&&model.bones.size()==2);
@@ -782,6 +790,8 @@ bool SourceMap::selfTest(){
     Quaternion expected;AngleQuaternion(RadianEuler(.4f,0,0),expected);bool halfway=animationOK&&std::abs(QuaternionDotProduct(halfPose.rotations[1],expected))>.9999f;
     all&=report("studio embedded RLE clip interpolation/loop",halfway&&std::abs(QuaternionDotProduct(startPose.rotations[1],endPose.rotations[1]))>.99999f);
     const auto externalStudio=makeStudioFixture(true);StudioMesh externalModel;StudioPose externalPose;
+    auto external48=externalStudio.mdl;std::memcpy(external48.data()+4,&version48,4);StudioMesh externalLegacy;
+    all&=report("studio MDL48 external ANI clip",parseStudioModel(external48,externalStudio.vvd,externalStudio.vtx,externalLegacy,modelError,externalStudio.ani)&&sampleStudioAnimation(externalLegacy,0,.375,legacyPose));
     all&=report("studio external ANI block RLE pose",parseStudioModel(externalStudio.mdl,externalStudio.vvd,externalStudio.vtx,externalModel,modelError,externalStudio.ani)
         &&externalModel.animations.size()==1&&sampleStudioAnimation(externalModel,0,.375,externalPose)&&std::abs(QuaternionDotProduct(externalPose.rotations[1],expected))>.9999f);
     StudioMesh missingExternal;all&=report("studio missing ANI retains bind geometry",parseStudioModel(externalStudio.mdl,externalStudio.vvd,externalStudio.vtx,missingExternal,modelError)&&missingExternal.animations.empty()&&missingExternal.triangles.size()==36);

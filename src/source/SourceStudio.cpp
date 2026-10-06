@@ -12,6 +12,11 @@ constexpr int idStudioHeader=(('T'<<24)+('S'<<16)+('D'<<8)+'I');
 constexpr size_t maximumModelFile=32*1024*1024;
 constexpr size_t maximumModelVertices=65536;
 constexpr size_t maximumModelTriangles=65536;
+// Serialized layouts used by the preview are shared by SDK 2013 MDL 48 and
+// this upstream's MDL 49. Never read native 64-bit pointer layouts from disk.
+static_assert(sizeof(studiohdr_t)==408 && sizeof(mstudiobone_t)==216,"Studio disk header/bone layout changed");
+static_assert(sizeof(mstudiomodel_t)==148 && sizeof(mstudiomesh_t)==116,"Studio disk model/mesh layout changed");
+static_assert(sizeof(mstudioanimdesc_t)==100 && sizeof(mstudiovertex_t)==48,"Studio disk animation/vertex layout changed");
 template<class T> T* at(std::vector<std::uint8_t>& bytes,size_t offset){
     return offset<=bytes.size() && sizeof(T)<=bytes.size()-offset?reinterpret_cast<T*>(bytes.data()+offset):nullptr;
 }
@@ -139,7 +144,7 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     if(mdl.size()<sizeof(studiohdr_t)||vvd.size()<sizeof(vertexFileHeader_t)||vtx.size()<sizeof(OptimizedModel::FileHeader_t))return fail("truncated MDL/VVD/VTX header");
     if(mdl.size()>maximumModelFile||vvd.size()>maximumModelFile||vtx.size()>maximumModelFile||ani.size()>maximumModelFile)return fail("model companion exceeds 32 MiB limit");
     const auto* mh=at<studiohdr_t>(mdl,0);const auto* vh=at<vertexFileHeader_t>(vvd,0);const auto* fh=at<OptimizedModel::FileHeader_t>(vtx,0);
-    if(mh->id!=idStudioHeader||mh->version!=STUDIO_VERSION||mh->length<int(sizeof(studiohdr_t))||size_t(mh->length)>mdl.size())return fail("unsupported MDL signature/version/length");
+    if(mh->id!=idStudioHeader||(mh->version!=48&&mh->version!=49)||mh->length<int(sizeof(studiohdr_t))||size_t(mh->length)>mdl.size())return fail("unsupported MDL signature/version/length");
     if(vh->id!=MODEL_VERTEX_FILE_ID||vh->version!=MODEL_VERTEX_FILE_VERSION||vh->numLODs<1||vh->numLODs>MAX_NUM_LODS
         ||vh->numFixups<0||vh->numFixups>int(maximumModelVertices))return fail("unsupported VVD header or fixups");
     if(fh->version!=OPTIMIZED_MODEL_FILE_VERSION||fh->numLODs<1||fh->numLODs>MAX_NUM_LODS)return fail("unsupported VTX header");
