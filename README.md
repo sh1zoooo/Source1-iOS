@@ -68,7 +68,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 91% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 92% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -164,6 +164,12 @@ VMT/MDL. Это импорт ресурсов, не запуск client/server D
 загружаются пять ladder static props: 2 472 треугольника и две VTF-текстуры.
 Отсутствующие в самом кеше `.phy` не подменяются неточной коллизией.
 [Проверки MDL44](docs/VALIDATION-0.32.0.md).
+Этап 0.33/build 36 читает визуальные модели `prop_dynamic` и
+`prop_dynamic_override` из BSP entities: origin/angles/scale/skin, общий
+MDL/VVD/VTX и VMT/VTF atlas. `source_bsp_entities` открывает fixture из двух
+моделей с разными skins; `source_entities_selftest` проверяет staging.
+Это bind-pose preview без entity animation, outputs или collision; nonzero
+bodygroups пока пропускаются. [Проверки entities](docs/VALIDATION-0.33.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

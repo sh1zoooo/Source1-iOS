@@ -500,12 +500,20 @@ std::vector<std::uint8_t> skinPropsFixture(){
     std::memcpy(bytes.data()+entry.fileofs+4,name,sizeof(name));const int skin=1;
     std::memcpy(bytes.data()+entry.fileofs+140+56+32,&skin,4);return bytes;
 }
+std::vector<std::uint8_t> entityPropsFixture(){
+    auto bytes=fixture();dheader_t header;std::memcpy(&header,bytes.data(),sizeof(header));
+    const std::string text="{ classname worldspawn } { classname info_player_start origin \"-190 -160 16\" angles \"8 45 0\" } "
+        "{ classname prop_dynamic model models/__source1ios_multimat_probe.mdl origin \"-100 -100 0\" angles \"0 30 0\" skin 0 } "
+        "{ classname prop_dynamic_override model models/__source1ios_multimat_probe.mdl origin \"-140 -90 0\" angle 90 skin 1 modelscale 0.5 }";
+    header.lumps[LUMP_ENTITIES].fileofs=bytes.size();header.lumps[LUMP_ENTITIES].filelen=text.size()+1;
+    bytes.insert(bytes.end(),text.begin(),text.end());bytes.push_back(0);std::memcpy(bytes.data(),&header,sizeof(header));return bytes;
+}
 }
 namespace source1ios {
 struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
-    std::vector<MeshPoint> propsMesh;unsigned propInstances=0;
+    std::vector<MeshPoint> propsMesh;unsigned propInstances=0,entityModelInstances=0,entityModelCandidates=0;
     std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
@@ -550,6 +558,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     ok=ok&&hdrFile&&g_pFullFileSystem->Write(hdrMap.data(),hdrMap.size(),hdrFile)==int(hdrMap.size());if(hdrFile)g_pFullFileSystem->Close(hdrFile);
     const auto skinMap=skinPropsFixture();auto skinFile=g_pFullFileSystem->Open("__source1ios_skins.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok&&skinFile&&g_pFullFileSystem->Write(skinMap.data(),skinMap.size(),skinFile)==int(skinMap.size());if(skinFile)g_pFullFileSystem->Close(skinFile);
+    const auto entityMap=entityPropsFixture();auto entityFile=g_pFullFileSystem->Open("__source1ios_entities.bsp","wb","PORT_BSP_PREVIEW");
+    ok=ok&&entityFile&&g_pFullFileSystem->Write(entityMap.data(),entityMap.size(),entityFile)==int(entityMap.size());if(entityFile)g_pFullFileSystem->Close(entityFile);
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
@@ -608,6 +618,13 @@ bool SourceMap::demoProps(){return impl_ && load("__source1ios_props.bsp",nullpt
 bool SourceMap::demoPhy(){return impl_ && load("__source1ios_phy.bsp",nullptr);}
 bool SourceMap::demoHdr(){return impl_ && load("__source1ios_hdr.bsp",nullptr);}
 bool SourceMap::demoSkins(){return impl_ && load("__source1ios_skins.bsp",nullptr);}
+bool SourceMap::demoEntities(){return impl_ && load("__source1ios_entities.bsp",nullptr);}
+bool SourceMap::entitiesSelfTest(){
+    if(!impl_)return false;
+    bool all=report("live BSP entity models staged",impl_->entityModelCandidates==2&&impl_->entityModelInstances==2&&impl_->propsMesh.size()==72&&impl_->mapMaterialCount==4);
+    bool slots=impl_->propsMesh.size()==72;if(slots)for(size_t i=0;i<72;++i)slots&=impl_->propsMesh[i].material==(i<36?(i<18?2u:3u):(i<54?3u:2u));
+    all&=report("live BSP entity skins and visual-only physics",slots&&impl_->propCollisions.empty()&&impl_->scene&&impl_->scene->props.empty());return all;
+}
 bool SourceMap::setSkin(unsigned family){
     if(!impl_||impl_->modelMesh.size()!=impl_->studio.triangles.size()||!selectStudioSkin(impl_->studio,family))return false;
     for(size_t i=0;i<impl_->modelMesh.size();++i)impl_->modelMesh[i].material=impl_->studio.triangles[i].material;
@@ -728,9 +745,10 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     if(!entityBytes.empty()&&g_pFullFileSystem->Read(entityBytes.data(),entityBytes.size(),file)!=int(entityBytes.size())){g_pFullFileSystem->Close(file);return false;}
     if(entityLump.uncompressedSize){std::vector<unsigned char> expanded;const char* reason="";
         if(!decodeLump(entityBytes,entitySize,expanded,reason)){g_pFullFileSystem->Close(file);return false;}entityBytes=std::move(expanded);}
-    std::vector<PreviewSpawn> spawns;
-    if(!parsePreviewSpawns(std::string(entityBytes.begin(),entityBytes.end()),spawns)){g_pFullFileSystem->Close(file);Warning("Source BSP: malformed entity text or player spawn\n");return false;}
+    std::vector<PreviewSpawn> spawns;std::vector<PreviewProp> entityModels;
+    if(!parsePreviewSpawns(std::string(entityBytes.begin(),entityBytes.end()),spawns,&entityModels)){g_pFullFileSystem->Close(file);Warning("Source BSP: malformed entity text, player spawn or model\n");return false;}
     std::vector<PreviewProp> props;if(!readProps(file,h,props)){g_pFullFileSystem->Close(file);Warning("Source BSP: invalid or unsupported static prop lump\n");return false;}
+    const size_t staticPropCount=props.size();props.insert(props.end(),entityModels.begin(),entityModels.end());
     g_pFullFileSystem->Close(file);
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
@@ -784,8 +802,9 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     if(mesh.empty())return false;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
     struct CachedProp {std::string name;StudioMesh mesh;PhyGeometry phy;std::vector<std::pair<float,Collision>> shapes;std::vector<unsigned> slots;bool valid=false,phyRead=false;};std::vector<CachedProp> cached;
-    size_t cachedVertices=0,modelBytes=0,phyPoints=0;unsigned phyInstances=0;
+    size_t cachedVertices=0,modelBytes=0,phyPoints=0,propIndex=0;unsigned phyInstances=0,entityInstances=0;
     for(const auto& prop:props){
+        const bool entityModel=propIndex++>=staticPropCount;
         auto found=std::find_if(cached.begin(),cached.end(),[&](const auto& c){return c.name==prop.model;});
         if(found==cached.end()){
             if(cached.size()>=128){Warning("Source BSP: static prop model budget exceeded\n");return false;}
@@ -811,6 +830,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             if(v.material>=found->slots.size())return false;
             const float light=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);propsMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},found->slots[v.material]});}
         ++propInstances;
+        if(entityModel)++entityInstances;
         if(prop.solid==2){if(propCollisions.size()>=512){Warning("Source BSP: static prop collision budget exceeded\n");return false;}PropCollision collider;
             if(propBox(found->mesh,prop,collider))propCollisions.push_back(std::move(collider));else{++collisionSkipped;Warning("Source BSP static prop collision skipped: invalid or degenerate bounds (%s)\n",prop.model.c_str());}}
         else if(prop.solid==6){
@@ -837,6 +857,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     }else Msg("Source BSP camera spawn: no player start; preview fallback\n");
     impl_->scene=std::move(live);
     impl_->propsMesh=std::move(propsMesh);impl_->propInstances=propInstances;
+    impl_->entityModelCandidates=entityModels.size();impl_->entityModelInstances=entityInstances;
+    Msg("Source BSP entity models staged: %u instances from %zu candidates; bind pose, visual only\n",entityInstances,entityModels.size());
     impl_->propCollisions=std::move(propCollisions);Msg("Source BSP static prop collision ready: %zu SOLID_BBOX objects, %u unsupported/degenerate\n",impl_->propCollisions.size()-phyInstances,collisionSkipped);
     if(phyInstances)Msg("Source BSP exact PHY collision ready: %u SOLID_VPHYSICS objects\n",phyInstances);
     Msg("Source BSP static props staged: %u instances, %zu triangles, %zu model types, %u skipped\n",propInstances,impl_->propsMesh.size()/3,cached.size(),skipped);
@@ -1148,6 +1170,10 @@ bool SourceMap::selfTest(){
     all&=report("BSP CS team spawn entity data",csSpawn&&parsedSpawns.size()==2&&parsedSpawns[0].origin[1]==200&&parsedSpawns[0].angles[1]==90&&parsedSpawns[1].angles[1]==180);
     const auto savedSpawns=parsedSpawns;
     all&=report("BSP malformed spawn and entity bounds rejected",!parsePreviewSpawns("{ classname info_player_start origin \"nan 0 0\" }",parsedSpawns)&&!parsePreviewSpawns("{ classname worldspawn",parsedSpawns)&&!parsePreviewSpawns(std::string(1024*1024+1,' '),parsedSpawns)&&parsedSpawns.size()==savedSpawns.size());
+    std::vector<PreviewProp> entityModels;const bool entityOK=parsePreviewSpawns("{ classname prop_dynamic model models/test.mdl origin \"1 2 3\" angle 90 skin 1 modelscale 2 } { classname prop_dynamic_override model models/test.mdl body 1 }",parsedSpawns,&entityModels);
+    all&=report("BSP entity model transform skin scale and bodygroup bounds",entityOK&&entityModels.size()==1&&entityModels[0].origin[2]==3&&entityModels[0].angles[1]==90&&entityModels[0].skin==1&&entityModels[0].scale==2&&entityModels[0].solid==0);
+    const auto savedModels=entityModels;
+    all&=report("BSP malformed entity model preserves staged output",!parsePreviewSpawns("{ classname prop_dynamic model models/../bad.mdl }",parsedSpawns,&entityModels)&&!parsePreviewSpawns("{ classname prop_dynamic model models/test.mdl skin 1.5 }",parsedSpawns,&entityModels)&&!parsePreviewSpawns("{ classname prop_dynamic model models/test.mdl modelscale nan }",parsedSpawns,&entityModels)&&entityModels.size()==savedModels.size()&&entityModels[0].model==savedModels[0].model);
     all&=report("engine worldspawn entities",CM_EntityString() && std::strstr(CM_EntityString(),"worldspawn"));
     auto testScene=physicsScene(impl_->fixtureCollision);
     if(!testScene)return report("live physics body pose advances",false);

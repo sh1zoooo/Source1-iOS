@@ -22,6 +22,8 @@ public:
     bool hdrSelfTest();
     bool materialsSelfTest();
     bool demoSkins();
+    bool demoEntities();
+    bool entitiesSelfTest();
     bool setSkin(unsigned family);
     bool skinSelfTest();
     bool propsSkinSelfTest();

@@ -4,11 +4,13 @@
 #include <cstdlib>
 #include <string>
 #include <vector>
+#include "SourceProps.hpp"
 
 namespace source1ios {
 struct PreviewSpawn { std::array<float,3> origin{}, angles{}; std::string classname; };
 // Data-only BSP entity reader. No entity factories, outputs or configs run.
-inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& output) {
+inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& output,
+                               std::vector<PreviewProp>* modelOutput=nullptr) {
     if(text.size()>1024*1024)return false;
     if(!text.empty()&&text.back()=='\0')text.pop_back();
     if(text.find('\0')!=std::string::npos)return false;
@@ -39,17 +41,36 @@ inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& outpu
             if(i+1<count&&(!*p||static_cast<unsigned char>(*p)>32))return false;
         }while(*p&&static_cast<unsigned char>(*p)<=32)++p;return !*p;
     };
-    std::vector<PreviewSpawn> staged;std::string key,value;unsigned entities=0;
+    std::vector<PreviewSpawn> staged;std::vector<PreviewProp> models;std::string key,value;unsigned entities=0;
     while(token(key)){
         if(key!="{"||++entities>8192)return false;
-        std::string classname,origin,angles,angle;unsigned pairs=0;bool closed=false;
+        std::string classname,origin,angles,angle,model,skin,scale,body;unsigned pairs=0;bool closed=false;
         while(token(key)){
             if(key=="}"){closed=true;break;}
             if(key=="{"||++pairs>256||!token(value)||value=="{"||value=="}")return false;
             if(key=="classname")classname=value;else if(key=="origin")origin=value;
             else if(key=="angles")angles=value;else if(key=="angle")angle=value;
+            else if(key=="model")model=value;else if(key=="skin")skin=value;
+            else if(key=="modelscale")scale=value;else if(key=="body")body=value;
         }
         if(!closed)return false;
+        if(classname=="prop_dynamic"||classname=="prop_dynamic_override"){
+            PreviewProp prop;prop.model=model;
+            if(model.size()<11||model.size()>239||model.compare(0,7,"models/")||model.substr(model.size()-4)!=".mdl"
+                ||model.find("..")!=std::string::npos||model.find("//")!=std::string::npos)return false;
+            for(char c:model)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c=='.'||c=='/'))return false;
+            if(!origin.empty()&&!numbers(origin,prop.origin,3,32768))return false;
+            if(!angles.empty()){if(!numbers(angles,prop.angles,3,360000))return false;}
+            else if(!angle.empty()){std::array<float,3> yaw{};if(!numbers(angle,yaw,1,360000))return false;
+                if(yaw[0]==-1)prop.angles[0]=-90;else if(yaw[0]==-2)prop.angles[0]=90;else prop.angles[1]=yaw[0];}
+            std::array<float,3> scalar{};
+            if(!skin.empty()){if(!numbers(skin,scalar,1,255)||scalar[0]<0||std::floor(scalar[0])!=scalar[0])return false;prop.skin=int(scalar[0]);}
+            if(!scale.empty()){if(!numbers(scale,scalar,1,16)||scalar[0]<=0)return false;prop.scale=scalar[0];}
+            // This stage is a data-only bind-pose preview. Nonzero bodygroups
+            // cannot be selected by the current studio path; leave them out.
+            if(!body.empty()){if(!numbers(body,scalar,1,65535)||scalar[0]<0||std::floor(scalar[0])!=scalar[0])return false;if(scalar[0]!=0)continue;}
+            if(models.size()>=512)return false;models.push_back(std::move(prop));continue;
+        }
         if(classname!="info_player_start"&&classname!="info_player_counterterrorist"&&
            classname!="info_player_terrorist"&&classname!="info_player_deathmatch")continue;
         PreviewSpawn spawn;spawn.classname=classname;
@@ -63,6 +84,6 @@ inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& outpu
         if(staged.size()>=512)return false;staged.push_back(std::move(spawn));
     }
     if(failed)return false;
-    output=std::move(staged);return true;
+    output=std::move(staged);if(modelOutput)*modelOutput=std::move(models);return true;
 }
 }

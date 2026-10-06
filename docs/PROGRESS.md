@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **91% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **92% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -191,3 +191,10 @@ SHA256 manifest и кадр проверены отдельно.
 Linux CI 5/5, iOS ARM64/simulator 242 PASS / GPU revision 9 прошли; скачанный
 IPA, SHA256 manifest и кадр проверены отдельно.
 [Отчёт 0.32](VALIDATION-0.32.0.md).
+
+Этап 0.33/build 36: bounded visual-only `prop_dynamic` / `prop_dynamic_override`
+из BSP entities. До 512 моделей, проверенные transform/scale/skin, общий
+model cache и material atlas. Nonzero bodygroups пропускаются; анимации,
+entity outputs, physical entities и game DLL этим не реализуются.
+30 000 ASan/UBSan spawn/model entity mutations прошли локально. CI ожидается.
+[Отчёт 0.33](VALIDATION-0.33.0.md).

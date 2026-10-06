@@ -154,7 +154,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~91%\nClientMod VPK · MDL44/48/49 models\nSource self-tests: 112 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~92%\nBSP entity models · ClientMod VPK\nSource self-tests: 114 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -208,6 +208,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if (!_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_props_selftest")) { [self fail:@"Simulator static prop collision FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_phy") || !_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_phy_selftest")) { [self fail:@"Simulator exact PHY collision FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_hdr") || !_runtime.executeSource("source_hdr_selftest")) { [self fail:@"Simulator HDR-only scene FAIL"]; return; }
+        if (!_runtime.executeSource("source_bsp_entities") || !_runtime.executeSource("source_entities_selftest")) { [self fail:@"Simulator entity model scene FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_skins") || !_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_props_skin_selftest")) { [self fail:@"Simulator static prop skins FAIL"]; return; }
         if (!_runtime.executeSource("source_model_load models/__source1ios_external48_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) { [self fail:@"Simulator MDL48 FAIL"]; return; }
         if (!_runtime.executeSource("source_model_load models/__source1ios_multimat_probe.mdl") || !_runtime.executeSource("source_anim_play 0") || !_runtime.executeSource("source_model_materials_selftest")) { [self fail:@"Simulator multi-material model FAIL"]; return; }
@@ -298,7 +299,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~91%%\nClientMod VPK · MDL44/48/49 models\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~92%%\nBSP entity models · ClientMod VPK\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

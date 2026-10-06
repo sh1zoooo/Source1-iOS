@@ -181,6 +181,14 @@ int main() {
         {std::ofstream out(skinMapPath,std::ios::binary);out.write(skinMapBytes.data(),skinMapBytes.size());}
         check(!host.executeSource("source_bsp_skins")&&host.textureRevision()==beforeBadSkinMap&&host.texture().pixels==beforeBadSkinPixels,"Invalid prop skin replaced scene");
         {std::ofstream out(skinMapPath,std::ios::binary);out.write(validSkinMap.data(),validSkinMap.size());}
+        check(host.executeSource("source_bsp_entities")&&host.executeSource("source_entities_selftest"),"BSP entity models did not stage skins/visual-only geometry");
+        check(host.executeSource("source_physics_reset")&&host.executeSource("source_entities_selftest"),"BSP entity preview changed after physics reset");
+        const auto entityMapPath=directory/"Source1IOS/selftest/__source1ios_entities.bsp";auto entityMap=readBytes(entityMapPath);const auto goodEntityMap=entityMap;
+        const std::string needle="modelscale 0.5";auto entityAt=std::search(entityMap.begin(),entityMap.end(),needle.begin(),needle.end());check(entityAt!=entityMap.end(),"Entity fixture scale absent");
+        std::copy_n("modelscale nan",needle.size(),entityAt);const auto beforeEntityRevision=host.textureRevision();
+        {std::ofstream out(entityMapPath,std::ios::binary);out.write(entityMap.data(),entityMap.size());}
+        check(!host.executeSource("source_bsp_entities")&&host.textureRevision()==beforeEntityRevision&&host.executeSource("source_entities_selftest"),"Malformed entity replaced scene");
+        {std::ofstream out(entityMapPath,std::ios::binary);out.write(goodEntityMap.data(),goodEntityMap.size());}
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
