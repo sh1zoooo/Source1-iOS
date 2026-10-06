@@ -127,6 +127,24 @@ int main() {
         {std::ofstream out(phyPath,std::ios::binary);out.write(originalPhy.data(),originalPhy.size()-8);}
         check(!host.executeSource("source_bsp_phy")&&host.textureRevision()==phyRevision,"Truncated PHY replaced scene");
         {std::ofstream out(phyPath,std::ios::binary);out.write(originalPhy.data(),originalPhy.size());}
+        const auto ldrLight=host.lightmapTexture().pixels;
+        check(host.executeSource("source_bsp_hdr")&&host.executeSource("source_hdr_selftest"),"HDR-only map did not load");
+        check(host.lightmapTexture().pixels!=ldrLight,"HDR mapping did not change sampled atlas");
+        check(host.executeSource("source_physics_reset")&&host.executeSource("source_phy_selftest"),"HDR load lost exact PHY collisions");
+        const auto hdrPath=directory/"Source1IOS/selftest/__source1ios_hdr.bsp";
+        std::ifstream hdrIn(hdrPath,std::ios::binary);std::vector<char> originalHdr((std::istreambuf_iterator<char>(hdrIn)),{});hdrIn.close();
+        const auto hdrRevision=host.textureRevision();const auto hdrLight=host.lightmapTexture().pixels;auto corruptHdr=originalHdr;
+        // BSP header: ident/version, then 64 records of four int32 fields.
+        // Lump 53 is HDR lighting; an odd length must fail before legacy loading.
+        std::int32_t length=0;std::memcpy(&length,corruptHdr.data()+8+53*16+4,4);--length;std::memcpy(corruptHdr.data()+8+53*16+4,&length,4);
+        {std::ofstream out(hdrPath,std::ios::binary);out.write(corruptHdr.data(),corruptHdr.size());}
+        check(!host.executeSource("source_bsp_hdr")&&host.textureRevision()==hdrRevision&&host.lightmapTexture().pixels==hdrLight,"Invalid HDR replaced live scene");
+        corruptHdr=originalHdr;std::int32_t hdrFaceOffset=0;std::memcpy(&hdrFaceOffset,corruptHdr.data()+8+58*16,4);
+        const std::int32_t invalidLightOffset=std::numeric_limits<std::int32_t>::max();
+        std::memcpy(corruptHdr.data()+hdrFaceOffset+20,&invalidLightOffset,4);
+        {std::ofstream out(hdrPath,std::ios::binary);out.write(corruptHdr.data(),corruptHdr.size());}
+        check(!host.executeSource("source_bsp_hdr")&&host.textureRevision()==hdrRevision&&host.lightmapTexture().pixels==hdrLight,"Invalid HDR face light offset replaced scene");
+        {std::ofstream out(hdrPath,std::ios::binary);out.write(originalHdr.data(),originalHdr.size());}
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");

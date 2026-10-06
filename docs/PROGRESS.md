@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **80% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **82% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -144,3 +144,10 @@ reset, pause/resume. Скачанный IPA/SHA256 и кадр проверен�
 На физическом iPhone подтверждён предыдущий этап 0.26; 0.27 проверен
 автоматически в simulator, не на телефоне пользователя.
 [Отчёт 0.27](VALIDATION-0.27.0.md).
+
+Этап 0.28/build 31 добавляет HDR-only faces/lighting в ограниченный BSP preview.
+Согласованный выбор HDR records и RGBExp32 samples, fallback на общие faces,
+LDR preference, fixed exposure/Reinhard mapping, edge padding и отказ
+повреждённых метаданных проверены нативно. PHY shapes остаются активны после
+HDR загрузки/reset. Это 8-bit preview, не HDR framebuffer или eye adaptation.
+iOS/GPU CI ожидается. [Отчёт 0.28](VALIDATION-0.28.0.md).

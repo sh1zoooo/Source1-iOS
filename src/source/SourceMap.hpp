@@ -18,6 +18,8 @@ public:
     bool demoMaterials();
     bool demoProps();
     bool demoPhy();
+    bool demoHdr();
+    bool hdrSelfTest();
     bool propsSelfTest();
     bool phySelfTest();
     bool loadModel(const char* filename, const char* pathID = "GAME");

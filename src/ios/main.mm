@@ -113,7 +113,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         share.enabled = !_runtime.logPath().empty();
         return;
     }
-    if (!_smokeRequested && !_runtime.executeSource("source_bsp_phy")) { [self fail:@"Exact PHY prop demo failed"]; return; }
+    if (!_smokeRequested && !_runtime.executeSource("source_bsp_hdr")) { [self fail:@"HDR/PHY prop demo failed"]; return; }
     if (!_smokeRequested && !_runtime.executeSource("source_model_load models/__source1ios_legacy_probe.mdl")) { [self fail:@"MDL48 demo failed"]; return; }
     _runtime.log(std::string("iOS ") + UIDevice.currentDevice.systemVersion.UTF8String);
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
@@ -152,7 +152,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~80%\nBSP exact PHY/lightmaps · MDL48/49 animation\nSource self-tests: 98 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~82%\nBSP HDR preview/exact PHY · MDL48/49 animation\nSource self-tests: 101 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -204,6 +204,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if (!_runtime.executeSource("source_bsp_props")) { [self fail:@"Simulator static props FAIL"]; return; }
         if (!_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_props_selftest")) { [self fail:@"Simulator static prop collision FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_phy") || !_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_phy_selftest")) { [self fail:@"Simulator exact PHY collision FAIL"]; return; }
+        if (!_runtime.executeSource("source_bsp_hdr") || !_runtime.executeSource("source_hdr_selftest")) { [self fail:@"Simulator HDR-only scene FAIL"]; return; }
         if (!_runtime.executeSource("source_model_load models/__source1ios_external48_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) { [self fail:@"Simulator MDL48 FAIL"]; return; }
         _runtime.cameraLook(10, 0);
         _runtime.cameraMove(1, 0, .1f);
@@ -222,7 +223,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         MTLTextureDescriptor *lightDescriptor=[MTLTextureDescriptor texture2DDescriptorWithPixelFormat:MTLPixelFormatRGBA8Unorm width:lighting.width height:lighting.height mipmapped:NO];
         id<MTLTexture> stagedLight=[view.device newTextureWithDescriptor:lightDescriptor];if(!stagedLight){[self fail:@"BSP lightmap upload failed"];return;}
         [stagedLight replaceRegion:MTLRegionMake2D(0,0,lighting.width,lighting.height) mipmapLevel:0 withBytes:lighting.pixels.data() bytesPerRow:lighting.width*4];
-        self.mapTexture=staged;self.lightmapTexture=stagedLight;_mapTextureRevision=_runtime.textureRevision();_runtime.log("Source BSP VMT/VTF base texture uploaded to Metal");_runtime.log("Source BSP LDR lightmap atlas uploaded to Metal");
+        self.mapTexture=staged;self.lightmapTexture=stagedLight;_mapTextureRevision=_runtime.textureRevision();_runtime.log("Source BSP VMT/VTF base texture uploaded to Metal");_runtime.log("Source BSP preview lightmap atlas uploaded to Metal");
     }
     if (_modelTextureRevision != _runtime.modelTextureRevision()) {
         const auto& decoded=_runtime.modelTexture();
@@ -291,7 +292,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~80%%\nBSP exact PHY/lightmaps · MDL48/49 animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~82%%\nBSP HDR preview/exact PHY · MDL48/49 animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

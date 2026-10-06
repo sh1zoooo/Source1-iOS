@@ -36,6 +36,8 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_props_selftest` — на этой тестовой карте проверяет vphysics-объекты, ray/hull и блокировку камеры; возвращает исходную камеру.
 - `source_bsp_phy` — те же объекты с реальной tapered PHY-формой вместо BBOX.
 - `source_phy_selftest` — проверяет PHY-объекты, луч мимо узкой верхней части и блокировку камеры, сохраняя исходную камеру.
+- `source_bsp_hdr` — HDR-only BSP со статическими PHY-объектами и преобразованным освещением preview.
+- `source_hdr_selftest` — проверяет активную HDR-only сцену.
 - `source_content_mount cm` — добавить распакованные ресурсы из `Source1IOS/content/cm`.
 - `source_content_unmount cm` — отключить эту папку от GAME search paths.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
@@ -62,7 +64,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 80% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 82% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -121,6 +123,13 @@ Linux CI (5/5), ARM64 iPhone build и simulator GPU прошли: 203 PASS,
 GPU revision 7, live PHY после reset, pause/resume. Скачанный IPA/SHA256
 и кадр проверены отдельно. Обычный запуск показывает PHY demo (98 startup PASS).
 [Проверки PHY](docs/VALIDATION-0.27.0.md).
+Этап 0.28/build 31 добавляет HDR-only BSP preview: `FACES_HDR` / `LIGHTING_HDR`,
+или общие face records при отсутствии HDR faces. При наличии LDR lighting
+сохраняется прежний LDR путь. HDR RGBExp32 преобразуется с фиксированной
+экспозицией и Reinhard mapping в 8-bit atlas; eye adaptation и полный HDR
+shader backend Source не реализованы. Native checks прошли, iOS CI ожидается.
+Обычный запуск показывает HDR/PHY demo с 101 startup checks.
+[Проверки HDR-only](docs/VALIDATION-0.28.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

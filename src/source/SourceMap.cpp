@@ -204,11 +204,11 @@ std::unique_ptr<PhysicsScene> physicsScene(Collision shape,const std::vector<Pro
     scene->body->Wake();scene->body->ApplyForceCenter(Vector(3500,0,0));return scene;
 }
 constexpr size_t maximumLump = 16 * 1024 * 1024;
-constexpr int geometryLumps[]={LUMP_VERTEXES,LUMP_EDGES,LUMP_SURFEDGES,LUMP_FACES,LUMP_DISPINFO,LUMP_DISP_VERTS,LUMP_DISP_TRIS};
-constexpr size_t geometryStrides[]={sizeof(dvertex_t),sizeof(dedge_t),sizeof(int),sizeof(dface_t),sizeof(ddispinfo_t),sizeof(CDispVert),sizeof(CDispTri)};
+constexpr int geometryLumps[]={LUMP_VERTEXES,LUMP_EDGES,LUMP_SURFEDGES,LUMP_FACES,LUMP_DISPINFO,LUMP_DISP_VERTS,LUMP_DISP_TRIS,LUMP_FACES_HDR};
+constexpr size_t geometryStrides[]={sizeof(dvertex_t),sizeof(dedge_t),sizeof(int),sizeof(dface_t),sizeof(ddispinfo_t),sizeof(CDispVert),sizeof(CDispTri),sizeof(dface_t)};
 constexpr size_t geometryLumpCount=sizeof(geometryLumps)/sizeof(*geometryLumps);
-constexpr int materialLumps[]={LUMP_TEXINFO,LUMP_TEXDATA,LUMP_TEXDATA_STRING_TABLE,LUMP_TEXDATA_STRING_DATA,LUMP_LIGHTING};
-constexpr size_t materialStrides[]={sizeof(texinfo_t),sizeof(dtexdata_t),sizeof(int),1,sizeof(ColorRGBExp32)};
+constexpr int materialLumps[]={LUMP_TEXINFO,LUMP_TEXDATA,LUMP_TEXDATA_STRING_TABLE,LUMP_TEXDATA_STRING_DATA,LUMP_LIGHTING,LUMP_LIGHTING_HDR};
+constexpr size_t materialStrides[]={sizeof(texinfo_t),sizeof(dtexdata_t),sizeof(int),1,sizeof(ColorRGBExp32),sizeof(ColorRGBExp32)};
 constexpr size_t materialLumpCount=sizeof(materialLumps)/sizeof(*materialLumps);
 bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
     auto fail=[&](const char* reason,int id=-1){if(file)Warning("Source BSP rejected %s: %s; version=%d, lump=%d, file bytes=%zu\n",file,reason,h.version,id,size);return false;};
@@ -223,14 +223,25 @@ bool headerValid(const dheader_t& h, size_t size, const char* file=nullptr) {
         const size_t decoded=l.uncompressedSize?l.uncompressedSize:l.filelen;
         if(decoded>maximumLump || size_t(l.filelen)>maximumLump)return fail("geometry lump exceeds 16 MiB limit",geometryLumps[i]);
         if(decoded%geometryStrides[i])return fail("geometry record size mismatch",geometryLumps[i]);
-        const bool supportedVersion=l.version==0 || (geometryLumps[i]==LUMP_FACES && l.version==LUMP_FACES_VERSION);
+        const bool supportedVersion=l.version==0 || ((geometryLumps[i]==LUMP_FACES || geometryLumps[i]==LUMP_FACES_HDR) && l.version==LUMP_FACES_VERSION);
         if(!supportedVersion)return fail("unsupported geometry lump version",geometryLumps[i]);
     }
     for(size_t i=0;i<materialLumpCount;++i){const auto& l=h.lumps[materialLumps[i]];const size_t decoded=l.uncompressedSize?l.uncompressedSize:l.filelen;
         if(decoded>maximumLump||size_t(l.filelen)>maximumLump)return fail("material lump exceeds 16 MiB limit",materialLumps[i]);
         if(decoded%materialStrides[i])return fail("material record size mismatch",materialLumps[i]);
-        if(l.version!=0 && !(materialLumps[i]==LUMP_LIGHTING && l.version==1))return fail("unsupported material lump version",materialLumps[i]);}
+        if(l.version!=0 && !((materialLumps[i]==LUMP_LIGHTING || materialLumps[i]==LUMP_LIGHTING_HDR) && l.version==1))return fail("unsupported material lump version",materialLumps[i]);}
     return true;
+}
+struct PreviewLighting { int faces=LUMP_FACES, samples=LUMP_LIGHTING;bool hdr=false; };
+PreviewLighting previewLighting(const dheader_t& h){
+    // Prefer LDR when present. Like the original loader, HDR may share LDR
+    // face records if the HDR face lump is absent; never mix HDR faces with LDR samples.
+    PreviewLighting result;
+    if(!h.lumps[LUMP_LIGHTING].filelen && h.lumps[LUMP_LIGHTING_HDR].filelen){
+        result.hdr=true;result.samples=LUMP_LIGHTING_HDR;
+        if(h.lumps[LUMP_FACES_HDR].filelen)result.faces=LUMP_FACES_HDR;
+    }
+    return result;
 }
 // Use the original bounded streaming decoder, not legacy Uncompress(), which
 // has no input-length argument and is unsafe for arbitrary imported maps.
@@ -311,12 +322,16 @@ bool lightmapRange(const dface_t& face,const texinfo_t& info,size_t bytes,unsign
     const size_t required=size_t(width)*height*styles*((info.flags&SURF_BUMPLIGHT)?4:1)*sizeof(ColorRGBExp32);
     return size_t(face.lightofs)<=bytes && required<=bytes-size_t(face.lightofs);
 }
-// LDR preview: the first static lightstyle, gamma-encoded for multiplication
-// with the existing base-texture adapter. HDR, animated styles and bump maps
-// require the original graphical materialsystem and are not reproduced here.
+// First static lightstyle. HDR fallback uses fixed exposure / Reinhard mapping
+// into this 8-bit preview atlas, not Source eye adaptation or an HDR framebuffer.
+unsigned char previewLightChannel(unsigned channel,int exponent,bool hdr){
+    double linear=std::ldexp(double(channel)/255.0,exponent);
+    if(hdr)linear=linear/(1.0+linear);
+    return std::lround(std::pow(std::clamp(linear,0.0,1.0),1.0/2.2)*255);
+}
 struct LightmapAtlas {
     source1ios::SourceTexture texture{1024,1024,std::vector<std::uint8_t>(1024*1024*4,255)};
-    unsigned x=0,y=0,row=0,faces=0;
+    unsigned x=0,y=0,row=0,faces=0;bool hdr=false;
     bool add(const dface_t& face,const texinfo_t& info,const std::vector<ColorRGBExp32>& samples,unsigned& ox,unsigned& oy,unsigned& w,unsigned& h){
         if(!lightmapRange(face,info,samples.size()*sizeof(ColorRGBExp32),w,h))return false;
         if(!w)return true;
@@ -325,7 +340,7 @@ struct LightmapAtlas {
         ox=x+1;oy=y+1;const auto* source=samples.data()+face.lightofs/sizeof(ColorRGBExp32);
         for(unsigned sy=0;sy<h+2;++sy)for(unsigned sx=0;sx<w+2;++sx){const auto& c=source[size_t(std::min(h-1,sy?sy-1:0))*w+std::min(w-1,sx?sx-1:0)];
             auto* pixel=texture.pixels.data()+(size_t(y+sy)*texture.width+x+sx)*4;
-            const unsigned channels[]={c.r,c.g,c.b};for(int k=0;k<3;++k){const double linear=std::ldexp(double(channels[k])/255.0,int(c.exponent));pixel[k]=std::lround(std::pow(std::clamp(linear,0.0,1.0),1.0/2.2)*255);}}
+            const unsigned channels[]={c.r,c.g,c.b};for(int k=0;k<3;++k)pixel[k]=previewLightChannel(channels[k],int(c.exponent),hdr);}
         x+=w+2;row=std::max(row,h+2);++faces;return true;
     }
 };
@@ -458,6 +473,16 @@ std::vector<std::uint8_t> propFixture(unsigned solid=2){
     const auto* p=reinterpret_cast<const std::uint8_t*>(&count);bytes.insert(bytes.end(),p,p+4);p=reinterpret_cast<const std::uint8_t*>(&entry);bytes.insert(bytes.end(),p,p+sizeof(entry));bytes.insert(bytes.end(),payload.begin(),payload.end());
     std::memcpy(bytes.data(),&header,sizeof(header));return bytes;
 }
+std::vector<std::uint8_t> hdrFixture(){
+    auto bytes=propFixture(6);dheader_t header;std::memcpy(&header,bytes.data(),sizeof(header));
+    header.lumps[LUMP_FACES_HDR]=header.lumps[LUMP_FACES];header.lumps[LUMP_FACES]={};
+    header.lumps[LUMP_LIGHTING_HDR]=header.lumps[LUMP_LIGHTING];header.lumps[LUMP_LIGHTING]={};
+    const auto& lighting=header.lumps[LUMP_LIGHTING_HDR];
+    for(int i=0;i<lighting.filelen/int(sizeof(ColorRGBExp32));++i){ColorRGBExp32 sample;
+        std::memcpy(&sample,bytes.data()+lighting.fileofs+i*sizeof(sample),sizeof(sample));sample.exponent=2;
+        std::memcpy(bytes.data()+lighting.fileofs+i*sizeof(sample),&sample,sizeof(sample));}
+    std::memcpy(bytes.data(),&header,sizeof(header));return bytes;
+}
 }
 namespace source1ios {
 struct SourceMap::Impl {
@@ -467,7 +492,7 @@ struct SourceMap::Impl {
     std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
-    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;bool hdrLighting=false;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
@@ -504,6 +529,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     ok=ok&&propFile&&g_pFullFileSystem->Write(propBytes.data(),propBytes.size(),propFile)==int(propBytes.size());if(propFile)g_pFullFileSystem->Close(propFile);
     const auto phyMap=propFixture(6);auto phyMapFile=g_pFullFileSystem->Open("__source1ios_phy.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok&&phyMapFile&&g_pFullFileSystem->Write(phyMap.data(),phyMap.size(),phyMapFile)==int(phyMap.size());if(phyMapFile)g_pFullFileSystem->Close(phyMapFile);
+    const auto hdrMap=hdrFixture();auto hdrFile=g_pFullFileSystem->Open("__source1ios_hdr.bsp","wb","PORT_BSP_PREVIEW");
+    ok=ok&&hdrFile&&g_pFullFileSystem->Write(hdrMap.data(),hdrMap.size(),hdrFile)==int(hdrMap.size());if(hdrFile)g_pFullFileSystem->Close(hdrFile);
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
@@ -555,6 +582,12 @@ bool SourceMap::demoTerrain(){return impl_ && load("__source1ios_displacement.bs
 bool SourceMap::demoMaterials(){return impl_ && load("__source1ios_material_grid.bsp",nullptr);}
 bool SourceMap::demoProps(){return impl_ && load("__source1ios_props.bsp",nullptr);}
 bool SourceMap::demoPhy(){return impl_ && load("__source1ios_phy.bsp",nullptr);}
+bool SourceMap::demoHdr(){return impl_ && load("__source1ios_hdr.bsp",nullptr);}
+bool SourceMap::hdrSelfTest(){
+    const bool pass=impl_&&impl_->hdrLighting&&impl_->lightmappedFaces==42&&impl_->propCollisions.size()==2
+        &&impl_->mesh.size()==252&&impl_->mesh[0].lightmap[2]==1;
+    Msg("Source BSP self-test live HDR-only faces lighting and PHY scene: %s\n",pass?"PASS":"FAIL");return pass;
+}
 bool SourceMap::propsSelfTest(){
     if(!impl_)return false;bool all=report("live static prop vphysics objects",impl_->propCollisions.size()==2&&impl_->scene&&impl_->scene->props.size()==2);
     if(impl_->propCollisions.empty())return false;const auto& prop=impl_->propCollisions[0];trace_t ray{},hull{};ray.fraction=hull.fraction=1;
@@ -641,15 +674,16 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
     if(g_pFullFileSystem->FileExists(overlay,pathID)){Warning("Source BSP: external lump overlays unsupported\n");return false;}
-    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;LightmapAtlas lightmaps;
+    const auto selectedLighting=previewLighting(h);
+    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;LightmapAtlas lightmaps;lightmaps.hdr=selectedLighting.hdr;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     {
         LoaderScope scope(filename);
         auto points=lump<dvertex_t>(LUMP_VERTEXES,decoded[LUMP_VERTEXES]);auto edges=lump<dedge_t>(LUMP_EDGES,decoded[LUMP_EDGES]);
-        auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[LUMP_SURFEDGES]);auto faces=lump<dface_t>(LUMP_FACES,decoded[LUMP_FACES]);
+        auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[LUMP_SURFEDGES]);auto faces=lump<dface_t>(selectedLighting.faces,decoded[selectedLighting.faces]);
         auto disps=lump<ddispinfo_t>(LUMP_DISPINFO,decoded[LUMP_DISPINFO]);auto dispVerts=lump<CDispVert>(LUMP_DISP_VERTS,decoded[LUMP_DISP_VERTS]);auto dispTris=lump<CDispTri>(LUMP_DISP_TRIS,decoded[LUMP_DISP_TRIS]);
         BspMaterials materials;if(!bspMaterials(materials,decoded))return false;
-        const auto lighting=lump<ColorRGBExp32>(LUMP_LIGHTING,decoded[LUMP_LIGHTING]);
+        const auto lighting=lump<ColorRGBExp32>(selectedLighting.samples,decoded[selectedLighting.samples]);
         stagedMapTexture=bspAtlas(materials,impl_->checkerTexture);stagedMaterialCount=materials.slotCount;
         Msg("Source BSP material atlas ready: %u slots, %ux%u RGBA\n",materials.slotCount,stagedMapTexture.width,stagedMapTexture.height);
         for(const auto& p:points)if(!p.point.IsValid() || std::abs(p.point.x)>32768 || std::abs(p.point.y)>32768 || std::abs(p.point.z)>32768)return false;
@@ -742,8 +776,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     if(phyInstances)Msg("Source BSP exact PHY collision ready: %u SOLID_VPHYSICS objects\n",phyInstances);
     Msg("Source BSP static props staged: %u instances, %zu triangles, %zu model types, %u skipped\n",propInstances,impl_->propsMesh.size()/3,cached.size(),skipped);
     impl_->displacementCollision=std::move(displacementCollision);
-    impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;
-    Msg("Source BSP LDR lightmap atlas ready: %u faces, 1024x1024 RGBA\n",impl_->lightmappedFaces);
+    impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;impl_->hdrLighting=selectedLighting.hdr;
+    Msg("Source BSP %s lightmap atlas ready: %u faces, 1024x1024 RGBA\n",impl_->hdrLighting?"HDR preview":"LDR",impl_->lightmappedFaces);
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
@@ -831,6 +865,26 @@ bool SourceMap::selfTest(){
     all&=report("BSP LDR lightmap atlas and surface coordinates",impl_->lightmappedFaces==42&&impl_->lightmapTexture.pixels.size()==1024*1024*4&&impl_->mesh[0].lightmap[2]==1);
     bool gradients=false;for(size_t i=0;i<impl_->lightmapTexture.pixels.size();i+=4)gradients|=impl_->lightmapTexture.pixels[i]>0&&impl_->lightmapTexture.pixels[i]<255;
     all&=report("BSP RGBExp32 lightmap gradient decoded",gradients);
+    const auto hdrBytes=hdrFixture();dheader_t hdrHeader;std::memcpy(&hdrHeader,hdrBytes.data(),sizeof(hdrHeader));
+    auto selection=previewLighting(hdrHeader);bool selections=selection.hdr&&selection.faces==LUMP_FACES_HDR&&selection.samples==LUMP_LIGHTING_HDR;
+    auto sharedHeader=hdrHeader;sharedHeader.lumps[LUMP_FACES]=sharedHeader.lumps[LUMP_FACES_HDR];sharedHeader.lumps[LUMP_FACES_HDR]={};
+    selection=previewLighting(sharedHeader);selections&=selection.hdr&&selection.faces==LUMP_FACES;
+    sharedHeader.lumps[LUMP_LIGHTING]=sharedHeader.lumps[LUMP_LIGHTING_HDR];selection=previewLighting(sharedHeader);
+    selections&=!selection.hdr&&selection.faces==LUMP_FACES&&selection.samples==LUMP_LIGHTING;
+    all&=report("BSP HDR-only selection shared faces and LDR preference",selections);
+    LightmapAtlas hdrAtlas;hdrAtlas.hdr=true;dface_t hdrFace{};hdrFace.lightofs=0;std::fill(std::begin(hdrFace.styles),std::end(hdrFace.styles),255);hdrFace.styles[0]=0;
+    texinfo_t hdrInfo{};unsigned hx=0,hy=0,hw=0,hh=0;std::vector<ColorRGBExp32> hdrSamples{{255,128,0,2}};
+    const unsigned bright=previewLightChannel(255,2,true), dim=previewLightChannel(255,0,true);
+    bool hdrMapped=hdrAtlas.add(hdrFace,hdrInfo,hdrSamples,hx,hy,hw,hh)&&bright>dim&&bright<255
+        &&previewLightChannel(0,127,true)==0&&previewLightChannel(255,-128,true)==0&&previewLightChannel(255,127,true)==255
+        &&hdrAtlas.texture.pixels[0]==bright&&hdrAtlas.texture.pixels[(1024+1)*4]==bright
+        &&hdrAtlas.texture.pixels[2]==0&&hdrAtlas.texture.pixels[3]==255;
+    all&=report("BSP HDR RGBExp32 fixed exposure mapping and tile borders",hdrMapped);
+    bool hdrBounds=headerValid(hdrHeader,hdrBytes.size());auto badHdr=hdrHeader;badHdr.lumps[LUMP_FACES_HDR].filelen-=1;hdrBounds&=!headerValid(badHdr,hdrBytes.size());
+    badHdr=hdrHeader;badHdr.lumps[LUMP_LIGHTING_HDR].uncompressedSize=maximumLump+4;hdrBounds&=!headerValid(badHdr,hdrBytes.size());
+    badHdr=hdrHeader;badHdr.lumps[LUMP_LIGHTING_HDR].version=2;hdrBounds&=!headerValid(badHdr,hdrBytes.size());
+    hdrFace.lightofs=4;hdrBounds&=!hdrAtlas.add(hdrFace,hdrInfo,hdrSamples,hx,hy,hw,hh);
+    all&=report("BSP HDR malformed face sample metadata and light offsets rejected",hdrBounds);
     dface_t badLight{};texinfo_t lightInfo{};badLight.lightofs=0;std::fill(std::begin(badLight.styles),std::end(badLight.styles),255);badLight.styles[0]=0;unsigned lightW=0,lightH=0;
     bool lightRejects=lightmapRange(badLight,lightInfo,4,lightW,lightH);badLight.lightofs=4;lightRejects&=!lightmapRange(badLight,lightInfo,4,lightW,lightH);badLight.lightofs=0;badLight.m_LightmapTextureSizeInLuxels[0]=256;lightRejects&=!lightmapRange(badLight,lightInfo,4,lightW,lightH);
     badLight.m_LightmapTextureSizeInLuxels[0]=0;lightInfo.flags=SURF_BUMPLIGHT;lightRejects&=!lightmapRange(badLight,lightInfo,4,lightW,lightH);

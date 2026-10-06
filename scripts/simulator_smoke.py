@@ -40,12 +40,14 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 203:
-                raise RuntimeError(f"Expected two sets of 98 Source checks, three BBOX and three PHY checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 210:
+                raise RuntimeError(f"Expected two sets of 101 Source checks, three BBOX, three PHY, one HDR and one runtime check, and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
-            if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP LDR lightmap atlas uploaded to Metal" not in text:
-                raise RuntimeError("BSP LDR lightmaps were not staged and uploaded to Metal")
+            if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP preview lightmap atlas uploaded to Metal" not in text:
+                raise RuntimeError("BSP preview lightmaps were not staged and uploaded to Metal")
+            if "Source BSP HDR preview lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "live HDR-only faces lighting and PHY scene: PASS" not in text:
+                raise RuntimeError("HDR-only BSP faces and lighting did not load")
             if "Source BSP VMT/VTF base texture uploaded to Metal" not in text:
                 raise RuntimeError("BSP base texture did not reach Metal")
             if "Source BSP material atlas ready: 2 slots, 128x64 RGBA" not in text:
@@ -65,8 +67,8 @@ try:
                           "live PHY tapered shape differs from bounding box: PASS", "live PHY swept camera blocks without tunneling: PASS"]
             if any(marker not in text for marker in phy_checks):
                 raise RuntimeError(f"Exact PHY collision contracts missing:\n{text}")
-            if "Source Metal scene completed on GPU: map revision 7" not in text:
-                raise RuntimeError("Exact PHY/MDL48 scene did not complete on GPU")
+            if "Source Metal scene completed on GPU: map revision 8" not in text:
+                raise RuntimeError("HDR/PHY/MDL48 scene did not complete on GPU")
             if "Source content mounted: smoke" not in text or "Source content unmounted: smoke" not in text or "Source BSP polygons loaded: 84 triangles from maps/cache_smoke.bsp" not in text:
                 raise RuntimeError("Loose content import did not mount/load/unmount on iOS")
             if "Source BSP camera spawn: info_player_start; eye -190.00 -160.00 80.00" not in text:
