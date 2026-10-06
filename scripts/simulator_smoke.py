@@ -40,8 +40,8 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 221:
-                raise RuntimeError(f"Expected two sets of 105 Source checks, BBOX 3, PHY 3, HDR 1, studio materials 3, runtime 1 and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 233:
+                raise RuntimeError(f"Expected two sets of 108 Source checks, BBOX 3, PHY 3, HDR 1, materials 3, skin 3, prop skins 3, runtime 1 and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
             if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP preview lightmap atlas uploaded to Metal" not in text:
@@ -71,8 +71,14 @@ try:
                              "live studio per-mesh material slots: PASS", "live studio two VMT VTF atlas tiles: PASS", "live studio skinning preserves material slots: PASS"]
             if any(marker not in text for marker in material_checks):
                 raise RuntimeError("Multi-material model contracts missing")
-            if "Source Metal scene completed on GPU: map revision 8" not in text:
-                raise RuntimeError("HDR/PHY/MDL48 scene did not complete on GPU")
+            skin_checks=["Source studio skin selected: 1; geometry animation and texture atlas retained",
+                         "live studio skin family selected: PASS", "live studio skin changes per-mesh texture assignment: PASS",
+                         "live studio skin variant preserves weighted animation: PASS", "live static props different skins same model: PASS",
+                         "live static prop skin families use distinct texture assignments: PASS", "live static prop skin variants retain PHY objects: PASS"]
+            if any(marker not in text for marker in skin_checks):
+                raise RuntimeError("Studio/static prop skin family contracts missing")
+            if "Source Metal scene completed on GPU: map revision 9" not in text:
+                raise RuntimeError("Skin/HDR/PHY scene did not complete on GPU")
             if "Source content mounted: smoke" not in text or "Source content unmounted: smoke" not in text or "Source BSP polygons loaded: 84 triangles from maps/cache_smoke.bsp" not in text:
                 raise RuntimeError("Loose content import did not mount/load/unmount on iOS")
             if "Source BSP camera spawn: info_player_start; eye -190.00 -160.00 80.00" not in text:

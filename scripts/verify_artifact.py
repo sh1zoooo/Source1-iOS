@@ -9,7 +9,7 @@ import struct
 import zipfile
 
 
-def verify(path, version, build, passes, revision, require_static_props=False, require_mdl48=False, require_prop_collision=False, require_phy=False, require_hdr=False, require_model_materials=False):
+def verify(path, version, build, passes, revision, require_static_props=False, require_mdl48=False, require_prop_collision=False, require_phy=False, require_hdr=False, require_model_materials=False, require_skins=False):
     with zipfile.ZipFile(path) as artifact:
         names = artifact.namelist()
         if len(names) != len(set(names)):
@@ -64,6 +64,12 @@ def verify(path, version, build, passes, revision, require_static_props=False, r
                        "live studio two VMT VTF atlas tiles: PASS", "live studio skinning preserves material slots: PASS"])
         if require_model_materials and not model_materials:
             raise ValueError("Multi-material studio evidence missing")
+        skins=all(marker in log for marker in ["Source studio skin selected: 1; geometry animation and texture atlas retained",
+                  "live studio skin family selected: PASS", "live studio skin changes per-mesh texture assignment: PASS",
+                  "live studio skin variant preserves weighted animation: PASS", "live static props different skins same model: PASS",
+                  "live static prop skin families use distinct texture assignments: PASS", "live static prop skin variants retain PHY objects: PASS"])
+        if require_skins and not skins:
+            raise ValueError("Studio/static prop skin family evidence missing")
         png = artifact.read(next(n for n in names if n.endswith("simulator.png")))
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
             raise ValueError("Screenshot is not a PNG")
@@ -72,7 +78,7 @@ def verify(path, version, build, passes, revision, require_static_props=False, r
             raise ValueError("Empty screenshot")
         return {"version": version, "build": build, "ipa_sha256": digest,
                 "simulator_passes": passes, "gpu_map_revision": revision,
-                "static_props": static_props, "mdl48": mdl48, "prop_collision": prop_collision, "phy": phy, "hdr": hdr, "model_materials": model_materials,
+                "static_props": static_props, "mdl48": mdl48, "prop_collision": prop_collision, "phy": phy, "hdr": hdr, "model_materials": model_materials, "skins": skins,
                 "screenshot_size": dimensions}
 
 
@@ -89,5 +95,6 @@ if __name__ == "__main__":
     parser.add_argument("--require-phy", action="store_true")
     parser.add_argument("--require-hdr", action="store_true")
     parser.add_argument("--require-model-materials", action="store_true")
+    parser.add_argument("--require-skins", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(verify(args.archive, args.version, args.build, args.passes, args.revision, args.require_static_props, args.require_mdl48, args.require_prop_collision, args.require_phy, args.require_hdr, args.require_model_materials), indent=2))
+    print(json.dumps(verify(args.archive, args.version, args.build, args.passes, args.revision, args.require_static_props, args.require_mdl48, args.require_prop_collision, args.require_phy, args.require_hdr, args.require_model_materials, args.require_skins), indent=2))

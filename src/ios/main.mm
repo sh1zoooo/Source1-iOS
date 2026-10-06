@@ -114,8 +114,9 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         share.enabled = !_runtime.logPath().empty();
         return;
     }
-    if (!_smokeRequested && !_runtime.executeSource("source_bsp_hdr")) { [self fail:@"HDR/PHY prop demo failed"]; return; }
+    if (!_smokeRequested && !_runtime.executeSource("source_bsp_skins")) { [self fail:@"Skin/HDR/PHY prop demo failed"]; return; }
     if (!_smokeRequested && !_runtime.executeSource("source_model_load models/__source1ios_multimat_probe.mdl")) { [self fail:@"MDL48 multi-material demo failed"]; return; }
+    if (!_smokeRequested && !_runtime.executeSource("source_model_skin 1")) { [self fail:@"MDL48 skin variant failed"]; return; }
     _runtime.log(std::string("iOS ") + UIDevice.currentDevice.systemVersion.UTF8String);
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (!device) { [self fail:@"Metal device unavailable"]; return; }
@@ -153,7 +154,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~84%\nBSP HDR/PHY · MDL multi-material animation\nSource self-tests: 105 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~86%\nBSP skin variants/HDR/PHY · MDL skin animation\nSource self-tests: 108 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -206,8 +207,10 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if (!_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_props_selftest")) { [self fail:@"Simulator static prop collision FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_phy") || !_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_phy_selftest")) { [self fail:@"Simulator exact PHY collision FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_hdr") || !_runtime.executeSource("source_hdr_selftest")) { [self fail:@"Simulator HDR-only scene FAIL"]; return; }
+        if (!_runtime.executeSource("source_bsp_skins") || !_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_props_skin_selftest")) { [self fail:@"Simulator static prop skins FAIL"]; return; }
         if (!_runtime.executeSource("source_model_load models/__source1ios_external48_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) { [self fail:@"Simulator MDL48 FAIL"]; return; }
         if (!_runtime.executeSource("source_model_load models/__source1ios_multimat_probe.mdl") || !_runtime.executeSource("source_anim_play 0") || !_runtime.executeSource("source_model_materials_selftest")) { [self fail:@"Simulator multi-material model FAIL"]; return; }
+        if (!_runtime.executeSource("source_model_skin 1") || !_runtime.executeSource("source_skin_selftest")) { [self fail:@"Simulator animated skin variant FAIL"]; return; }
         _runtime.cameraLook(10, 0);
         _runtime.cameraMove(1, 0, .1f);
         _runtime.executeSource("source_camera_reset");
@@ -294,7 +297,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~84%%\nBSP HDR/PHY · MDL multi-material animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~86%%\nBSP skin variants/HDR/PHY · MDL skin animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

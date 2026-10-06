@@ -141,10 +141,10 @@ StudioFixture makeStudioFixture(bool external,bool multipleMaterials){
         const size_t texturesOffset=f.mdl.size();mstudiotexture_t textures[2]{};appendMany(f.mdl,textures,2);
         const char* names[]={"__source1ios_model","__source1ios_model_alt"};
         for(unsigned i=0;i<2;++i){const size_t name=appendMany(f.mdl,names[i],std::strlen(names[i])+1);at<mstudiotexture_t>(f.mdl,texturesOffset+i*sizeof(mstudiotexture_t))->sznameindex=name-(texturesOffset+i*sizeof(mstudiotexture_t));}
-        f.mdl.resize((f.mdl.size()+3)&~size_t(3));const short skinRefs[]={1,0};const size_t skinsOffset=appendMany(f.mdl,skinRefs,2);
+        f.mdl.resize((f.mdl.size()+3)&~size_t(3));const short skinRefs[]={1,0,0,1};const size_t skinsOffset=appendMany(f.mdl,skinRefs,4);
         const size_t meshesOffset=f.mdl.size();mstudiomesh_t meshes[2]{};
         for(unsigned i=0;i<2;++i){meshes[i]=mesh;meshes[i].material=i;meshes[i].modelindex=int(modelOffset-(meshesOffset+i*sizeof(mesh)));}appendMany(f.mdl,meshes,2);
-        auto* header=at<studiohdr_t>(f.mdl,0);header->numtextures=2;header->textureindex=texturesOffset;header->numskinref=2;header->numskinfamilies=1;header->skinindex=skinsOffset;header->length=f.mdl.size();
+        auto* header=at<studiohdr_t>(f.mdl,0);header->numtextures=2;header->textureindex=texturesOffset;header->numskinref=2;header->numskinfamilies=2;header->skinindex=skinsOffset;header->length=f.mdl.size();
         auto* model=at<mstudiomodel_t>(f.mdl,modelOffset);model->nummeshes=2;model->meshindex=meshesOffset-modelOffset;
         const size_t meshesVtx=f.vtx.size();MeshHeader_t vmeshes[2]{};appendMany(f.vtx,vmeshes,2);
         for(unsigned i=0;i<2;++i){const size_t gb=f.vtx.size();StripGroupHeader_t g=group;g.numIndices=18;append(f.vtx,g);
@@ -187,7 +187,8 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     if(mh->numskinref<0||mh->numskinref>256||mh->numskinfamilies<0||mh->numskinfamilies>256||(mh->numskinref==0)!=(mh->numskinfamilies==0))return fail("invalid skin table counts");
     const short* skinRefs=nullptr;
     if(mh->numskinref){const size_t count=size_t(mh->numskinref)*mh->numskinfamilies;skinRefs=at<short>(mdl,mh->skinindex,count);if(!skinRefs)return fail("skin table outside MDL");
-        for(size_t i=0;i<count;++i)if(skinRefs[i]<0||skinRefs[i]>=mh->numtextures)return fail("skin texture index outside material table");}
+        for(size_t i=0;i<count;++i)if(skinRefs[i]<0||skinRefs[i]>=mh->numtextures)return fail("skin texture index outside material table");
+        for(int family=0;family<mh->numskinfamilies;++family){std::vector<unsigned> refs;for(int ref=0;ref<mh->numskinref;++ref)refs.push_back(unsigned(skinRefs[size_t(family)*mh->numskinref+ref]));result.skinFamilies.push_back(std::move(refs));}}
     if(mh->numbones<0||mh->numbones>256)return fail("invalid studio bone count");
     const auto* bones=at<mstudiobone_t>(mdl,mh->boneindex,mh->numbones);if(!bones)return fail("studio bones outside file");
     for(int i=0;i<mh->numbones;++i){const auto& bone=bones[i];
@@ -238,6 +239,7 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
                         const size_t global=first+size_t(mesh.vertexoffset)+size_t(local);if(global>=orderedVertices.size()||!finiteVertex(*orderedVertices[global])){error="invalid VVD vertex";return false;}const auto& source=*orderedVertices[global];
                         StudioVertex vertex{source.m_vecPosition,source.m_vecNormal,source.m_vecTexCoord};
                         vertex.material=material;
+                        vertex.materialReference=unsigned(mesh.material);
                         if(!result.bones.empty()){const auto& bw=source.m_BoneWeights;if(bw.numbones<1||bw.numbones>3){error="invalid bone influence count";return false;}float sum=0;vertex.influences=bw.numbones;
                             for(unsigned b=0;b<vertex.influences;++b){if(bw.bone[b]>=result.bones.size()||!std::isfinite(bw.weight[b])||bw.weight[b]<0||bw.weight[b]>1){error="invalid bone weight or index";return false;}vertex.bones[b]=bw.bone[b];vertex.weights[b]=bw.weight[b];sum+=bw.weight[b];}if(std::abs(sum-1)>.01f){error="bone weights do not sum to one";return false;}}
                         result.triangles.push_back(vertex);return true;};
@@ -253,6 +255,17 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
         }
     }
     if(result.triangles.empty())return fail("model contains no triangles");result.sourceVertices=totalVertices;output=std::move(result);error.clear();return true;
+}
+bool selectStudioSkin(StudioMesh& model,unsigned family){
+    if(model.skinFamilies.empty()){if(family!=0)return false;}
+    else if(family>=model.skinFamilies.size())return false;
+    const auto* refs=model.skinFamilies.empty()?nullptr:&model.skinFamilies[family];
+    const size_t materials=std::max(size_t(1),model.materials.size());
+    auto slot=[&](const StudioVertex& vertex){return refs?(*refs)[vertex.materialReference]:vertex.materialReference;};
+    for(const auto& vertex:model.triangles){if(refs&&vertex.materialReference>=refs->size())return false;if(slot(vertex)>=materials)return false;}
+    // Validate all references before changing even the first triangle.
+    for(auto& vertex:model.triangles)vertex.material=slot(vertex);
+    model.activeSkin=family;return true;
 }
 bool skinStudioModel(const StudioMesh& model,const std::vector<Quaternion>& rotations,std::vector<StudioVertex>& output,const std::vector<Vector>& positions){
     if(!rotations.empty()&&rotations.size()!=model.bones.size())return false;

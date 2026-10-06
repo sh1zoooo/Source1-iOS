@@ -16,6 +16,7 @@ struct StudioVertex {
     std::array<float,3> weights{};
     unsigned influences=0;
     unsigned material=0;
+    unsigned materialReference=0;
 };
 struct StudioBone { int parent=-1; Vector position; Quaternion rotation; matrix3x4_t poseToBone; };
 struct StudioPose { std::vector<Quaternion> rotations; std::vector<Vector> positions; };
@@ -28,6 +29,8 @@ struct StudioMesh {
     std::vector<StudioAnimation> animations;
     std::vector<std::string> materialPaths;
     std::vector<std::vector<std::string>> materials;
+    std::vector<std::vector<unsigned>> skinFamilies;
+    unsigned activeSkin=0;
     std::string animationPath;
     unsigned sourceVertices=0;
     unsigned meshes=0;
@@ -36,6 +39,7 @@ struct StudioFixture {
     std::vector<std::uint8_t> mdl, vvd, vtx, ani;
 };
 StudioFixture makeStudioFixture(bool external=false,bool multipleMaterials=false);
+bool selectStudioSkin(StudioMesh& model,unsigned family);
 // Local rotations are explicit pose overrides, not decoded MDL sequences.
 bool skinStudioModel(const StudioMesh& model, const std::vector<Quaternion>& rotations,
     std::vector<StudioVertex>& output, const std::vector<Vector>& positions={});

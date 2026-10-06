@@ -492,6 +492,13 @@ std::vector<std::uint8_t> hdrFixture(){
         std::memcpy(bytes.data()+lighting.fileofs+i*sizeof(sample),&sample,sizeof(sample));}
     std::memcpy(bytes.data(),&header,sizeof(header));return bytes;
 }
+std::vector<std::uint8_t> skinPropsFixture(){
+    auto bytes=hdrFixture();dheader_t header;std::memcpy(&header,bytes.data(),sizeof(header));
+    dgamelump_t entry;std::memcpy(&entry,bytes.data()+header.lumps[LUMP_GAME_LUMP].fileofs+4,sizeof(entry));
+    std::memset(bytes.data()+entry.fileofs+4,0,128);const char name[]="models/__source1ios_multimat_probe.mdl";
+    std::memcpy(bytes.data()+entry.fileofs+4,name,sizeof(name));const int skin=1;
+    std::memcpy(bytes.data()+entry.fileofs+140+56+32,&skin,4);return bytes;
+}
 }
 namespace source1ios {
 struct SourceMap::Impl {
@@ -540,6 +547,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     ok=ok&&phyMapFile&&g_pFullFileSystem->Write(phyMap.data(),phyMap.size(),phyMapFile)==int(phyMap.size());if(phyMapFile)g_pFullFileSystem->Close(phyMapFile);
     const auto hdrMap=hdrFixture();auto hdrFile=g_pFullFileSystem->Open("__source1ios_hdr.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok&&hdrFile&&g_pFullFileSystem->Write(hdrMap.data(),hdrMap.size(),hdrFile)==int(hdrMap.size());if(hdrFile)g_pFullFileSystem->Close(hdrFile);
+    const auto skinMap=skinPropsFixture();auto skinFile=g_pFullFileSystem->Open("__source1ios_skins.bsp","wb","PORT_BSP_PREVIEW");
+    ok=ok&&skinFile&&g_pFullFileSystem->Write(skinMap.data(),skinMap.size(),skinFile)==int(skinMap.size());if(skinFile)g_pFullFileSystem->Close(skinFile);
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
@@ -550,6 +559,7 @@ bool SourceMap::start(const std::filesystem::path& root) {
     if(parseStudioModel(studio.mdl,studio.vvd,studio.vtx,phyModel,phyError)){std::vector<std::array<float,3>> cloud;for(const auto& v:phyModel.triangles)cloud.push_back({v.position.x,v.position.y,v.position.z});fixtureGeometry.convexes.push_back(std::move(cloud));}
     const auto phyBytes=serializePhy(ownedPhy(fixtureGeometry,1),phyModel.checksum);
     ok=ok&&!phyBytes.empty()&&writeModel("models/__source1ios_static_probe.phy",phyBytes);
+    ok=ok&&writeModel("models/__source1ios_multimat_probe.phy",phyBytes);
     const auto externalStudio=makeStudioFixture(true);
     ok=ok&&writeModel("models/__source1ios_external_probe.mdl",externalStudio.mdl)&&writeModel("models/__source1ios_external_probe.vvd",externalStudio.vvd)
         &&writeModel("models/__source1ios_external_probe.dx90.vtx",externalStudio.vtx)&&writeModel("models/__source1ios_external_probe.ani",externalStudio.ani);
@@ -596,6 +606,31 @@ bool SourceMap::demoMaterials(){return impl_ && load("__source1ios_material_grid
 bool SourceMap::demoProps(){return impl_ && load("__source1ios_props.bsp",nullptr);}
 bool SourceMap::demoPhy(){return impl_ && load("__source1ios_phy.bsp",nullptr);}
 bool SourceMap::demoHdr(){return impl_ && load("__source1ios_hdr.bsp",nullptr);}
+bool SourceMap::demoSkins(){return impl_ && load("__source1ios_skins.bsp",nullptr);}
+bool SourceMap::setSkin(unsigned family){
+    if(!impl_||impl_->modelMesh.size()!=impl_->studio.triangles.size()||!selectStudioSkin(impl_->studio,family))return false;
+    for(size_t i=0;i<impl_->modelMesh.size();++i)impl_->modelMesh[i].material=impl_->studio.triangles[i].material;
+    if(family!=0)impl_->builtinModelActive=false;
+    Msg("Source studio skin selected: %u; geometry animation and texture atlas retained\n",family);return true;
+}
+bool SourceMap::skinSelfTest(){
+    if(!impl_)return false;
+    bool all=report("live studio skin family selected",impl_->studio.activeSkin==1&&impl_->studio.skinFamilies.size()==2);
+    bool remapped=impl_->modelMesh.size()==36&&impl_->modelMaterialCount==2;
+    if(remapped)for(size_t i=0;i<36;++i)remapped&=impl_->modelMesh[i].material==(i<18?0u:1u);
+    all&=report("live studio skin changes per-mesh texture assignment",remapped);
+    StudioPose pose;std::vector<StudioVertex> output;bool retained=sampleStudioAnimation(impl_->studio,0,.375,pose)&&skinStudioModel(impl_->studio,pose.rotations,output,pose.positions)&&output.size()==impl_->modelMesh.size();
+    if(retained)for(size_t i=0;i<output.size();++i)retained&=output[i].material==impl_->modelMesh[i].material;
+    all&=report("live studio skin variant preserves weighted animation",retained);return all;
+}
+bool SourceMap::propsSkinSelfTest(){
+    if(!impl_)return false;
+    bool all=report("live static props different skins same model",impl_->propInstances==2&&impl_->propsMesh.size()==72);
+    bool remapped=impl_->propsMesh.size()==72&&impl_->mapMaterialCount==4;
+    if(remapped)for(size_t i=0;i<72;++i)remapped&=impl_->propsMesh[i].material==(i<36?(i<18?3u:2u):(i<54?2u:3u));
+    all&=report("live static prop skin families use distinct texture assignments",remapped);
+    all&=report("live static prop skin variants retain PHY objects",impl_->propCollisions.size()==2&&impl_->scene&&impl_->scene->props.size()==2&&impl_->propCollisions[0].phy&&impl_->propCollisions[1].phy);return all;
+}
 bool SourceMap::hdrSelfTest(){
     const bool pass=impl_&&impl_->hdrLighting&&impl_->lightmappedFaces==42&&impl_->propCollisions.size()==2
         &&impl_->mesh.size()==252&&impl_->mesh[0].lightmap[2]==1;
@@ -749,7 +784,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
     struct CachedProp {std::string name;StudioMesh mesh;PhyGeometry phy;std::vector<std::pair<float,Collision>> shapes;std::vector<unsigned> slots;bool valid=false,phyRead=false;};std::vector<CachedProp> cached;
     size_t cachedVertices=0,modelBytes=0,phyPoints=0;unsigned phyInstances=0;
-    for(const auto& prop:props){if(prop.skin!=0){++skipped;continue;}
+    for(const auto& prop:props){
         auto found=std::find_if(cached.begin(),cached.end(),[&](const auto& c){return c.name==prop.model;});
         if(found==cached.end()){
             if(cached.size()>=128){Warning("Source BSP: static prop model budget exceeded\n");return false;}
@@ -767,6 +802,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             cached.push_back(std::move(candidate));found=cached.end()-1;
         }
         if(!found->valid){++skipped;continue;}
+        if(!selectStudioSkin(found->mesh,unsigned(prop.skin))){Warning("Source BSP static prop skin rejected: %s; skin=%d\n",prop.model.c_str(),prop.skin);return false;}
         if(found->mesh.triangles.size()>maximumVertices-mesh.size()-propsMesh.size())return false;
         matrix3x4_t transform;AngleMatrix(QAngle(prop.angles[0],prop.angles[1],prop.angles[2]),Vector(prop.origin[0],prop.origin[1],prop.origin[2]),transform);
         for(const auto& v:found->mesh.triangles){Vector position,normal;VectorTransform(v.position*prop.scale,transform,position);VectorRotate(v.normal,transform,normal);
@@ -962,6 +998,20 @@ bool SourceMap::selfTest(){
     bool multiSkinOK=sampleStudioAnimation(multiModel,0,.375,multiPose)&&skinStudioModel(multiModel,multiPose.rotations,multiSkin,multiPose.positions)&&multiSkin.size()==multiModel.triangles.size();
     if(multiSkinOK)for(size_t i=0;i<multiSkin.size();++i)multiSkinOK&=multiSkin[i].material==multiModel.triangles[i].material;
     all&=report("studio weighted skinning retains per-mesh materials",multiSkinOK);
+    const auto skinGeometry=multiModel.triangles;bool skinSwap=selectStudioSkin(multiModel,1);
+    if(skinSwap)for(size_t i=0;i<multiModel.triangles.size();++i)skinSwap&=multiModel.triangles[i].material==(i<18?0u:1u)&&multiModel.triangles[i].position==skinGeometry[i].position&&multiModel.triangles[i].uv==skinGeometry[i].uv;
+    skinSwap&=selectStudioSkin(multiModel,0)&&multiModel.triangles[0].material==1;
+    all&=report("studio skin families remap and restore without geometry changes",skinSwap);
+    const auto beforeInvalidSkin=multiModel.triangles;bool invalidSkins=!selectStudioSkin(multiModel,2)&&!selectStudioSkin(multiModel,256)&&multiModel.activeSkin==0;
+    for(size_t i=0;i<multiModel.triangles.size();++i)invalidSkins&=multiModel.triangles[i].material==beforeInvalidSkin[i].material;
+    auto badSkinModel=multiModel;badSkinModel.triangles[0].materialReference=2;
+    invalidSkins&=!selectStudioSkin(badSkinModel,1)&&badSkinModel.activeSkin==0&&badSkinModel.triangles[0].material==1;
+    badMulti=multi.mdl;const short invalidUnusedSkin=2;std::memcpy(badMulti.data()+multiHeader.skinindex+4,&invalidUnusedSkin,2);
+    invalidSkins&=!parseStudioModel(badMulti,multi.vvd,multi.vtx,multiModel,modelError)&&multiModel.activeSkin==0;
+    all&=report("studio invalid skin family and unused family indices rejected atomically",invalidSkins);
+    std::vector<StudioVertex> skinVariantPose;bool skinAnimation=selectStudioSkin(multiModel,1)&&skinStudioModel(multiModel,multiPose.rotations,skinVariantPose,multiPose.positions)&&skinVariantPose.size()==multiSkin.size();
+    if(skinAnimation)for(size_t i=0;i<skinVariantPose.size();++i)skinAnimation&=skinVariantPose[i].position==multiSkin[i].position&&skinVariantPose[i].material==(i<18?0u:1u);
+    all&=report("studio skin family keeps sampled bone pose",skinAnimation);
     auto badBounds=studio.mdl;float invalidBound=std::numeric_limits<float>::quiet_NaN();std::memcpy(badBounds.data()+offsetof(studiohdr_t,hull_min),&invalidBound,4);StudioMesh rejectedBounds;
     all&=report("studio collision bounds decoded and invalid bounds rejected",model.hullMins==Vector(-12,-8,0)&&model.hullMaxs==Vector(12,8,64)&&!parseStudioModel(badBounds,studio.vvd,studio.vtx,rejectedBounds,modelError));
     auto solidPayload=propPayload;bool solidFlags=true;for(unsigned solid:{0,2,6}){solidPayload[170]=solid;solidFlags&=parsePreviewProps(solidPayload,4,20,parsedProps)&&parsedProps[0].solid==solid;}solidPayload[170]=1;solidFlags&=!parsePreviewProps(solidPayload,4,20,parsedProps);

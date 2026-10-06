@@ -148,6 +148,15 @@ int main() {
         check(host.executeSource("source_model_load models/__source1ios_multimat_probe.mdl")&&host.executeSource("source_model_materials_selftest"),"Multi-material model failed");
         bool modelSlots[2]{};for(const auto& v:host.vertices(1)){if(v.material[0]==-1)modelSlots[0]=true;if(v.material[0]==-2)modelSlots[1]=true;}
         check(modelSlots[0]&&modelSlots[1],"GPU model slot encoding lost second material");
+        host.frame(.05);const auto posedBeforeSkin=host.vertices(1);const auto skinTextureRevision=host.modelTextureRevision();const auto skinAtlas=host.modelTexture().pixels;
+        check(host.executeSource("source_model_skin 1")&&host.executeSource("source_skin_selftest"),"Skin family 1 did not select");
+        const auto posedAfterSkin=host.vertices(1);bool remappedSkin=false;
+        for(size_t i=0;i<posedBeforeSkin.size();++i){for(int axis=0;axis<4;++axis)check(posedBeforeSkin[i].position[axis]==posedAfterSkin[i].position[axis],"Skin selection changed pose or camera");remappedSkin|=posedBeforeSkin[i].material[0]!=posedAfterSkin[i].material[0];}
+        check(remappedSkin&&host.modelTextureRevision()==skinTextureRevision&&host.modelTexture().pixels==skinAtlas,"Skin switching replaced atlas or did not remap materials");
+        for(const char* invalid:{"source_model_skin -1","source_model_skin abc","source_model_skin 2","source_model_skin 256","source_model_skin 9999999999"}){
+            check(!host.executeSource(invalid),"Invalid skin accepted");const auto unchanged=host.vertices(1);check(unchanged.size()==posedAfterSkin.size(),"Invalid skin changed vertex count");
+            for(size_t i=0;i<unchanged.size();++i)check(unchanged[i].material[0]==posedAfterSkin[i].material[0],"Invalid skin changed model assignment");}
+        check(host.executeSource("source_model_skin 0"),"Skin zero restore failed");
         const auto liveMapRevision=host.textureRevision(),liveModelRevision=host.modelTextureRevision();const auto liveModelPixels=host.modelTexture().pixels,liveLightPixels=host.lightmapTexture().pixels;
         const auto liveVertices=host.vertices(1);
         check(host.executeSource("source_bsp_selftest")&&host.textureRevision()==liveMapRevision&&host.modelTextureRevision()==liveModelRevision
@@ -163,6 +172,15 @@ int main() {
         {std::ofstream out(staticMdl,std::ios::binary);out.write(savedMdl.data(),savedMdl.size());}
         {std::ofstream out(staticVtx,std::ios::binary);out.write(savedVtx.data(),savedVtx.size());}
         check(host.executeSource("source_model_reset"),"Model restore after material test failed");
+        check(host.executeSource("source_bsp_skins")&&host.executeSource("source_props_skin_selftest"),"BSP different skin instances did not load");
+        check(host.executeSource("source_physics_reset")&&host.executeSource("source_props_skin_selftest")&&host.executeSource("source_phy_selftest"),"Skin variants lost PHY after reset");
+        const auto skinMapPath=directory/"Source1IOS/selftest/__source1ios_skins.bsp";auto skinMapBytes=readBytes(skinMapPath);const auto validSkinMap=skinMapBytes;
+        std::int32_t skinsGameOffset=0,skinsPayloadOffset=0;std::memcpy(&skinsGameOffset,skinMapBytes.data()+8+35*16,4);std::memcpy(&skinsPayloadOffset,skinMapBytes.data()+skinsGameOffset+4+8,4);
+        const std::int32_t unknownSkin=2;std::memcpy(skinMapBytes.data()+skinsPayloadOffset+140+56+32,&unknownSkin,4);
+        const auto beforeBadSkinMap=host.textureRevision();const auto beforeBadSkinPixels=host.texture().pixels;
+        {std::ofstream out(skinMapPath,std::ios::binary);out.write(skinMapBytes.data(),skinMapBytes.size());}
+        check(!host.executeSource("source_bsp_skins")&&host.textureRevision()==beforeBadSkinMap&&host.texture().pixels==beforeBadSkinPixels,"Invalid prop skin replaced scene");
+        {std::ofstream out(skinMapPath,std::ios::binary);out.write(validSkinMap.data(),validSkinMap.size());}
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
@@ -310,23 +328,25 @@ int main() {
         host.frame(0.016);
         const auto pausedFrame=host.vertices(1);for(size_t i=252;i<288;++i)for(int axis=0;axis<4;++axis)check(pausedFrame[i].position[axis]==pausedModel[i].position[axis],"Paused animation advanced");
         check(host.executeSource("source_anim_resume"),"Animation resume command failed");
+        const auto framesBeforePause=host.frames();const double elapsedBeforePause=host.elapsed();
         host.setActive(false);
         host.frame(1);
-        check(host.frames() == 3, "Background host advanced simulation");
+        check(host.frames()==framesBeforePause&&host.elapsed()==elapsedBeforePause, "Background host advanced simulation");
         host.setActive(true);
         host.frame(30);
-        check(std::abs(host.elapsed() - 0.156) < 1e-9, "Background interval was not clamped");
+        check(std::abs(host.elapsed()-elapsedBeforePause-0.1)<1e-9, "Background interval was not clamped");
         host.frame(std::numeric_limits<double>::quiet_NaN());
         host.frame(std::numeric_limits<double>::infinity());
         host.frame(-1);
-        check(host.frames() == 4, "Invalid delta was accepted");
+        check(host.frames()==framesBeforePause+1, "Invalid delta was accepted");
         const auto logPath = host.logPath();
+        const auto framesAtShutdown=host.frames();
         host.stop();
         host.stop();
         std::ifstream file(logPath);
         std::string contents((std::istreambuf_iterator<char>(file)), {});
         check(contents.find("Host paused") != std::string::npos, "Pause log missing");
-        check(contents.find("Host stopped after 4 frames") != std::string::npos, "Shutdown log missing");
+        check(contents.find("Host stopped after "+std::to_string(framesAtShutdown)+" frames") != std::string::npos, "Shutdown log missing");
         check(contents.find("Source Host_Shutdown completed; host_initialized=0") != std::string::npos, "Original host did not shut down");
         check(contents.find("Source host GAME directory: " + (directory / "Source1IOS" / "game").string()) != std::string::npos, "Host path differs from the mounted game path");
         check(contents.find("Recursive shutdown") == std::string::npos, "Recursive shutdown guard persisted");

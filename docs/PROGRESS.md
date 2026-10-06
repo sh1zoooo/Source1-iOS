@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **84% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **86% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -163,3 +163,10 @@ emission. Native runtime и 24 000 ASan mutations, Linux CI 5/5, ARM64 build
 fixture-сцену, сохраняя текущую. На физическом iPhone 0.29 не проверен.
 Другие skin families / bodygroup selection / полный shader backend остаются
 впереди. [Отчёт 0.29](VALIDATION-0.29.0.md).
+
+Этап 0.30/build 33 сохраняет все bounded skin families и material reference
+каждой вершины. Смена family меняет assignments, сохраняя pose/time/atlas;
+static props используют собственный skin вместо пропуска nonzero skin.
+Проверены invalid selection/unused family references и сохранение сцены при
+повреждённом prop skin. Native runtime и 24 000 ASan mutations прошли;
+iOS CI ожидается. [Отчёт 0.30](VALIDATION-0.30.0.md).

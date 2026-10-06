@@ -22,6 +22,9 @@ int main(){
             source1ios::StudioMesh mesh;std::string error;
             if(!source1ios::parseStudioModel(changed.mdl,changed.vvd,changed.vtx,mesh,error,changed.ani)){++rejected;continue;}
             ++accepted;source1ios::StudioPose pose;std::vector<source1ios::StudioVertex> output;
+            const unsigned family=mesh.skinFamilies.empty()?0:random()%mesh.skinFamilies.size();
+            if(!source1ios::selectStudioSkin(mesh,family))throw std::runtime_error("valid skin selection rejected");
+            if(source1ios::selectStudioSkin(mesh,mesh.skinFamilies.empty()?1:mesh.skinFamilies.size())||mesh.activeSkin!=family)throw std::runtime_error("invalid skin changed selection");
             if(!mesh.animations.empty()&&!source1ios::sampleStudioAnimation(mesh,0,.375,pose))throw std::runtime_error("sample rejected accepted clip");
             if(!source1ios::skinStudioModel(mesh,pose.rotations,output,pose.positions))throw std::runtime_error("skin rejected accepted model");
             for(const auto& vertex:output)if(!vertex.position.IsValid()||!vertex.normal.IsValid()||vertex.material>=std::max(size_t(1),mesh.materials.size()))throw std::runtime_error("nonfinite output or invalid material slot");

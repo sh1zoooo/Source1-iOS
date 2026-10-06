@@ -21,6 +21,10 @@ public:
     bool demoHdr();
     bool hdrSelfTest();
     bool materialsSelfTest();
+    bool demoSkins();
+    bool setSkin(unsigned family);
+    bool skinSelfTest();
+    bool propsSkinSelfTest();
     bool propsSelfTest();
     bool phySelfTest();
     bool loadModel(const char* filename, const char* pathID = "GAME");

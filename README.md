@@ -39,6 +39,9 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_bsp_hdr` — HDR-only BSP со статическими PHY-объектами и преобразованным освещением preview.
 - `source_hdr_selftest` — проверяет активную HDR-only сцену.
 - `source_model_materials_selftest` — проверяет обе текстуры и skinning текущей demo MDL.
+- `source_model_skin 1` — выбрать skin family текущей модели; `0` возвращает первый вариант.
+- `source_bsp_skins` — два PHY-объекта одной MDL с разными skin families.
+- `source_skin_selftest` / `source_props_skin_selftest` — проверки demo skin 1 и статических вариантов.
 - `source_content_mount cm` — добавить распакованные ресурсы из `Source1IOS/content/cm`.
 - `source_content_unmount cm` — отключить эту папку от GAME search paths.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
@@ -65,7 +68,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 84% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 86% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -142,6 +145,13 @@ mutations, Linux CI 5/5, ARM64 build и simulator 221 PASS / GPU revision 8
 ещё не реализован. [Проверки материалов MDL](docs/VALIDATION-0.29.0.md).
 Общие BSP самотесты после смены карты/модели используют отдельную fixture-сцену,
 сохраняя текущую карту, камеру, animation state и GPU texture revisions.
+Этап 0.30/build 33 выбирает skin families MDL (до 256) без перезагрузки geometry,
+animation или texture atlas. BSP props с ненулевым skin теперь отображаются
+через тот же model cache, со своими texture assignments и сохранённой PHY.
+Неверное семейство отклоняется без замены сцены. Native runtime / 24 000 ASan
+studio mutations прошли, iOS CI ожидается. Demo: две skin variants статической
+модели и анимированная MDL48 с skin 1 (108 startup checks).
+[Проверки skin families](docs/VALIDATION-0.30.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный
