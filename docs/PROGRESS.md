@@ -138,5 +138,9 @@ bounded PHY loader. Linux CI, ARM64 iPhone build и simulator прошли:
 сохраняются несколько выпуклых частей, пустые зазоры, поворот/масштаб;
 камера и статические vphysics objects используют эту форму. Imported
 IVP pointers/topology не передаются legacy unserializer. Нативный runtime
-и 20 000 ASan/UBSan PHY mutations прошли; проверка iOS ожидается в CI.
+и 20 000 ASan/UBSan PHY mutations прошли. Linux CI: 5/5 suites;
+ARM64 iPhone build и simulator: 203 PASS, GPU revision 7, live PHY после
+reset, pause/resume. Скачанный IPA/SHA256 и кадр проверены отдельно.
+На физическом iPhone подтверждён предыдущий этап 0.26; 0.27 проверен
+автоматически в simulator, не на телефоне пользователя.
 [Отчёт 0.27](VALIDATION-0.27.0.md).

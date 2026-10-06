@@ -117,7 +117,9 @@ solid, до 128 terminal convex pieces, 2048 points на piece. Из IVPS/VPHY
 поворот/масштаб, формы кэшируются по модели/масштабу. Missing PHY оставляет
 визуальный prop с предупреждением; повреждённый/неподдержанный PHY отклоняет
 карту без замены сцены. Native runtime и 20 000 PHY mutations прошли;
-iOS/GPU проверка ожидается. Обычный запуск показывает PHY demo.
+Linux CI (5/5), ARM64 iPhone build и simulator GPU прошли: 203 PASS,
+GPU revision 7, live PHY после reset, pause/resume. Скачанный IPA/SHA256
+и кадр проверены отдельно. Обычный запуск показывает PHY demo (98 startup PASS).
 [Проверки PHY](docs/VALIDATION-0.27.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 

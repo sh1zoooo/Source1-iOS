@@ -1,7 +1,7 @@
 # 0.27.0 / build 30 — bounded static PHY
 
 Оценка ~80% относится к минимальному prototype, не к полному CS:S.
-Нативные проверки прошли; iPhone ARM64 / simulator GPU ожидаются в CI.
+Нативные проверки, ARM64 build и simulator GPU прошли; артефакт проверен отдельно.
 
 ## Реализация и границы
 
@@ -44,9 +44,26 @@
   из-за среды. Legacy libraries/builder не инструментированы этим тестом.
 - Python syntax / mocked launch-timeout diagnostics / diff whitespace passed.
 
-Ожидаются 98 startup PASS; simulator repeat + BBOX 3 + PHY 3 + runtime 1:
-203 PASS, GPU map revision 7, MDL48/ANI, texture/lightmap upload и pause/resume.
-Downloaded artifact verifier требует эти markers, version/build и SHA256.
+## Независимая проверка CI и артефакта
+
+- Functional commit: `ab13cc4ba78f5664af60a076e2fb52c45ccaddf6`.
+- [Actions run 37456745435](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37456745435):
+  оба jobs success, первая попытка. Linux 5/5 CTest suites, runtime 5.91 s.
+- Artifact `11410590895`, скачан после успешного прогона.
+- IPA 0.27.0 / build 30, Mach-O 64-bit arm64, bundle identifier проверен.
+- IPA SHA256: `45bb044ba3313c8c5a724cde89bd6b88f5444ef2f930052de5c92bd16fbe3275`;
+  совпадает с manifest.
+- 98 startup PASS; simulator repeat + BBOX 3 + PHY 3 + runtime 1:
+  203 PASS, no FAIL. GPU map revision 7, MDL48/external ANI,
+  texture/lightmap upload, content mount/unmount и pause/resume подтверждены.
+- Все три live PHY checks прошли после physics reset: objects, tapered
+  shape отличается от BBOX, swept camera blocks without tunneling.
+- Screenshot PNG 1170x2532 визуально проверен: HUD ~80% / 98 PASS,
+  два полосатых props, модель, световая карта и текстуры комнаты.
+  Сам кадр не доказывает коллизии: доказательство — отдельные runtime checks.
+- Verifier с `--require-phy` отвергает старый 0.26 artifact без этих checks.
+- Физический iPhone пользователя пока подтверждает 0.26; новая версия
+  0.27 проверена в simulator, без запроса дополнительной диагностики.
 
 Ни реальные CS:S PHY assets, ни полный game/client host пока не проверены.
 Renderer остаётся Metal preview adapter, не оригинальный Source shader backend.
