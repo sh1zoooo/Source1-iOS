@@ -501,7 +501,7 @@ struct SourceMap::Impl {
     std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
-    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,modelMaterialCount=1,lightmappedFaces=0;bool hdrLighting=false;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,modelMaterialCount=1,lightmappedFaces=0;bool hdrLighting=false;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false,builtinModelActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
@@ -656,6 +656,7 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     impl_->modelTexture=std::move(modelTexture);impl_->modelMaterialCount=modelMaterials;++impl_->modelTextureRevision;
     Msg("Source studio material atlas ready: %u slots, %ux%u RGBA\n",modelMaterials,impl_->modelTexture.width,impl_->modelTexture.height);
     impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
+    impl_->builtinModelActive=mdlPath==impl_->builtinModel;
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
     int loadedVersion=0;std::memcpy(&loadedVersion,mdl.data()+4,4);Msg("Source studio MDL version: %d\n",loadedVersion);
     Msg("Source studio skeleton: %zu bones; weighted CPU skinning; %zu animation clips\n",impl_->studio.bones.size(),impl_->studio.animations.size());
@@ -869,7 +870,16 @@ const SourceTexture& SourceMap::lightmapTexture() const { static const SourceTex
 const SourceTexture& SourceMap::modelTexture() const { static const SourceTexture empty;return impl_?impl_->modelTexture:empty; }
 std::uint64_t SourceMap::modelTextureRevision() const { return impl_?impl_->modelTextureRevision:0; }
 bool SourceMap::selfTest(){
-    if(!impl_)return false;bool all=report("original lump geometry",!impl_->mesh.empty()&&CMapLoadHelper::GetRefCount()==0);
+    if(!impl_)return false;
+    if(!impl_->builtinActive || !impl_->builtinModelActive){
+        // Fixture contracts belong to an isolated preview, not the imported
+        // scene. Keep its physics, camera, animation, textures and revisions intact.
+        Msg("Source BSP self-test: using isolated fixture; active scene preserved\n");
+        SourceMap probe;probe.impl_=std::make_unique<Impl>();probe.impl_->builtin=impl_->builtin;probe.impl_->builtinModel=impl_->builtinModel;
+        probe.impl_->checkerTexture=impl_->checkerTexture;probe.impl_->fixtureCollision=impl_->fixtureCollision;probe.impl_->world=impl_->world;
+        return probe.load(probe.impl_->builtin.c_str(),nullptr)&&probe.loadModel(probe.impl_->builtinModel.c_str())&&probe.selfTest();
+    }
+    bool all=report("original lump geometry",!impl_->mesh.empty()&&CMapLoadHelper::GetRefCount()==0);
     bool materialSlots=impl_->mapMaterialCount==2&&impl_->texture.width==128&&impl_->texture.height==64&&impl_->texture.pixels.size()==128*64*4;
     all&=report("BSP texinfo multi-material VMT VTF atlas",materialSlots&&impl_->texture.pixels!=impl_->checkerTexture.pixels);
     all&=report("BSP material atlas slots remain distinct",materialSlots&&std::memcmp(impl_->texture.pixels.data(),impl_->texture.pixels.data()+64*4,64*4));

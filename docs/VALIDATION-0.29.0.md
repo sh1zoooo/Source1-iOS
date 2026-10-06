@@ -36,6 +36,10 @@ Native проверки прошли; ARM64 iPhone / simulator GPU ожидаю�
   world atlas (256x64), исходные model files затем восстановлены.
 - Single-material fallback, VMT Patch, malformed VTF и прежние runtime
   contracts прошли без изменения поведения.
+- Общие fixture checks после смены карты/модели выполняются в отдельном
+  SourceMap preview; native HDR/multi-material scene сохраняет camera,
+  texture pixels и обе texture revisions. Это устраняет ложный FAIL от
+  fixture assertions, ожидающих исходную карту и single-material MDL.
 - ASan studio parser: 24 000 deterministic mutations MDL48/49,
   embedded/external ANI, single/multiple materials; 10758 accepted,
   13242 rejected, golden fixtures сначала проверены. Проверяются finite

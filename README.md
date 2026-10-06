@@ -139,6 +139,8 @@ shader backend Source не реализованы. Linux 5/5, ARM64 build и sim
 mutations прошли; iOS CI ожидается. Обычный запуск показывает MDL48 с двумя
 материалами (105 startup checks). Выбор других skin families и shader features
 ещё не реализован. [Проверки материалов MDL](docs/VALIDATION-0.29.0.md).
+Общие BSP самотесты после смены карты/модели используют отдельную fixture-сцену,
+сохраняя текущую карту, камеру, animation state и GPU texture revisions.
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

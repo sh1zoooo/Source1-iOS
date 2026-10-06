@@ -148,6 +148,10 @@ int main() {
         check(host.executeSource("source_model_load models/__source1ios_multimat_probe.mdl")&&host.executeSource("source_model_materials_selftest"),"Multi-material model failed");
         bool modelSlots[2]{};for(const auto& v:host.vertices(1)){if(v.material[0]==-1)modelSlots[0]=true;if(v.material[0]==-2)modelSlots[1]=true;}
         check(modelSlots[0]&&modelSlots[1],"GPU model slot encoding lost second material");
+        const auto liveMapRevision=host.textureRevision(),liveModelRevision=host.modelTextureRevision();const auto liveModelPixels=host.modelTexture().pixels,liveLightPixels=host.lightmapTexture().pixels;
+        const auto liveVertices=host.vertices(1);
+        check(host.executeSource("source_bsp_selftest")&&host.textureRevision()==liveMapRevision&&host.modelTextureRevision()==liveModelRevision
+            &&host.modelTexture().pixels==liveModelPixels&&host.lightmapTexture().pixels==liveLightPixels&&host.vertices(1)[0].position[0]==liveVertices[0].position[0],"Fixture self-test changed live HDR/multi-material scene");
         const auto staticMdl=directory/"Source1IOS/game/models/__source1ios_static_probe.mdl",staticVtx=directory/"Source1IOS/game/models/__source1ios_static_probe.dx90.vtx";
         auto readBytes=[](const std::filesystem::path& p){std::ifstream in(p,std::ios::binary);return std::vector<char>((std::istreambuf_iterator<char>(in)),{});};
         const auto savedMdl=readBytes(staticMdl),savedVtx=readBytes(staticVtx);
