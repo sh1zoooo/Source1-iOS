@@ -145,6 +145,20 @@ int main() {
         {std::ofstream out(hdrPath,std::ios::binary);out.write(corruptHdr.data(),corruptHdr.size());}
         check(!host.executeSource("source_bsp_hdr")&&host.textureRevision()==hdrRevision&&host.lightmapTexture().pixels==hdrLight,"Invalid HDR face light offset replaced scene");
         {std::ofstream out(hdrPath,std::ios::binary);out.write(originalHdr.data(),originalHdr.size());}
+        check(host.executeSource("source_model_load models/__source1ios_multimat_probe.mdl")&&host.executeSource("source_model_materials_selftest"),"Multi-material model failed");
+        bool modelSlots[2]{};for(const auto& v:host.vertices(1)){if(v.material[0]==-1)modelSlots[0]=true;if(v.material[0]==-2)modelSlots[1]=true;}
+        check(modelSlots[0]&&modelSlots[1],"GPU model slot encoding lost second material");
+        const auto staticMdl=directory/"Source1IOS/game/models/__source1ios_static_probe.mdl",staticVtx=directory/"Source1IOS/game/models/__source1ios_static_probe.dx90.vtx";
+        auto readBytes=[](const std::filesystem::path& p){std::ifstream in(p,std::ios::binary);return std::vector<char>((std::istreambuf_iterator<char>(in)),{});};
+        const auto savedMdl=readBytes(staticMdl),savedVtx=readBytes(staticVtx);
+        std::filesystem::copy_file(directory/"Source1IOS/game/models/__source1ios_multimat_probe.mdl",staticMdl,std::filesystem::copy_options::overwrite_existing);
+        std::filesystem::copy_file(directory/"Source1IOS/game/models/__source1ios_multimat_probe.dx90.vtx",staticVtx,std::filesystem::copy_options::overwrite_existing);
+        check(host.executeSource("source_bsp_hdr")&&host.texture().width==256,"Static props did not append both materials");
+        bool propSlots[2]{};for(const auto& v:host.vertices(1)){if(v.material[0]==2)propSlots[0]=true;if(v.material[0]==3)propSlots[1]=true;}
+        check(propSlots[0]&&propSlots[1],"Static prop second material was discarded");
+        {std::ofstream out(staticMdl,std::ios::binary);out.write(savedMdl.data(),savedMdl.size());}
+        {std::ofstream out(staticVtx,std::ios::binary);out.write(savedVtx.data(),savedVtx.size());}
+        check(host.executeSource("source_model_reset"),"Model restore after material test failed");
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");

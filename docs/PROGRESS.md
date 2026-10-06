@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **82% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **84% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -153,3 +153,10 @@ HDR загрузки/reset. Это 8-bit preview, не HDR framebuffer или ey
 Linux CI 5/5, ARM64 iPhone build, simulator 210 PASS / GPU revision 8
 прошли. Скачанный IPA/SHA256 и кадр проверены отдельно. Физический iPhone
 для 0.28 пока не проверен. [Отчёт 0.28](VALIDATION-0.28.0.md).
+
+Этап 0.29/build 32 добавляет per-mesh материалы MDL и remap default skin family.
+Studio и BSP static props сохраняют разные texture slots; weighted skinning
+сохраняет их при анимации. Bounded skin references проверяются до geometry
+emission. Native runtime и 24 000 ASan mutations прошли; iOS CI ожидается.
+Другие skin families / bodygroup selection / полный shader backend остаются
+впереди. [Отчёт 0.29](VALIDATION-0.29.0.md).

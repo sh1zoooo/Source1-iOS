@@ -151,6 +151,7 @@ bool SourceBridge::execute(const std::string& input) {
     if (!std::strcmp(args[0], "source_bsp_phy")) return map_.demoPhy();
     if (!std::strcmp(args[0], "source_bsp_hdr")) return map_.demoHdr();
     if (!std::strcmp(args[0], "source_hdr_selftest")) return map_.hdrSelfTest();
+    if (!std::strcmp(args[0], "source_model_materials_selftest")) return map_.materialsSelfTest();
     if (!std::strcmp(args[0], "source_phy_selftest")) return map_.phySelfTest();
     if (!std::strcmp(args[0], "source_props_selftest")) return map_.propsSelfTest();
     if (!std::strcmp(args[0], "source_model_reset")) return map_.resetModel();

@@ -20,6 +20,7 @@ public:
     bool demoPhy();
     bool demoHdr();
     bool hdrSelfTest();
+    bool materialsSelfTest();
     bool propsSelfTest();
     bool phySelfTest();
     bool loadModel(const char* filename, const char* pathID = "GAME");

@@ -88,7 +88,7 @@ bool readAnimations(const std::vector<std::uint8_t>& bytes,const studiohdr_t& he
 }
 
 namespace source1ios {
-StudioFixture makeStudioFixture(bool external){
+StudioFixture makeStudioFixture(bool external,bool multipleMaterials){
     StudioFixture f;constexpr int checksum=0x510510;
     studiohdr_t mdl{};mdl.id=idStudioHeader;mdl.version=STUDIO_VERSION;mdl.checksum=checksum;
     mdl.hull_min=mdl.view_bbmin=Vector(-12,-8,0);mdl.hull_max=mdl.view_bbmax=Vector(12,8,64);
@@ -136,6 +136,24 @@ StudioFixture makeStudioFixture(bool external){
     const size_t indexOffset=appendMany(f.vtx,indices,36);
     auto* fhh=at<FileHeader_t>(f.vtx,fhOffset);auto* bph=at<BodyPartHeader_t>(f.vtx,vbpOffset);auto* vmh=at<ModelHeader_t>(f.vtx,vmOffset);auto* l=at<ModelLODHeader_t>(f.vtx,lodOffset);auto* me=at<MeshHeader_t>(f.vtx,vmeshOffset);auto* sg=at<StripGroupHeader_t>(f.vtx,groupOffset);auto* st=at<StripHeader_t>(f.vtx,stripOffset);
     fhh->materialReplacementListOffset=replacementOffset;fhh->bodyPartOffset=vbpOffset;bph->modelOffset=vmOffset-vbpOffset;vmh->lodOffset=lodOffset-vmOffset;l->meshOffset=vmeshOffset-lodOffset;me->stripGroupHeaderOffset=groupOffset-vmeshOffset;sg->stripOffset=stripOffset-groupOffset;sg->vertOffset=mapOffset-groupOffset;sg->indexOffset=indexOffset-groupOffset;st->indexOffset=0;st->vertOffset=0;
+    if(multipleMaterials){
+        f.mdl.resize((f.mdl.size()+3)&~size_t(3));
+        const size_t texturesOffset=f.mdl.size();mstudiotexture_t textures[2]{};appendMany(f.mdl,textures,2);
+        const char* names[]={"__source1ios_model","__source1ios_model_alt"};
+        for(unsigned i=0;i<2;++i){const size_t name=appendMany(f.mdl,names[i],std::strlen(names[i])+1);at<mstudiotexture_t>(f.mdl,texturesOffset+i*sizeof(mstudiotexture_t))->sznameindex=name-(texturesOffset+i*sizeof(mstudiotexture_t));}
+        f.mdl.resize((f.mdl.size()+3)&~size_t(3));const short skinRefs[]={1,0};const size_t skinsOffset=appendMany(f.mdl,skinRefs,2);
+        const size_t meshesOffset=f.mdl.size();mstudiomesh_t meshes[2]{};
+        for(unsigned i=0;i<2;++i){meshes[i]=mesh;meshes[i].material=i;meshes[i].modelindex=int(modelOffset-(meshesOffset+i*sizeof(mesh)));}appendMany(f.mdl,meshes,2);
+        auto* header=at<studiohdr_t>(f.mdl,0);header->numtextures=2;header->textureindex=texturesOffset;header->numskinref=2;header->numskinfamilies=1;header->skinindex=skinsOffset;header->length=f.mdl.size();
+        auto* model=at<mstudiomodel_t>(f.mdl,modelOffset);model->nummeshes=2;model->meshindex=meshesOffset-modelOffset;
+        const size_t meshesVtx=f.vtx.size();MeshHeader_t vmeshes[2]{};appendMany(f.vtx,vmeshes,2);
+        for(unsigned i=0;i<2;++i){const size_t gb=f.vtx.size();StripGroupHeader_t g=group;g.numIndices=18;append(f.vtx,g);
+            const size_t sb=f.vtx.size();StripHeader_t s=strip;s.numIndices=18;s.indexOffset=0;append(f.vtx,s);
+            const size_t mb=appendMany(f.vtx,map,8),ib=appendMany(f.vtx,indices+i*18,18);
+            auto* group=at<StripGroupHeader_t>(f.vtx,gb);group->vertOffset=mb-gb;group->indexOffset=ib-gb;group->stripOffset=sb-gb;
+            auto* vm=at<MeshHeader_t>(f.vtx,meshesVtx+i*sizeof(MeshHeader_t));vm->numStripGroups=1;vm->stripGroupHeaderOffset=gb-(meshesVtx+i*sizeof(MeshHeader_t));}
+        auto* lod=at<ModelLODHeader_t>(f.vtx,lodOffset);lod->numMeshes=2;lod->meshOffset=meshesVtx-lodOffset;
+    }
     return f;
 }
 
@@ -160,10 +178,16 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
             ||!at<mstudioanimblock_t>(mdl,mh->animblockindex,mh->numanimblocks))return fail("invalid external animation filename or block table");}
     if(mh->numtextures<0||mh->numtextures>256||mh->numcdtextures<0||mh->numcdtextures>32)return fail("invalid studio material counts");
     const auto* textures=at<mstudiotexture_t>(mdl,mh->textureindex,mh->numtextures);const auto* directories=at<int>(mdl,mh->cdtextureindex,mh->numcdtextures);if(!textures||!directories)return fail("studio materials outside MDL");
-    // Initial adapter binds the first material only. Keep all search-directory
-    // candidates for that slot; per-mesh skins/material batches remain separate.
-    if(mh->numtextures){std::string name;size_t offset=0;if(!addRelative(size_t(mh->textureindex),textures[0].sznameindex,offset)||!stringAt(offset,name))return fail("invalid studio material name");
-        if(!mh->numcdtextures)result.materialPaths.push_back(name);for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory))return fail("invalid studio material directory");result.materialPaths.push_back(directory+name);}}
+    for(int slot=0;slot<mh->numtextures;++slot){std::string name;size_t offset=0;
+        if(!addRelative(size_t(mh->textureindex)+size_t(slot)*sizeof(mstudiotexture_t),textures[slot].sznameindex,offset)||!stringAt(offset,name)||name.empty())return fail("invalid studio material name");
+        std::vector<std::string> paths;if(!mh->numcdtextures)paths.push_back(name);
+        for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory))return fail("invalid studio material directory");paths.push_back(directory+name);}
+        result.materials.push_back(std::move(paths));}
+    if(!result.materials.empty())result.materialPaths=result.materials.front();
+    if(mh->numskinref<0||mh->numskinref>256||mh->numskinfamilies<0||mh->numskinfamilies>256||(mh->numskinref==0)!=(mh->numskinfamilies==0))return fail("invalid skin table counts");
+    const short* skinRefs=nullptr;
+    if(mh->numskinref){const size_t count=size_t(mh->numskinref)*mh->numskinfamilies;skinRefs=at<short>(mdl,mh->skinindex,count);if(!skinRefs)return fail("skin table outside MDL");
+        for(size_t i=0;i<count;++i)if(skinRefs[i]<0||skinRefs[i]>=mh->numtextures)return fail("skin texture index outside material table");}
     if(mh->numbones<0||mh->numbones>256)return fail("invalid studio bone count");
     const auto* bones=at<mstudiobone_t>(mdl,mh->boneindex,mh->numbones);if(!bones)return fail("studio bones outside file");
     for(int i=0;i<mh->numbones;++i){const auto& bone=bones[i];
@@ -198,6 +222,8 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
             const auto* meshes=at<mstudiomesh_t>(mdl,meshBase,model.nummeshes);const auto* lod=at<OptimizedModel::ModelLODHeader_t>(vtx,lodBase);if(!meshes||!lod||lod->numMeshes!=model.nummeshes)return fail("mesh hierarchy mismatch");
             size_t vMeshBase=0;if(!addRelative(lodBase,lod->meshOffset,vMeshBase))return fail("VTX mesh offset overflow");const auto* vMeshes=at<OptimizedModel::MeshHeader_t>(vtx,vMeshBase,lod->numMeshes);if(!vMeshes)return fail("VTX meshes outside file");
             for(int xi=0;xi<model.nummeshes;++xi){const auto& mesh=meshes[xi];const auto& vm=vMeshes[xi];if(mesh.numvertices<0||mesh.vertexoffset<0||size_t(mesh.vertexoffset)+mesh.numvertices>size_t(model.numvertices)||vm.numStripGroups<=0||vm.numStripGroups>64)return fail("invalid mesh vertex range");
+                if(mesh.material<0 || (skinRefs?mesh.material>=mh->numskinref:mh->numtextures?mesh.material>=mh->numtextures:mesh.material!=0))return fail("mesh material outside skin or texture table");
+                const unsigned material=skinRefs?unsigned(skinRefs[mesh.material]):unsigned(mesh.material);
                 size_t groupBase=0;if(!addRelative(vMeshBase+xi*sizeof(*vMeshes),vm.stripGroupHeaderOffset,groupBase))return fail("strip group offset overflow");
                 const bool mdl49Groups=(vm.flags&OptimizedModel::MESH_IS_MDL49)!=0;const size_t groupStride=mdl49Groups?sizeof(OptimizedModel::StripGroupHeader_v49_t):sizeof(OptimizedModel::StripGroupHeader_t);
                 if(!at<std::uint8_t>(vtx,groupBase,size_t(vm.numStripGroups)*groupStride))return fail("strip groups outside file");
@@ -211,6 +237,7 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
                         const size_t first=size_t(model.vertexindex)/sizeof(mstudiovertex_t);if(first>size_t(totalVertices)||size_t(mesh.vertexoffset)>size_t(totalVertices)-first||size_t(local)>size_t(totalVertices)-first-size_t(mesh.vertexoffset)){error="invalid VVD vertex";return false;}
                         const size_t global=first+size_t(mesh.vertexoffset)+size_t(local);if(global>=orderedVertices.size()||!finiteVertex(*orderedVertices[global])){error="invalid VVD vertex";return false;}const auto& source=*orderedVertices[global];
                         StudioVertex vertex{source.m_vecPosition,source.m_vecNormal,source.m_vecTexCoord};
+                        vertex.material=material;
                         if(!result.bones.empty()){const auto& bw=source.m_BoneWeights;if(bw.numbones<1||bw.numbones>3){error="invalid bone influence count";return false;}float sum=0;vertex.influences=bw.numbones;
                             for(unsigned b=0;b<vertex.influences;++b){if(bw.bone[b]>=result.bones.size()||!std::isfinite(bw.weight[b])||bw.weight[b]<0||bw.weight[b]>1){error="invalid bone weight or index";return false;}vertex.bones[b]=bw.bone[b];vertex.weights[b]=bw.weight[b];sum+=bw.weight[b];}if(std::abs(sum-1)>.01f){error="bone weights do not sum to one";return false;}}
                         result.triangles.push_back(vertex);return true;};

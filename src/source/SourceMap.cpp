@@ -135,6 +135,15 @@ unsigned appendAtlasTile(source1ios::SourceTexture& atlas,unsigned& count,const 
             texture.pixels.data()+(size_t(y*texture.height/64)*texture.width+x*texture.width/64)*4,4);
     atlas=std::move(next);return slot;
 }
+source1ios::SourceTexture studioAtlas(const source1ios::StudioMesh& model,const source1ios::SourceTexture& fallback,const source1ios::SourceTexture& checker,unsigned& count){
+    if(model.materials.size()<=1){source1ios::SourceTexture texture;count=1;
+        return !model.materials.empty()&&decodeMaterial(model.materials.front(),texture,"studio")?texture:fallback;}
+    source1ios::SourceTexture atlas;count=0;
+    for(unsigned slot=0;slot<std::max(size_t(1),model.materials.size());++slot){source1ios::SourceTexture texture;
+        if(slot>=model.materials.size()||!decodeMaterial(model.materials[slot],texture,"studio"))texture=checker;
+        appendAtlasTile(atlas,count,texture);}
+    return atlas;
+}
 struct CollisionDelete {
     void operator()(CPhysCollide* p) const { if(p && g_pPhysicsCollision) g_pPhysicsCollision->DestroyCollide(p); }
 };
@@ -492,7 +501,7 @@ struct SourceMap::Impl {
     std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
-    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;bool hdrLighting=false;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
+    std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,modelMaterialCount=1,lightmappedFaces=0;bool hdrLighting=false;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
 SourceMap::~SourceMap(){stop();}
@@ -534,6 +543,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
+    auto multiple=makeStudioFixture(false,true);const int multiVersion=48;std::memcpy(multiple.mdl.data()+4,&multiVersion,4);
+    ok=ok&&writeModel("models/__source1ios_multimat_probe.mdl",multiple.mdl)&&writeModel("models/__source1ios_multimat_probe.vvd",multiple.vvd)&&writeModel("models/__source1ios_multimat_probe.dx90.vtx",multiple.vtx);
     ok=ok&&writeModel(impl_->builtinModel.c_str(),studio.mdl)&&writeModel("models/__source1ios_static_probe.vvd",studio.vvd)&&writeModel("models/__source1ios_static_probe.dx90.vtx",studio.vtx);
     StudioMesh phyModel;std::string phyError;PhyGeometry fixtureGeometry;
     if(parseStudioModel(studio.mdl,studio.vvd,studio.vtx,phyModel,phyError)){std::vector<std::array<float,3>> cloud;for(const auto& v:phyModel.triangles)cloud.push_back({v.position.x,v.position.y,v.position.z});fixtureGeometry.convexes.push_back(std::move(cloud));}
@@ -557,6 +568,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     CUtlBuffer blueVtf;ok=ok&&source->Serialize(blueVtf);std::vector<std::uint8_t> blueVtfBytes(static_cast<std::uint8_t*>(blueVtf.Base()),static_cast<std::uint8_t*>(blueVtf.Base())+blueVtf.TellPut());
     const std::string blueVmt="Patch { include \"materials/debug/debugempty.vmt\" replace { \"$basetexture\" \"debug/debugblue\" } }";
     ok=ok&&writeModel("materials/debug/debugblue.vtf",blueVtfBytes)&&writeModel("materials/debug/debugblue.vmt",std::vector<std::uint8_t>(blueVmt.begin(),blueVmt.end()));
+    const std::string altVmt="VertexLitGeneric { \"$basetexture\" \"debug/debugblue\" }";
+    ok=ok&&writeModel("materials/models/source1ios/__source1ios_model_alt.vmt",std::vector<std::uint8_t>(altVmt.begin(),altVmt.end()));
     for(unsigned i=2;i<17;++i){const std::string name="materials/debug/source1ios_slot"+std::to_string(i)+".vmt";
         const std::string vmt=i%2?bspVmt:blueVmt;ok=ok&&writeModel(name.c_str(),std::vector<std::uint8_t>(vmt.begin(),vmt.end()));}
     const std::pair<const char*,const char*> patchFixtures[]={
@@ -587,6 +600,16 @@ bool SourceMap::hdrSelfTest(){
     const bool pass=impl_&&impl_->hdrLighting&&impl_->lightmappedFaces==42&&impl_->propCollisions.size()==2
         &&impl_->mesh.size()==252&&impl_->mesh[0].lightmap[2]==1;
     Msg("Source BSP self-test live HDR-only faces lighting and PHY scene: %s\n",pass?"PASS":"FAIL");return pass;
+}
+bool SourceMap::materialsSelfTest(){
+    if(!impl_)return false;
+    bool slots[2]{};for(const auto& v:impl_->modelMesh)if(v.material<2)slots[v.material]=true;
+    const auto& texture=impl_->modelTexture;
+    bool all=report("live studio per-mesh material slots",impl_->modelMaterialCount==2&&slots[0]&&slots[1]&&impl_->studio.meshes==2);
+    all&=report("live studio two VMT VTF atlas tiles",texture.width==128&&texture.height==64&&texture.pixels.size()==128*64*4&&std::memcmp(texture.pixels.data(),texture.pixels.data()+64*4,64*4)!=0);
+    StudioPose pose;std::vector<StudioVertex> skinned;bool preserved=sampleStudioAnimation(impl_->studio,0,.375,pose)&&skinStudioModel(impl_->studio,pose.rotations,skinned,pose.positions)&&skinned.size()==impl_->modelMesh.size();
+    if(preserved)for(size_t i=0;i<skinned.size();++i)preserved&=skinned[i].material==impl_->modelMesh[i].material;
+    all&=report("live studio skinning preserves material slots",preserved);return all;
 }
 bool SourceMap::propsSelfTest(){
     if(!impl_)return false;bool all=report("live static prop vphysics objects",impl_->propCollisions.size()==2&&impl_->scene&&impl_->scene->props.size()==2);
@@ -627,10 +650,11 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
             Msg("Source studio external ANI loaded: %s; %zu bytes\n",aniPath.c_str(),ani.size());
         }else Msg("Source studio external ANI missing: %s; available embedded clips/bind pose retained\n",aniPath.c_str());
     }
-    SourceTexture modelTexture;const bool textured=decodeMaterial(parsed.materialPaths,modelTexture,"studio");if(!textured)modelTexture=impl_->texture;
+    unsigned modelMaterials=0;SourceTexture modelTexture=studioAtlas(parsed,impl_->texture,impl_->checkerTexture,modelMaterials);
     std::vector<MeshPoint> staged;staged.reserve(parsed.triangles.size());const Vector origin(0,64,0);
-    for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{light,light,light},{v.uv.x,v.uv.y}});}
-    impl_->modelTexture=std::move(modelTexture);++impl_->modelTextureRevision;
+    for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{light,light,light},{v.uv.x,v.uv.y},v.material});}
+    impl_->modelTexture=std::move(modelTexture);impl_->modelMaterialCount=modelMaterials;++impl_->modelTextureRevision;
+    Msg("Source studio material atlas ready: %u slots, %ux%u RGBA\n",modelMaterials,impl_->modelTexture.width,impl_->modelTexture.height);
     impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
     int loadedVersion=0;std::memcpy(&loadedVersion,mdl.data()+4,4);Msg("Source studio MDL version: %d\n",loadedVersion);
@@ -722,7 +746,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     }
     if(mesh.empty())return false;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
-    struct CachedProp {std::string name;StudioMesh mesh;PhyGeometry phy;std::vector<std::pair<float,Collision>> shapes;unsigned slot=0;bool valid=false,phyRead=false;};std::vector<CachedProp> cached;
+    struct CachedProp {std::string name;StudioMesh mesh;PhyGeometry phy;std::vector<std::pair<float,Collision>> shapes;std::vector<unsigned> slots;bool valid=false,phyRead=false;};std::vector<CachedProp> cached;
     size_t cachedVertices=0,modelBytes=0,phyPoints=0;unsigned phyInstances=0;
     for(const auto& prop:props){if(prop.skin!=0){++skipped;continue;}
         auto found=std::find_if(cached.begin(),cached.end(),[&](const auto& c){return c.name==prop.model;});
@@ -734,8 +758,10 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             if(readModel(prop.model,mdl)&&readModel(base+".vvd",vvd)&&readModel(base+".dx90.vtx",vtx)&&parseStudioModel(mdl,vvd,vtx,candidate.mesh,reason)){
                 candidate.mesh.animations.clear();candidate.mesh.bones.clear();
                 if(candidate.mesh.triangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512)return false;
-                cachedVertices+=candidate.mesh.triangles.size();SourceTexture texture;if(!decodeMaterial(candidate.mesh.materialPaths,texture,"static prop"))texture=impl_->checkerTexture;
-                candidate.slot=appendAtlasTile(stagedMapTexture,stagedMaterialCount,texture);candidate.valid=true;
+                cachedVertices+=candidate.mesh.triangles.size();
+                const size_t slots=std::max(size_t(1),candidate.mesh.materials.size());if(slots>512-stagedMaterialCount)return false;
+                for(size_t slot=0;slot<slots;++slot){SourceTexture texture;if(slot>=candidate.mesh.materials.size()||!decodeMaterial(candidate.mesh.materials[slot],texture,"static prop"))texture=impl_->checkerTexture;
+                    candidate.slots.push_back(appendAtlasTile(stagedMapTexture,stagedMaterialCount,texture));}candidate.valid=true;
             }else Warning("Source BSP static prop model unavailable: %s (%s)\n",prop.model.c_str(),reason.c_str());
             cached.push_back(std::move(candidate));found=cached.end()-1;
         }
@@ -744,7 +770,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         matrix3x4_t transform;AngleMatrix(QAngle(prop.angles[0],prop.angles[1],prop.angles[2]),Vector(prop.origin[0],prop.origin[1],prop.origin[2]),transform);
         for(const auto& v:found->mesh.triangles){Vector position,normal;VectorTransform(v.position*prop.scale,transform,position);VectorRotate(v.normal,transform,normal);
             if(!position.IsValid()||std::abs(position.x)>65536||std::abs(position.y)>65536||std::abs(position.z)>65536)return false;
-            const float light=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);propsMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},found->slot});}
+            if(v.material>=found->slots.size())return false;
+            const float light=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);propsMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},found->slots[v.material]});}
         ++propInstances;
         if(prop.solid==2){if(propCollisions.size()>=512){Warning("Source BSP: static prop collision budget exceeded\n");return false;}PropCollision collider;
             if(propBox(found->mesh,prop,collider))propCollisions.push_back(std::move(collider));else{++collisionSkipped;Warning("Source BSP static prop collision skipped: invalid or degenerate bounds (%s)\n",prop.model.c_str());}}
@@ -816,7 +843,7 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
-        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-1.f:float(v.material),float(impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
+        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
     for(const auto& v:impl_->mesh)append(v);
     for(const auto& v:impl_->propsMesh)append(v);
     for(const auto& v:impl_->modelMesh)append(v,true);
@@ -904,6 +931,27 @@ bool SourceMap::selfTest(){
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
     const auto studio=makeStudioFixture();StudioMesh model;std::string modelError;
     all&=report("MDL/VVD/VTX static mesh",parseStudioModel(studio.mdl,studio.vvd,studio.vtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==36&&model.meshes==1);
+    const auto multi=makeStudioFixture(false,true);StudioMesh multiModel;
+    bool multiParsed=parseStudioModel(multi.mdl,multi.vvd,multi.vtx,multiModel,modelError);
+    bool multiSlots=multiParsed&&multiModel.materials.size()==2&&multiModel.meshes==2&&multiModel.triangles.size()==36;
+    if(multiSlots)for(size_t i=0;i<36;++i)multiSlots&=multiModel.triangles[i].material==(i<18?1u:0u);
+    all&=report("studio per-mesh textures and default skin remap",multiSlots);
+    studiohdr_t multiHeader;std::memcpy(&multiHeader,multi.mdl.data(),sizeof(multiHeader));
+    auto badMulti=multi.mdl;short badSkin=-1;std::memcpy(badMulti.data()+multiHeader.skinindex,&badSkin,2);
+    bool materialRejects=!parseStudioModel(badMulti,multi.vvd,multi.vtx,multiModel,modelError)&&multiModel.triangles.size()==36;
+    badMulti=multi.mdl;int badSkinOffset=std::numeric_limits<int>::max();std::memcpy(badMulti.data()+offsetof(studiohdr_t,skinindex),&badSkinOffset,4);
+    materialRejects&=!parseStudioModel(badMulti,multi.vvd,multi.vtx,multiModel,modelError);
+    mstudiobodyparts_t multiBody;std::memcpy(&multiBody,multi.mdl.data()+multiHeader.bodypartindex,sizeof(multiBody));mstudiomodel_t multiDiskModel;
+    const size_t multiModelOffset=multiHeader.bodypartindex+multiBody.modelindex;std::memcpy(&multiDiskModel,multi.mdl.data()+multiModelOffset,sizeof(multiDiskModel));
+    badMulti=multi.mdl;const int badMeshMaterial=2;std::memcpy(badMulti.data()+multiModelOffset+multiDiskModel.meshindex+offsetof(mstudiomesh_t,material),&badMeshMaterial,4);
+    materialRejects&=!parseStudioModel(badMulti,multi.vvd,multi.vtx,multiModel,modelError);
+    all&=report("studio invalid skin ranges and mesh material references rejected",materialRejects);
+    unsigned multiCount=0;const auto multiAtlas=studioAtlas(multiModel,impl_->checkerTexture,impl_->checkerTexture,multiCount);
+    all&=report("studio multiple VMT VTF atlas tiles remain distinct",multiCount==2&&multiAtlas.width==128&&multiAtlas.height==64&&std::memcmp(multiAtlas.pixels.data(),multiAtlas.pixels.data()+64*4,64*4)!=0);
+    StudioPose multiPose;std::vector<StudioVertex> multiSkin;
+    bool multiSkinOK=sampleStudioAnimation(multiModel,0,.375,multiPose)&&skinStudioModel(multiModel,multiPose.rotations,multiSkin,multiPose.positions)&&multiSkin.size()==multiModel.triangles.size();
+    if(multiSkinOK)for(size_t i=0;i<multiSkin.size();++i)multiSkinOK&=multiSkin[i].material==multiModel.triangles[i].material;
+    all&=report("studio weighted skinning retains per-mesh materials",multiSkinOK);
     auto badBounds=studio.mdl;float invalidBound=std::numeric_limits<float>::quiet_NaN();std::memcpy(badBounds.data()+offsetof(studiohdr_t,hull_min),&invalidBound,4);StudioMesh rejectedBounds;
     all&=report("studio collision bounds decoded and invalid bounds rejected",model.hullMins==Vector(-12,-8,0)&&model.hullMaxs==Vector(12,8,64)&&!parseStudioModel(badBounds,studio.vvd,studio.vtx,rejectedBounds,modelError));
     auto solidPayload=propPayload;bool solidFlags=true;for(unsigned solid:{0,2,6}){solidPayload[170]=solid;solidFlags&=parsePreviewProps(solidPayload,4,20,parsedProps)&&parsedProps[0].solid==solid;}solidPayload[170]=1;solidFlags&=!parsePreviewProps(solidPayload,4,20,parsedProps);

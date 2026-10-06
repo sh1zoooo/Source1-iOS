@@ -38,6 +38,7 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_phy_selftest` — проверяет PHY-объекты, луч мимо узкой верхней части и блокировку камеры, сохраняя исходную камеру.
 - `source_bsp_hdr` — HDR-only BSP со статическими PHY-объектами и преобразованным освещением preview.
 - `source_hdr_selftest` — проверяет активную HDR-only сцену.
+- `source_model_materials_selftest` — проверяет обе текстуры и skinning текущей demo MDL.
 - `source_content_mount cm` — добавить распакованные ресурсы из `Source1IOS/content/cm`.
 - `source_content_unmount cm` — отключить эту папку от GAME search paths.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
@@ -64,7 +65,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 82% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 84% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -131,6 +132,13 @@ shader backend Source не реализованы. Linux 5/5, ARM64 build и sim
 210 PASS / GPU revision 8 прошли. Скачанный IPA/SHA256 и кадр проверены отдельно.
 Обычный запуск показывает HDR/PHY demo с 101 startup checks.
 [Проверки HDR-only](docs/VALIDATION-0.28.0.md).
+Этап 0.29/build 32 сохраняет material каждого mesh, проверяет skin table MDL
+и использует remap семейства 0. До 256 VMT/VTF slots модели помещаются в atlas,
+статические props добавляют свои slots в BSP atlas (общий лимит 512).
+Анимация сохраняет назначение материалов. Native runtime и 24 000 ASan studio
+mutations прошли; iOS CI ожидается. Обычный запуск показывает MDL48 с двумя
+материалами (105 startup checks). Выбор других skin families и shader features
+ещё не реализован. [Проверки материалов MDL](docs/VALIDATION-0.29.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

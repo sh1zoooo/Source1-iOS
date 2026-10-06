@@ -20,15 +20,16 @@ vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffe
 }
 fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]], texture2d<float> lightmapTexture [[texture(2)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
-    if (in.material < 0) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
+    bool model=in.material<0;
+    if (model && in.materialCount==1u) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
     constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
     uint columns=min(16u,in.materialCount),rows=(in.materialCount+columns-1u)/columns;
-    float tile=float(texture.get_width())/float(columns);
+    float tile=float(model?modelTexture.get_width():texture.get_width())/float(columns);
     float2 local=(fract(in.uv)*(tile-1.0)+0.5)/tile;
-    uint slot=uint(in.material);
+    uint slot=model?uint(-in.material-1):uint(in.material);
     float2 atlasUV=float2((float(slot%columns)+local.x)/float(columns),(float(slot/columns)+local.y)/float(rows));
     float3 light=in.lightmap.z > 0.5 ? lightmapTexture.sample(clampSample,in.lightmap.xy).rgb : float3(1);
-    return float4(in.color*light,1) * texture.sample(clampSample,atlasUV);
+    return float4(in.color*light,1) * (model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV));
 }
 )metal";
 
@@ -114,7 +115,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         return;
     }
     if (!_smokeRequested && !_runtime.executeSource("source_bsp_hdr")) { [self fail:@"HDR/PHY prop demo failed"]; return; }
-    if (!_smokeRequested && !_runtime.executeSource("source_model_load models/__source1ios_legacy_probe.mdl")) { [self fail:@"MDL48 demo failed"]; return; }
+    if (!_smokeRequested && !_runtime.executeSource("source_model_load models/__source1ios_multimat_probe.mdl")) { [self fail:@"MDL48 multi-material demo failed"]; return; }
     _runtime.log(std::string("iOS ") + UIDevice.currentDevice.systemVersion.UTF8String);
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (!device) { [self fail:@"Metal device unavailable"]; return; }
@@ -152,7 +153,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~82%\nBSP HDR preview/exact PHY · MDL48/49 animation\nSource self-tests: 101 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~84%\nBSP HDR/PHY · MDL multi-material animation\nSource self-tests: 105 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -206,6 +207,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if (!_runtime.executeSource("source_bsp_phy") || !_runtime.executeSource("source_physics_reset") || !_runtime.executeSource("source_phy_selftest")) { [self fail:@"Simulator exact PHY collision FAIL"]; return; }
         if (!_runtime.executeSource("source_bsp_hdr") || !_runtime.executeSource("source_hdr_selftest")) { [self fail:@"Simulator HDR-only scene FAIL"]; return; }
         if (!_runtime.executeSource("source_model_load models/__source1ios_external48_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) { [self fail:@"Simulator MDL48 FAIL"]; return; }
+        if (!_runtime.executeSource("source_model_load models/__source1ios_multimat_probe.mdl") || !_runtime.executeSource("source_anim_play 0") || !_runtime.executeSource("source_model_materials_selftest")) { [self fail:@"Simulator multi-material model FAIL"]; return; }
         _runtime.cameraLook(10, 0);
         _runtime.cameraMove(1, 0, .1f);
         _runtime.executeSource("source_camera_reset");
@@ -292,7 +294,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~82%%\nBSP HDR preview/exact PHY · MDL48/49 animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~84%%\nBSP HDR/PHY · MDL multi-material animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

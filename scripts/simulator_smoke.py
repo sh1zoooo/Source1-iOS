@@ -40,8 +40,8 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 210:
-                raise RuntimeError(f"Expected two sets of 101 Source checks, three BBOX, three PHY, one HDR and one runtime check, and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 221:
+                raise RuntimeError(f"Expected two sets of 105 Source checks, BBOX 3, PHY 3, HDR 1, studio materials 3, runtime 1 and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
             if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP preview lightmap atlas uploaded to Metal" not in text:
@@ -67,6 +67,10 @@ try:
                           "live PHY tapered shape differs from bounding box: PASS", "live PHY swept camera blocks without tunneling: PASS"]
             if any(marker not in text for marker in phy_checks):
                 raise RuntimeError(f"Exact PHY collision contracts missing:\n{text}")
+            material_checks=["Source studio material atlas ready: 2 slots, 128x64 RGBA", "from models/__source1ios_multimat_probe.mdl",
+                             "live studio per-mesh material slots: PASS", "live studio two VMT VTF atlas tiles: PASS", "live studio skinning preserves material slots: PASS"]
+            if any(marker not in text for marker in material_checks):
+                raise RuntimeError("Multi-material model contracts missing")
             if "Source Metal scene completed on GPU: map revision 8" not in text:
                 raise RuntimeError("HDR/PHY/MDL48 scene did not complete on GPU")
             if "Source content mounted: smoke" not in text or "Source content unmounted: smoke" not in text or "Source BSP polygons loaded: 84 triangles from maps/cache_smoke.bsp" not in text:
