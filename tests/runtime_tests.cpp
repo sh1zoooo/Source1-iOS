@@ -184,6 +184,7 @@ int main() {
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
+        std::filesystem::create_directories(cm/"packed");std::filesystem::copy_file(directory/"Source1IOS/selftest/fixture2_dir.vpk",cm/"packed/cache_dir.vpk");
         std::filesystem::copy_file(maps/"imported.bsp",cm/"maps/cache_probe.bsp");
         std::filesystem::create_directories(cm/"models");std::filesystem::create_directories(cm/"materials/models/source1ios");
         const auto gameModels=directory/"Source1IOS/game/models";
@@ -196,6 +197,8 @@ int main() {
         {std::ofstream cacheVmt(cm/"materials/models/source1ios/__cache_texture.vmt");cacheVmt<<"VertexLitGeneric { \"$basetexture\" \"models/source1ios/__cache_texture\" }";}
         check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content leaked into GAME search paths");
         check(host.executeSource("source_content_mount cm")&&host.executeSource("source_content_mount cm"),"Loose cache directory mount was not idempotent");
+        check(host.executeSource("source_content_selftest")&&host.executeSource("source_content_probe fixture/hello.txt"),"Mounted nested VPK could not be read through Source filesystem");
+        check(!host.executeSource("source_content_probe ../game/roundtrip.txt")&&!host.executeSource("source_content_probe /etc/passwd"),"Unsafe content probe accepted");
         check(host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Mounted cache BSP could not be read through Source filesystem");
         check(host.executeSource("source_model_load models/cache_probe.mdl")&&host.modelTexture().width==64&&host.modelTexture().pixels[0]==90&&host.modelTexture().pixels[1]==150&&host.modelTexture().pixels[2]==210,"Mounted cache MDL companions or VMT/VTF material did not resolve");
         check(!host.executeSource("source_content_mount ../game")&&!host.executeSource("source_content_mount /tmp")&&!host.executeSource("source_content_mount missing")&&!host.executeSource("source_content_mount cm/archive.vpk"),"Invalid content path accepted");
@@ -203,6 +206,9 @@ int main() {
         check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content remained visible");
         check(!host.executeSource("source_model_load models/cache_probe.mdl"),"Unmounted model remained visible in search paths");
         check(host.executeSource("source_model_reset"),"Built-in model restore after content import failed");
+        const auto cacheVpk=cm/"packed/cache_dir.vpk";auto cacheVpkBytes=readBytes(cacheVpk);auto invalidVpk=cacheVpkBytes;invalidVpk[0]^=0xff;
+        {std::ofstream out(cacheVpk,std::ios::binary);out.write(reinterpret_cast<const char*>(invalidVpk.data()),invalidVpk.size());}check(!host.executeSource("source_content_mount cm"),"Malformed VPK directory accepted");
+        {std::ofstream out(cacheVpk,std::ios::binary);out.write(reinterpret_cast<const char*>(cacheVpkBytes.data()),cacheVpkBytes.size());}
         std::filesystem::create_directory_symlink(maps,content/"outside_alias");check(!host.executeSource("source_content_mount outside_alias"),"Symlink content root accepted");
         std::filesystem::create_directory_symlink(maps,cm/"nested_alias");check(!host.executeSource("source_content_mount cm"),"Symlink inside content accepted");std::filesystem::remove(cm/"nested_alias");
         {std::ofstream zip(cm/"zip0.zip");zip<<"malformed auto-pack";}check(!host.executeSource("source_content_mount cm"),"Implicit legacy zip archive mount accepted");std::filesystem::remove(cm/"zip0.zip");

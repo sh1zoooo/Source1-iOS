@@ -68,7 +68,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 86% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 89% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -153,6 +153,12 @@ studio mutations, Linux CI 5/5 и iOS simulator 233 PASS / GPU revision 9
 прошли. Скачанный ARM64 IPA/SHA256 и кадр проверены отдельно. Demo: две skin variants статической
 модели и анимированная MDL48 с skin 1 (108 startup checks).
 [Проверки skin families](docs/VALIDATION-0.30.0.md).
+Этап 0.31/build 34 добавляет bounded import вложенных многотомных VPK v1/v2
+через оригинальный Source `CPackedStore`. На полном Clientmod Rec1.4 локально
+прочитаны 6.09 GB VPK и загружена настоящая textured MDL48 модель молотова
+(605 вершин, 780 треугольников). Поддержаны bone-255 empty clips и Windows-пути
+VMT/MDL. Это импорт ресурсов, не запуск client/server DLL или правил CS:S.
+[Проверки ClientMod VPK](docs/VALIDATION-0.31.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

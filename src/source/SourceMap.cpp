@@ -40,6 +40,7 @@ bool readBounded(const char* path,const char* pathID,size_t limit,std::vector<st
     auto file=g_pFullFileSystem->Open(path,"rb",pathID);if(!file)return false;const unsigned size=g_pFullFileSystem->Size(file);bool ok=size>0&&size<=limit;if(ok){bytes.resize(size);ok=g_pFullFileSystem->Read(bytes.data(),size,file)==int(size);}g_pFullFileSystem->Close(file);if(!ok)bytes.clear();return ok;
 }
 bool materialPath(const std::string& path){return !path.empty()&&path.size()<240&&path.front()!='/'&&path.find("..") == std::string::npos&&path.find('\\')==std::string::npos&&path.find(':')==std::string::npos;}
+bool normalizeMaterialPath(std::string& path){std::replace(path.begin(),path.end(),'\\','/');return materialPath(path);}
 bool vtfResourceRangesValid(const std::vector<std::uint8_t>& bytes){
     // The legacy decoder allocates auxiliary chunks before checking their
     // payload range. Validate those ranges and the aggregate budget first.
@@ -106,7 +107,7 @@ bool vmtBaseTexture(std::string name,std::string& base){
         bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");kv->deleteThis();
         if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric"))return false;
         if(hasInsert){base=insert;exists=true;}if(hasReplace&&exists)base=replace;
-        return materialPath(base);
+        return normalizeMaterialPath(base);
     }return false;
 }
 bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture,const char* kind){
@@ -1061,6 +1062,13 @@ bool SourceMap::selfTest(){
     StudioPose startPose,halfPose,endPose;bool animationOK=model.animations.size()==1&&sampleStudioAnimation(model,0,0,startPose)&&sampleStudioAnimation(model,0,.375,halfPose)&&sampleStudioAnimation(model,0,2,endPose);
     Quaternion expected;AngleQuaternion(RadianEuler(.4f,0,0),expected);bool halfway=animationOK&&std::abs(QuaternionDotProduct(halfPose.rotations[1],expected))>.9999f;
     all&=report("studio embedded RLE clip interpolation/loop",halfway&&std::abs(QuaternionDotProduct(startPose.rotations[1],endPose.rotations[1]))>.99999f);
+    auto emptyAnimation=studio.mdl;auto* emptyHeader=reinterpret_cast<studiohdr_t*>(emptyAnimation.data());auto* emptyDesc=emptyHeader->pLocalAnimdesc(0);auto* emptyTrack=reinterpret_cast<mstudioanim_t*>(reinterpret_cast<unsigned char*>(emptyDesc)+emptyDesc->animindex);emptyTrack->bone=255;emptyTrack->flags=0;emptyTrack->nextoffset=0;
+    StudioMesh emptyModel;StudioPose emptyPose;all&=report("studio bone 255 empty animation uses bind pose",parseStudioModel(emptyAnimation,studio.vvd,studio.vtx,emptyModel,modelError)&&sampleStudioAnimation(emptyModel,0,.25,emptyPose)&&emptyPose.rotations.size()==emptyModel.bones.size()&&emptyPose.positions.size()==emptyModel.bones.size());
+    auto windowsMaterials=studio.mdl;auto* windowsHeader=reinterpret_cast<studiohdr_t*>(windowsMaterials.data());char* windowsDirectory=const_cast<char*>(windowsHeader->pCdtexture(0));for(char* c=windowsDirectory;*c;++c)if(*c=='/')*c='\\';StudioMesh normalizedMaterials;
+    all&=report("studio Windows material separators normalize safely",parseStudioModel(windowsMaterials,studio.vvd,studio.vtx,normalizedMaterials,modelError)&&!normalizedMaterials.materials.empty()&&!normalizedMaterials.materials[0].empty()&&normalizedMaterials.materials[0][0].find('\\')==std::string::npos);
+    const char windowsVmt[]="VertexLitGeneric { \"$basetexture\" \"debug\\debugblue\" }";auto windowsFile=g_pFullFileSystem->Open("materials/debug/__source1ios_windows.vmt","wb","DEFAULT_WRITE_PATH");bool windowsBase=windowsFile&&g_pFullFileSystem->Write(windowsVmt,sizeof(windowsVmt)-1,windowsFile)==int(sizeof(windowsVmt)-1);if(windowsFile)g_pFullFileSystem->Close(windowsFile);SourceTexture windowsTexture;
+    windowsBase&=decodeMaterial({"debug/__source1ios_windows"},windowsTexture,"studio")&&windowsTexture.width==64&&windowsTexture.height==64;
+    all&=report("studio VMT Windows basetexture path resolves safely",windowsBase);
     const auto externalStudio=makeStudioFixture(true);StudioMesh externalModel;StudioPose externalPose;
     auto external48=externalStudio.mdl;std::memcpy(external48.data()+4,&version48,4);StudioMesh externalLegacy;
     all&=report("studio MDL48 external ANI clip",parseStudioModel(external48,externalStudio.vvd,externalStudio.vtx,externalLegacy,modelError,externalStudio.ani)&&sampleStudioAnimation(externalLegacy,0,.375,legacyPose));

@@ -40,8 +40,8 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 233:
-                raise RuntimeError(f"Expected two sets of 108 Source checks, BBOX 3, PHY 3, HDR 1, materials 3, skin 3, prop skins 3, runtime 1 and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 240:
+                raise RuntimeError(f"Expected two sets of 111 Source checks, VPK content 1, BBOX 3, PHY 3, HDR 1, materials 3, skin 3, prop skins 3, runtime 1 and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
             if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP preview lightmap atlas uploaded to Metal" not in text:
@@ -81,6 +81,10 @@ try:
                 raise RuntimeError("Skin/HDR/PHY scene did not complete on GPU")
             if "Source content mounted: smoke" not in text or "Source content unmounted: smoke" not in text or "Source BSP polygons loaded: 84 triangles from maps/cache_smoke.bsp" not in text:
                 raise RuntimeError("Loose content import did not mount/load/unmount on iOS")
+            if "Source filesystem self-test mounted VPK v2 embedded file: PASS" not in text or "1 bounded VPK archives, 0 chunks" not in text:
+                raise RuntimeError("Bounded nested VPK import did not pass on iOS")
+            if "studio VMT Windows basetexture path resolves safely: PASS" not in text or "studio bone 255 empty animation uses bind pose: PASS" not in text:
+                raise RuntimeError("Real-cache MDL/VMT compatibility checks missing")
             if "Source BSP camera spawn: info_player_start; eye -190.00 -160.00 80.00" not in text:
                 raise RuntimeError("Map spawn camera did not initialize on iOS")
             if "Source studio VTF base texture uploaded to Metal" not in text:

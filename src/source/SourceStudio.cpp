@@ -39,6 +39,12 @@ bool finiteVertex(const mstudiovertex_t& v){
         && std::isfinite(v.m_vecTexCoord.x) && std::isfinite(v.m_vecTexCoord.y)
         && v.m_vecPosition.LengthSqr()<32768.f*32768.f && v.m_vecNormal.LengthSqr()>.01f && v.m_vecNormal.LengthSqr()<4;
 }
+bool normalizeStudioPath(std::string& path,bool directory){
+    for(char& c:path)if(c=='\\')c='/';
+    if(path.empty())return directory;if(path.front()=='/'||path.find(':')!=std::string::npos||path.find("//")!=std::string::npos)return false;
+    size_t begin=0;while(begin<path.size()){const size_t end=path.find('/',begin);const auto count=(end==std::string::npos?path.size():end)-begin;if(!count)return directory&&end==path.size()-1;if((count==1&&path[begin]=='.')||(count==2&&path[begin]=='.'&&path[begin+1]=='.'))return false;if(end==std::string::npos)break;begin=end+1;}
+    return true;
+}
 bool animationValues(const std::vector<std::uint8_t>& bytes,size_t base,short relative,int frames,float scale,std::vector<float>& out){
     out.assign(frames,0);if(!relative)return true;if(relative<0||!std::isfinite(scale))return false;size_t cursor=base+size_t(relative);int frame=0;
     while(frame<frames){const auto* run=at<mstudioanimvalue_t>(bytes,cursor);if(!run||!run->num.total||!run->num.valid||run->num.valid>run->num.total)return false;
@@ -69,7 +75,11 @@ bool readAnimations(const std::vector<std::uint8_t>& bytes,const studiohdr_t& he
         clip.frames.resize(desc.numframes);for(auto& frame:clip.frames)for(const auto& bone:result.bones){frame.rotations.push_back(bone.rotation);frame.positions.push_back(bone.position);}
         size_t cursor=0;if(desc.animindex&&!addRelative(desc.animblock?0:base,desc.animindex,cursor))return fail("animation track offset overflow");std::vector<bool> seen(result.bones.size(),false);
         const bool hasTracks=desc.animblock||desc.animindex;
-        for(size_t n=0;hasTracks&&n<=result.bones.size();++n){const auto* track=at<mstudioanim_t>(tracks,cursor);if(!track||track->bone>=result.bones.size()||seen[track->bone])return fail("invalid or repeated animation bone");seen[track->bone]=true;
+        for(size_t n=0;hasTracks&&n<=result.bones.size();++n){const auto* track=at<mstudioanim_t>(tracks,cursor);if(!track)return fail("animation track outside file");
+            // Valve emits a bone 255 record for a valid bind-pose-only clip.
+            // It is a terminator, not an index into the model's bone table.
+            if(track->bone==255){if(track->flags||track->nextoffset)return fail("invalid empty animation sentinel");break;}
+            if(track->bone>=result.bones.size()||seen[track->bone])return fail("invalid or repeated animation bone");seen[track->bone]=true;
             const auto& bone=bones[track->bone];const unsigned flags=track->flags;if(flags&~(STUDIO_ANIM_RAWPOS|STUDIO_ANIM_RAWROT|STUDIO_ANIM_RAWROT2|STUDIO_ANIM_ANIMPOS|STUDIO_ANIM_ANIMROT))return fail("unsupported embedded track flags");
             const bool raw=flags&(STUDIO_ANIM_RAWPOS|STUDIO_ANIM_RAWROT|STUDIO_ANIM_RAWROT2);if(raw&&(flags&(STUDIO_ANIM_ANIMPOS|STUDIO_ANIM_ANIMROT)))return fail("mixed raw and RLE track");
             size_t data=cursor+sizeof(*track);Quaternion rawRotation=bone.quat;Vector rawPosition=bone.pos;
@@ -179,9 +189,9 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     if(mh->numtextures<0||mh->numtextures>256||mh->numcdtextures<0||mh->numcdtextures>32)return fail("invalid studio material counts");
     const auto* textures=at<mstudiotexture_t>(mdl,mh->textureindex,mh->numtextures);const auto* directories=at<int>(mdl,mh->cdtextureindex,mh->numcdtextures);if(!textures||!directories)return fail("studio materials outside MDL");
     for(int slot=0;slot<mh->numtextures;++slot){std::string name;size_t offset=0;
-        if(!addRelative(size_t(mh->textureindex)+size_t(slot)*sizeof(mstudiotexture_t),textures[slot].sznameindex,offset)||!stringAt(offset,name)||name.empty())return fail("invalid studio material name");
+        if(!addRelative(size_t(mh->textureindex)+size_t(slot)*sizeof(mstudiotexture_t),textures[slot].sznameindex,offset)||!stringAt(offset,name)||!normalizeStudioPath(name,false))return fail("invalid studio material name");
         std::vector<std::string> paths;if(!mh->numcdtextures)paths.push_back(name);
-        for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory))return fail("invalid studio material directory");paths.push_back(directory+name);}
+        for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory)||!normalizeStudioPath(directory,true))return fail("invalid studio material directory");paths.push_back(directory+name);}
         result.materials.push_back(std::move(paths));}
     if(!result.materials.empty())result.materialPaths=result.materials.front();
     if(mh->numskinref<0||mh->numskinref>256||mh->numskinfamilies<0||mh->numskinfamilies>256||(mh->numskinref==0)!=(mh->numskinfamilies==0))return fail("invalid skin table counts");

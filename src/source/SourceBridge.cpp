@@ -142,6 +142,14 @@ bool SourceBridge::execute(const std::string& input) {
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
     if (!std::strcmp(args[0], "source_content_mount") && args.ArgC()==2) return files_.mountContent(args[1]);
     if (!std::strcmp(args[0], "source_content_unmount") && args.ArgC()==2) return files_.unmountContent(args[1]);
+    if (!std::strcmp(args[0], "source_content_selftest") && args.ArgC()==1) return files_.contentSelfTest();
+    if (!std::strcmp(args[0], "source_content_probe") && args.ArgC()==2) return files_.probeContent(args[1]);
+    if (!std::strcmp(args[0], "source_clientmod_demo") && args.ArgC()==1) {
+        const bool map=map_.load("maps/awp_lego_2.bsp","GAME");
+        const bool model=map&&map_.loadModel("models/weapons/w_eq_molotov_thrown.mdl","GAME");
+        if(model)Msg("Source ClientMod cache demo ready: awp_lego_2 + textured molotov MDL48\n");
+        return model;
+    }
     if (!std::strcmp(args[0], "source_selftest")) return selfTest() && files_.selfTest() && systems_.selfTest() && sourceEngineSelfTest() && sourceAssetsSelfTest() && host_.selfTest() && map_.selfTest();
     if (!std::strcmp(args[0], "source_bsp_selftest")) return map_.selfTest();
     if (!std::strcmp(args[0], "source_bsp_reset")) return map_.resetMap();

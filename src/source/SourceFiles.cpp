@@ -3,6 +3,11 @@
 #include <vector>
 #include <string>
 #include <algorithm>
+#include <array>
+#include <cstdint>
+#include <cstdio>
+#include <fstream>
+#include <set>
 #include "filesystem.h"
 #include "tier0/dbg.h"
 #include "tier1/checksum_crc.h"
@@ -38,6 +43,34 @@ std::vector<unsigned char> fixture(const char* payload, unsigned version) {
     out.insert(out.end(), payload, payload + std::strlen(payload));
     return out;
 }
+unsigned read32(const unsigned char* p){return unsigned(p[0])|(unsigned(p[1])<<8)|(unsigned(p[2])<<16)|(unsigned(p[3])<<24);}
+unsigned read16(const unsigned char* p){return unsigned(p[0])|(unsigned(p[1])<<8);}
+bool checkedVpk(const std::filesystem::path& directoryFile,std::vector<std::filesystem::path>& chunks,std::uint64_t& bytes){
+    std::error_code error;const auto size=std::filesystem::file_size(directoryFile,error);
+    if(error||size<12||size>64u*1024*1024||std::filesystem::is_symlink(directoryFile,error)||error)return false;
+    std::ifstream input(directoryFile,std::ios::binary);std::vector<unsigned char> data(size);if(!input.read(reinterpret_cast<char*>(data.data()),data.size()))return false;
+    if(read32(data.data())!=0x55aa1234)return false;const unsigned version=read32(data.data()+4),treeSize=read32(data.data()+8);if(version!=1&&version!=2)return false;
+    const size_t header=version==1?12:28;if(header>data.size()||treeSize>data.size()-header)return false;
+    const size_t embedded=version==1?data.size()-header-treeSize:read32(data.data()+12);
+    if(header+size_t(treeSize)>data.size()||embedded>data.size()-header-treeSize)return false;
+    const size_t end=header+treeSize;size_t cursor=header;std::set<unsigned> indices;
+    auto word=[&](){const size_t begin=cursor;while(cursor<end&&data[cursor])++cursor;if(cursor>=end)return false;++cursor;return cursor>begin+1;};
+    while(true){const size_t before=cursor;if(!word()){if(cursor==before+1)break;return false;}
+        while(true){const size_t path=cursor;if(!word()){if(cursor==path+1)break;return false;}
+            while(true){const size_t name=cursor;if(!word()){if(cursor==name+1)break;return false;}if(end-cursor<18)return false;
+                const unsigned preload=read16(data.data()+cursor+4),archive=read16(data.data()+cursor+6),offset=read32(data.data()+cursor+8),length=read32(data.data()+cursor+12),terminator=read16(data.data()+cursor+16);cursor+=18;
+                if(terminator!=0xffff||preload>end-cursor)return false;cursor+=preload;
+                if(archive==0x7fff){if(std::uint64_t(offset)+length>embedded)return false;}else indices.insert(archive);
+            }
+        }
+    }
+    if(cursor!=end||indices.size()>512)return false;
+    auto base=directoryFile.string();if(base.size()<8||base.substr(base.size()-8)!="_dir.vpk")return false;base.resize(base.size()-8);
+    for(unsigned index:indices){char suffix[16];std::snprintf(suffix,sizeof(suffix),"_%03u.vpk",index);std::filesystem::path chunk=base+suffix;
+        const auto chunkSize=std::filesystem::file_size(chunk,error);if(error||chunkSize>512u*1024*1024||std::filesystem::is_symlink(chunk,error)||error||std::uint64_t(chunkSize)>8ull*1024*1024*1024-bytes)return false;
+        chunks.push_back(chunk);bytes+=chunkSize;}
+    bytes+=size;return bytes<=8ull*1024*1024*1024;
+}
 }
 
 namespace source1ios {
@@ -64,7 +97,7 @@ bool SourceFiles::start(const std::filesystem::path& root, void* filesystem) {
     Msg("Source GAME search path: %s\n", (root_ / "game").c_str());
     if (!selfTest()) { stop(); return false; }
     for(const char* game:{"cm","cstrike_clientmod","cstrike"}){
-        if(std::filesystem::is_directory(root_/"content"/game,error)){if(!mountContent(game))Warning("Source content skipped: %s\n",game);break;}error.clear();}
+        if(std::filesystem::is_directory(root_/"content"/game,error)&&!mountContent(game))Warning("Source content skipped: %s\n",game);error.clear();}
     for(const char* shared:{"hl2","platform"}){if(std::filesystem::is_directory(root_/"content"/shared,error)&&!mountContent(shared))Warning("Source content skipped: %s\n",shared);error.clear();}
     Msg("Source filesystem initialized: filesystem_stdio/vpklib\n");
     return true;
@@ -96,20 +129,36 @@ bool SourceFiles::mountContent(const std::string& name){
     const auto relative=path.lexically_relative(base);if(relative.empty()||relative.is_absolute()||*relative.begin()==".."||path.string().size()>=MAX_PATH)return false;
     auto dispatchPath=path.string();for(char& c:dispatchPath)if(c>='A'&&c<='Z')c+=('a'-'A');
     if(dispatchPath.find(".bsp")!=std::string::npos||dispatchPath.find(".vpk")!=std::string::npos)return false;
-    // Check metadata without reading asset payloads. Source automatically
-    // opens zip0.zip on a directory mount; packed imports need a separate
-    // bounded parser, so this first import path accepts loose files only.
-    size_t entries=0;std::filesystem::recursive_directory_iterator it(path,error),end;
+    // Validate metadata and every VPK directory/chunk range before letting the
+    // original CPackedStore parser see untrusted cache files.
+    size_t entries=0;std::vector<std::filesystem::path> archives,chunks;std::uint64_t packedBytes=0;std::filesystem::recursive_directory_iterator it(path,error),end;
     while(!error&&it!=end){if(++entries>100000||it.depth()>32||it->is_symlink(error)||error)return false;
-        auto filename=it->path().filename().string();for(char& c:filename)if(c>='A'&&c<='Z')c+=('a'-'A');if(filename=="zip0.zip"||filename=="zip0.360.zip")return false;it.increment(error);}
+        auto filename=it->path().filename().string();for(char& c:filename)if(c>='A'&&c<='Z')c+=('a'-'A');if(filename=="zip0.zip"||filename=="zip0.360.zip")return false;
+        if(filename.size()>8&&filename.substr(filename.size()-8)=="_dir.vpk"){if(archives.size()>=32||!checkedVpk(it->path(),chunks,packedBytes))return false;auto base=it->path().string();base.resize(base.size()-8);archives.emplace_back(base+".vpk");}it.increment(error);}
     if(error)return false;
+    std::sort(archives.begin(),archives.end());
     auto* fs=static_cast<IFileSystem*>(interface_);fs->AddSearchPath(path.c_str(),"GAME",PATH_ADD_TO_TAIL);
-    content_.push_back({name,path});Msg("Source content mounted: %s; GAME search path: %s\n",name.c_str(),path.c_str());return true;
+    for(const auto& archive:archives)fs->AddSearchPath(archive.c_str(),"GAME",PATH_ADD_TO_TAIL);
+    content_.push_back({name,path,archives});Msg("Source content mounted: %s; GAME search path: %s; %zu bounded VPK archives, %zu chunks, %llu bytes\n",name.c_str(),path.c_str(),archives.size(),chunks.size(),static_cast<unsigned long long>(packedBytes));return true;
 }
 bool SourceFiles::unmountContent(const std::string& name){
     if(!initialized_)return false;const auto found=std::find_if(content_.begin(),content_.end(),[&](const auto& entry){return entry.name==name;});if(found==content_.end())return false;
-    auto* fs=static_cast<IFileSystem*>(interface_);fs->AsyncFinishAll();if(!fs->RemoveSearchPath(found->path.c_str(),"GAME"))return false;
+    auto* fs=static_cast<IFileSystem*>(interface_);fs->AsyncFinishAll();bool removed=fs->RemoveSearchPath(found->path.c_str(),"GAME");for(auto archive=found->archives.rbegin();archive!=found->archives.rend();++archive)removed=fs->RemoveSearchPath(archive->c_str(),"GAME")&&removed;if(!removed)return false;
     content_.erase(found);Msg("Source content unmounted: %s\n",name.c_str());return true;
+}
+bool SourceFiles::contentSelfTest(){
+    if(!initialized_)return false;const char expected[]="Source filesystem on iOS\n";char bytes[sizeof(expected)]{};
+    auto* fs=static_cast<IFileSystem*>(interface_);auto file=fs->Open("fixture/hello.txt","rb","GAME");
+    const bool passed=file&&fs->Size(file)==int(sizeof(expected)-1)&&fs->Read(bytes,sizeof(expected)-1,file)==int(sizeof(expected)-1)&&!std::memcmp(bytes,expected,sizeof(expected)-1);
+    if(file)fs->Close(file);report("mounted VPK v2 embedded file",passed);return passed;
+}
+bool SourceFiles::probeContent(const std::string& path){
+    if(!initialized_||path.empty()||path.size()>=MAX_PATH||path.front()=='/'||path.back()=='/'||path.find("//")!=std::string::npos)return false;
+    for(char c:path)if(!((c>='a'&&c<='z')||(c>='A'&&c<='Z')||(c>='0'&&c<='9')||c=='_'||c=='-'||c=='.'||c=='/'))return false;
+    for(const auto& component:std::filesystem::path(path))if(component=="."||component=="..")return false;
+    auto* fs=static_cast<IFileSystem*>(interface_);auto file=fs->Open(path.c_str(),"rb","GAME");if(!file)return false;
+    const auto size=fs->Size(file);std::array<unsigned char,16> prefix{};const int wanted=std::min<int>(prefix.size(),size);const bool passed=size>0&&size<=64*1024*1024&&fs->Read(prefix.data(),wanted,file)==wanted;fs->Close(file);
+    if(passed)Msg("Source content probe: %s; %d bytes; prefix %02x%02x%02x%02x\n",path.c_str(),size,prefix[0],prefix[1],prefix[2],prefix[3]);return passed;
 }
 bool SourceFiles::selfTest() {
     if (!initialized_) return false;
