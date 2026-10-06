@@ -26,3 +26,8 @@ external ANI and pause/resume. Linux Actions contracts and ARM64 device/simulato
 builds passed in run 37419416851. Its unbounded simulator-startup step did not
 finish while the next stage was prepared. The combined 0.23 run supersedes that
 smoke check; 0.22 itself has no independently verified simulator artifact.
+
+The combined 0.23 simulator run passed with 167 PASS and the selected spawn
+marker; [verified result](VALIDATION-0.23.0.md). Run 37419416851 was cancelled
+while waiting before app startup; its two-file artifact contains IPA/SHA256,
+not a successful simulator log or screenshot.

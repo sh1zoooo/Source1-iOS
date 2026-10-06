@@ -98,3 +98,8 @@ info_player_counterterrorist / info_player_terrorist / info_player_deathmatch.
 insert/replace к $basetexture по правилам Source. Общий путь используется для BSP
 и studio model; циклы, traversal и KeyValues filesystem macros отклоняются.
 Это поддержка базовой текстуры, не полного графического shader/material system.
+
+Версия 0.23/build 26 прошла все три Linux CTest набора, ARM64 iPhone/simulator
+builds и simulator smoke: 167 PASS, map spawn camera, Patch texture resolution,
+импортированная BSP, GPU revision 5, external ANI и pause/resume. Скачанный IPA,
+SHA256 и скриншот проверены отдельно. [Отчёт 0.23](VALIDATION-0.23.0.md).
