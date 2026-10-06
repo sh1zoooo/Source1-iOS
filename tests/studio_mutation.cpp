@@ -12,7 +12,7 @@ int main(){
     MathLib_Init(2.2f,2.2f,0,2);
     unsigned accepted=0,rejected=0;std::uint32_t state=0x510519;
     auto random=[&](){state^=state<<13;state^=state>>17;state^=state<<5;return state;};
-    for(unsigned multiple=0;multiple<2;++multiple)for(unsigned legacy=0;legacy<2;++legacy)for(unsigned external=0;external<2;++external){auto fixture=source1ios::makeStudioFixture(external,multiple);if(legacy){const int version=48;std::memcpy(fixture.mdl.data()+4,&version,4);}
+    for(unsigned multiple=0;multiple<2;++multiple)for(int version:{49,48,44})for(unsigned external=0;external<2;++external){auto fixture=source1ios::makeStudioFixture(external,multiple);std::memcpy(fixture.mdl.data()+4,&version,4);
         source1ios::StudioMesh golden;std::string goldenError;
         if(!source1ios::parseStudioModel(fixture.mdl,fixture.vvd,fixture.vtx,golden,goldenError,fixture.ani))throw std::runtime_error("Golden fixture rejected: "+goldenError);
         for(unsigned i=0;i<3000;++i){auto changed=fixture;const unsigned slot=i%(external?4:3);
@@ -30,5 +30,5 @@ int main(){
             for(const auto& vertex:output)if(!vertex.position.IsValid()||!vertex.normal.IsValid()||vertex.material>=std::max(size_t(1),mesh.materials.size()))throw std::runtime_error("nonfinite output or invalid material slot");
         }
     }
-    std::cout<<"Studio mutation checks passed: 24000 cases (MDL48/49, single/multiple materials), "<<accepted<<" accepted, "<<rejected<<" rejected\n";
+    std::cout<<"Studio mutation checks passed: 36000 cases (MDL44/48/49, single/multiple materials), "<<accepted<<" accepted, "<<rejected<<" rejected\n";
 }

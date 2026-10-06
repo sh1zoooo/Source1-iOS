@@ -9,7 +9,7 @@ import struct
 import zipfile
 
 
-def verify(path, version, build, passes, revision, require_static_props=False, require_mdl48=False, require_prop_collision=False, require_phy=False, require_hdr=False, require_model_materials=False, require_skins=False, require_vpk_cache=False):
+def verify(path, version, build, passes, revision, require_static_props=False, require_mdl48=False, require_prop_collision=False, require_phy=False, require_hdr=False, require_model_materials=False, require_skins=False, require_vpk_cache=False, require_mdl44=False):
     with zipfile.ZipFile(path) as artifact:
         names = artifact.namelist()
         if len(names) != len(set(names)):
@@ -74,6 +74,9 @@ def verify(path, version, build, passes, revision, require_static_props=False, r
                       "Source filesystem self-test mounted VPK v2 embedded file: PASS"])
         if require_vpk_cache and not vpk_cache:
             raise ValueError("Bounded nested VPK cache evidence missing")
+        mdl44 = "studio MDL44 geometry and embedded clip: PASS" in log
+        if require_mdl44 and not mdl44:
+            raise ValueError("Legacy CS:S MDL44 compatibility evidence missing")
         png = artifact.read(next(n for n in names if n.endswith("simulator.png")))
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
             raise ValueError("Screenshot is not a PNG")
@@ -82,7 +85,7 @@ def verify(path, version, build, passes, revision, require_static_props=False, r
             raise ValueError("Empty screenshot")
         return {"version": version, "build": build, "ipa_sha256": digest,
                 "simulator_passes": passes, "gpu_map_revision": revision,
-                "static_props": static_props, "mdl48": mdl48, "prop_collision": prop_collision, "phy": phy, "hdr": hdr, "model_materials": model_materials, "skins": skins, "vpk_cache": vpk_cache,
+                "static_props": static_props, "mdl48": mdl48, "prop_collision": prop_collision, "phy": phy, "hdr": hdr, "model_materials": model_materials, "skins": skins, "vpk_cache": vpk_cache, "mdl44": mdl44,
                 "screenshot_size": dimensions}
 
 
@@ -101,5 +104,6 @@ if __name__ == "__main__":
     parser.add_argument("--require-model-materials", action="store_true")
     parser.add_argument("--require-skins", action="store_true")
     parser.add_argument("--require-vpk-cache", action="store_true")
+    parser.add_argument("--require-mdl44", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(verify(args.archive, args.version, args.build, args.passes, args.revision, args.require_static_props, args.require_mdl48, args.require_prop_collision, args.require_phy, args.require_hdr, args.require_model_materials, args.require_skins, args.require_vpk_cache), indent=2))
+    print(json.dumps(verify(args.archive, args.version, args.build, args.passes, args.revision, args.require_static_props, args.require_mdl48, args.require_prop_collision, args.require_phy, args.require_hdr, args.require_model_materials, args.require_skins, args.require_vpk_cache, args.require_mdl44), indent=2))

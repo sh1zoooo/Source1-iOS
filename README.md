@@ -159,6 +159,11 @@ studio mutations, Linux CI 5/5 и iOS simulator 233 PASS / GPU revision 9
 (605 вершин, 780 треугольников). Поддержаны bone-255 empty clips и Windows-пути
 VMT/MDL. Это импорт ресурсов, не запуск client/server DLL или правил CS:S.
 [Проверки ClientMod VPK](docs/VALIDATION-0.31.0.md).
+Этап 0.32/build 35 добавляет bounded preview старых studio-моделей MDL44,
+встречающихся в настоящем CS:S/ClientMod content. На `awp_lego_2.bsp` теперь
+загружаются пять ladder static props: 2 472 треугольника и две VTF-текстуры.
+Отсутствующие в самом кеше `.phy` не подменяются неточной коллизией.
+[Проверки MDL44](docs/VALIDATION-0.32.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

@@ -1047,6 +1047,7 @@ bool SourceMap::selfTest(){
     if(rebuiltSplit){g_pPhysicsCollision->TraceBox(Vector(0,-32,32),Vector(0,32,32),Vector(0,0,0),Vector(0,0,0),rebuiltSplit.get(),Vector(0,0,0),QAngle(0,0,0),&gap);g_pPhysicsCollision->TraceBox(Vector(24,-32,32),Vector(24,32,32),Vector(0,0,0),Vector(0,0,0),rebuiltSplit.get(),Vector(0,0,0),QAngle(0,0,0),&side);}
     all&=report("PHY separate convex pieces preserve empty gap",rebuiltSplit&&splitGeometry.convexes.size()==2&&gap.fraction==1&&side.fraction>0&&side.fraction<1);
     all&=report("studio MDL48 geometry and embedded clip",parseStudioModel(mdl48,studio.vvd,studio.vtx,legacy,modelError)&&legacy.triangles.size()==36&&legacy.bones.size()==2&&sampleStudioAnimation(legacy,0,.375,legacyPose));
+    auto mdl44=studio.mdl;const int version44=44;std::memcpy(mdl44.data()+4,&version44,4);StudioMesh cssLegacy;all&=report("studio MDL44 geometry and embedded clip",parseStudioModel(mdl44,studio.vvd,studio.vtx,cssLegacy,modelError)&&cssLegacy.triangles.size()==36&&cssLegacy.bones.size()==2&&sampleStudioAnimation(cssLegacy,0,.375,legacyPose));
     bool unsupportedVersions=true;for(int version:{47,50}){auto unsupported=mdl48;std::memcpy(unsupported.data()+4,&version,4);unsupportedVersions&=!parseStudioModel(unsupported,studio.vvd,studio.vtx,legacy,modelError);}
     all&=report("studio unsupported MDL versions rejected",unsupportedVersions);
     std::vector<StudioVertex> bindPose;bool bindOK=skinStudioModel(model,{},bindPose)&&bindPose.size()==model.triangles.size();

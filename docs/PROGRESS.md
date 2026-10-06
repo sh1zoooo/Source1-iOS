@@ -180,3 +180,11 @@ Rec1.4 (6.09 GB VPK) прочитан локально; настоящая мо�
 VVD/VTX/PHY и обе VMT/VTF текстуры загрузились. Добавлены bone-255 bind-pose
 анимации и безопасная нормализация Windows-путей материалов. iOS CI ожидается.
 [Отчёт 0.31](VALIDATION-0.31.0.md).
+
+Этап 0.32/build 35 расширяет bounded studio preview до MDL44/48/49. Локальный
+прогон настоящей `awp_lego_2.bsp` через ClientMod VPK загружает 5 ladder props,
+2 model types и 2 472 prop triangles без пропусков; обе VTF текстуры прочитаны.
+Пять collision props честно отмечаются unsupported, потому что требуемых `.phy`
+нет в предоставленном кеше. Native runtime и 36 000 ASan studio mutations
+прошли; iOS ARM64/simulator подтверждаются отдельным CI.
+[Отчёт 0.32](VALIDATION-0.32.0.md).
