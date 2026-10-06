@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **89% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **91% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -178,13 +178,16 @@ Linux CI 5/5 и iOS simulator 233 PASS / GPU revision 9 прошли.
 Одновременно подключаются `cm`, `cstrike`, `hl2`, `platform`. Реальный Clientmod
 Rec1.4 (6.09 GB VPK) прочитан локально; настоящая модель молотова MDL48,
 VVD/VTX/PHY и обе VMT/VTF текстуры загрузились. Добавлены bone-255 bind-pose
-анимации и безопасная нормализация Windows-путей материалов. iOS CI ожидается.
+анимации и безопасная нормализация Windows-путей материалов. Linux CI 5/5,
+ARM64 IPA и iOS simulator 240 PASS / GPU revision 9 прошли; скачанный IPA,
+SHA256 manifest и кадр проверены отдельно.
 [Отчёт 0.31](VALIDATION-0.31.0.md).
 
 Этап 0.32/build 35 расширяет bounded studio preview до MDL44/48/49. Локальный
 прогон настоящей `awp_lego_2.bsp` через ClientMod VPK загружает 5 ladder props,
 2 model types и 2 472 prop triangles без пропусков; обе VTF текстуры прочитаны.
 Пять collision props честно отмечаются unsupported, потому что требуемых `.phy`
-нет в предоставленном кеше. Native runtime и 36 000 ASan studio mutations
-прошли; iOS ARM64/simulator подтверждаются отдельным CI.
+нет в предоставленном кеше. Native runtime и 36 000 ASan studio mutations,
+Linux CI 5/5, iOS ARM64/simulator 242 PASS / GPU revision 9 прошли; скачанный
+IPA, SHA256 manifest и кадр проверены отдельно.
 [Отчёт 0.32](VALIDATION-0.32.0.md).

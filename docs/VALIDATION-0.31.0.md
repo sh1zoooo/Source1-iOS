@@ -1,8 +1,8 @@
 # 0.31.0 / build 34 — ClientMod VPK и реальная MDL48
 
 ~89% минимального prototype, не полного Source/CS:S.
-Native и реальный ClientMod cache probes прошли; iPhone ARM64 build / simulator
-GPU ожидаются в CI.
+Native и реальный ClientMod cache probes прошли; Linux CI 5/5, iPhone ARM64
+build и simulator GPU также прошли.
 
 ## Реализация
 
@@ -46,5 +46,8 @@ GPU ожидаются в CI.
 - Game DLL/client DLL, оружие, HUD, правила раунда, networking и полный Source
   shader backend не реализованы. Исполняемый Android-код на iOS не используется.
 
-Ожидается 2 * 111 startup + VPK content 1 + BBOX 3 + PHY 3 + HDR 1 +
-materials 3 + skin 3 + prop skins 3 + runtime 1 = 240 PASS, GPU revision 9.
+GitHub Actions run 37525111584: 2 × 111 startup + VPK content 1 + BBOX 3 +
+PHY 3 + HDR 1 + materials 3 + skin 3 + prop skins 3 + runtime 1 = 240 PASS,
+GPU revision 9. Скачанный artifact прошёл независимый verifier: version 0.31.0,
+build 34, PNG 1170×2532. SHA256 IPA:
+`c7a288d5330becf0a59400727872210e1c4257410cb57f00293bf70bcfc46970`.

@@ -33,5 +33,9 @@
 - Game client/server, оружие, HUD, правила, networking и полный Source shader
   backend не реализованы. Android APK/SO на iOS не исполняются.
 
-Ожидается 2 × 112 startup + VPK content 1 + BBOX 3 + PHY 3 + HDR 1 +
-materials 3 + skin 3 + prop skins 3 + runtime 1 = 242 PASS, GPU revision 9.
+GitHub Actions run 37526516092: Linux 5/5 и iOS ARM64/simulator прошли.
+2 × 112 startup + VPK content 1 + BBOX 3 + PHY 3 + HDR 1 + materials 3 +
+skin 3 + prop skins 3 + runtime 1 = 242 PASS, GPU revision 9. Скачанный
+artifact независимо проверен: version 0.32.0, build 35, Mach-O 64-bit arm64,
+PNG 1170×2532. SHA256 IPA:
+`5a21ca35b67bf1783dbe85199ac0aff69ec0b22fd3c17c299eebc19b3e4d173a`.
