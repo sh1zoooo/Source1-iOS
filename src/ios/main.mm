@@ -150,7 +150,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~70%\nBSP materials/lightmaps · MDL/ANI animation\nSource self-tests: 77 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~70%\nBSP materials/lightmaps · MDL/ANI animation\nSource self-tests: 80 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;

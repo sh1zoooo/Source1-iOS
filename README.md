@@ -86,6 +86,8 @@ sequence evaluator. [Проверки и границы ANI](docs/VALIDATION-0.1
 завершение обновлённой сцены на GPU. [Проверки 0.20](docs/VALIDATION-0.20.0.md).
 Этап 0.21/build 24 подключает распакованные каталоги игровых ресурсов к Source
 filesystem. [Размещение ресурсов и команды импорта](docs/CONTENT-IMPORT.md).
+Этап 0.22/build 25 выбирает положение камеры из точек появления BSP, включая команды CS.
+[Проверки и границы spawn camera](docs/VALIDATION-0.22.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

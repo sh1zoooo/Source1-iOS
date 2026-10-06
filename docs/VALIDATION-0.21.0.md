@@ -34,3 +34,10 @@ brushes, floor, the posed striped model and physics probes. This is synthetic
 content in the simulator, not a full ClientMod cache or physical-device test.
 IPA SHA256 matches the manifest:
 `e23e181e3fd271e3b4c3a82f89810a07bdb2fd4881a3c60a043ab3c915057e58`.
+
+## Physical iPhone observation
+
+The user's 2026-10-06 log and two screenshots show 77 PASS on iPhone 16e/A18,
+iOS 18.6.2, base/model/LDR lightmap uploads, GPU revision 2, pause/resume,
+orientation resize and different embedded model poses. They do not exercise
+external ANI or loose content import on the phone.

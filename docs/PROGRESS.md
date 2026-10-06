@@ -83,3 +83,13 @@ build и simulator smoke: 155 PASS, mount/load/unmount карты из content/s
 GPU completion revision 5, внешний ANI и pause/resume. Скачанный IPA, его SHA256
 и скриншот проверены отдельно. [Отчёт 0.21](VALIDATION-0.21.0.md).
 Полный кеш ClientMod пока не проверен; добавлен путь импорта распакованных ресурсов.
+
+Этап 0.22/build 25 читает BSP entity text и выбирает камеру из info_player_start /
+info_player_counterterrorist / info_player_terrorist / info_player_deathmatch.
+Сброс камеры возвращает выбранную точку; это preview camera, не создание игрока.
+Вход ограничен, повреждённые координаты не заменяют сцену. Оценка остаётся 70%.
+
+Пользовательский лог и две фотографии 0.21 на физическом iPhone 16e подтверждают
+77 PASS, LDR lightmap/base/model texture upload, GPU revision 2, pause/resume,
+смену ориентации и разные позы встроенной модели. External ANI и кеш в этом
+конкретном запуске не проверялись.

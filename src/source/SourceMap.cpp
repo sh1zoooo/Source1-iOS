@@ -1,6 +1,7 @@
 #include "SourceMap.hpp"
 #include "BspLzmaFixture.hpp"
 #include "SourceStudio.hpp"
+#include "SourceEntities.hpp"
 #include "studio.h"
 #include "optimize.h"
 #include "quakedef.h"
@@ -335,7 +336,7 @@ std::vector<unsigned char> fixture(bool displaced=false,bool materialGrid=false)
     append(LUMP_LEAFFACES,leafFaces.data(),leafFaces.size()*sizeof(unsigned short));
     darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};std::vector<char> names;std::vector<int> nameIndex;
     for(unsigned i=0;i<materialCount;++i){const std::string name=i==0?"debug/debugempty":i==1?"debug/debugblue":"debug/source1ios_slot"+std::to_string(i);nameIndex.push_back(names.size());names.insert(names.end(),name.begin(),name.end());names.push_back(0);}names.push_back(0);
-    const char entities[]="{ \"classname\" \"worldspawn\" }\n";
+    const char entities[]="{ \"classname\" \"worldspawn\" }\n{ \"classname\" \"info_player_start\" \"origin\" \"-190 -160 16\" \"angles\" \"8 45 0\" }\n";
     append(LUMP_PLANES,planes.data(),planes.size()*sizeof(dplane_t));append(LUMP_BRUSHSIDES,sides.data(),sides.size()*sizeof(dbrushside_t));append(LUMP_BRUSHES,brushes.data(),brushes.size()*sizeof(dbrush_t));
     append(LUMP_LEAFS,leaves,sizeof(leaves));h.lumps[LUMP_LEAFS].version=1;append(LUMP_LEAFBRUSHES,leafbrush,sizeof(leafbrush));
     append(LUMP_NODES,&node,sizeof(node));append(LUMP_MODELS,&model,sizeof(model));append(LUMP_TEXINFO,infos.data(),infos.size()*sizeof(texinfo_t));
@@ -349,6 +350,7 @@ struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
+    std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
     std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
 };
 SourceMap::SourceMap()=default;
@@ -464,6 +466,15 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         }
         Msg("Source BSP LZMA lump %d decoded: %d -> %zu bytes\n",id,l.filelen,decoded[id].size());
     }
+    const auto& entityLump=h.lumps[LUMP_ENTITIES];
+    const size_t entitySize=entityLump.uncompressedSize?entityLump.uncompressedSize:entityLump.filelen;
+    if(entityLump.version!=0||entitySize>1024*1024||entityLump.filelen>1024*1024){g_pFullFileSystem->Close(file);Warning("Source BSP: entity lump exceeds supported bounds\n");return false;}
+    std::vector<unsigned char> entityBytes(entityLump.filelen);g_pFullFileSystem->Seek(file,entityLump.fileofs,FILESYSTEM_SEEK_HEAD);
+    if(!entityBytes.empty()&&g_pFullFileSystem->Read(entityBytes.data(),entityBytes.size(),file)!=int(entityBytes.size())){g_pFullFileSystem->Close(file);return false;}
+    if(entityLump.uncompressedSize){std::vector<unsigned char> expanded;const char* reason="";
+        if(!decodeLump(entityBytes,entitySize,expanded,reason)){g_pFullFileSystem->Close(file);return false;}entityBytes=std::move(expanded);}
+    std::vector<PreviewSpawn> spawns;
+    if(!parsePreviewSpawns(std::string(entityBytes.begin(),entityBytes.end()),spawns)){g_pFullFileSystem->Close(file);Warning("Source BSP: malformed entity text or player spawn\n");return false;}
     g_pFullFileSystem->Close(file);
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
@@ -518,6 +529,14 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
     Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
     auto live=physicsScene(collision);if(!live)return false;
+    impl_->spawns=std::move(spawns);impl_->spawnCamera=Vector(-190,-160,80);impl_->spawnAngles=QAngle(8,45,0);
+    if(!impl_->spawns.empty()){
+        auto rank=[](const PreviewSpawn& spawn){return spawn.classname=="info_player_start"?0:spawn.classname=="info_player_counterterrorist"?1:spawn.classname=="info_player_terrorist"?2:3;};
+        const auto& spawn=*std::min_element(impl_->spawns.begin(),impl_->spawns.end(),[&](const auto& a,const auto& b){return rank(a)<rank(b);});
+        impl_->spawnCamera=Vector(spawn.origin[0],spawn.origin[1],spawn.origin[2]+64);
+        impl_->spawnAngles=QAngle(std::clamp(std::remainder(spawn.angles[0],360.f),-85.f,85.f),std::remainder(spawn.angles[1],360.f),0);
+        Msg("Source BSP camera spawn: %s; eye %.2f %.2f %.2f; angles %.2f %.2f; %zu candidates\n",spawn.classname.c_str(),impl_->spawnCamera.x,impl_->spawnCamera.y,impl_->spawnCamera.z,impl_->spawnAngles.x,impl_->spawnAngles.y,impl_->spawns.size());
+    }else Msg("Source BSP camera spawn: no player start; preview fallback\n");
     impl_->scene=std::move(live);
     impl_->displacementCollision=std::move(displacementCollision);
     impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;
@@ -525,7 +544,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
-void SourceMap::resetCamera(){if(impl_){impl_->camera=Vector(-190,-160,80);impl_->angles=QAngle(8,45,0);}}
+void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->angles=impl_->spawnAngles;}}
 bool SourceMap::resetPhysics(){
     if(!impl_)return false;auto scene=physicsScene(impl_->collision);if(!scene)return false;
     impl_->scene=std::move(scene);Msg("Source live physics scene reset: two bodies and original ragdoll joint\n");return true;
@@ -696,6 +715,12 @@ bool SourceMap::selfTest(){
     Ray_t ray;ray.Init(Vector(-190,-160,80),Vector(-190,-160,-80));CM_BoxTrace(ray,0,MASK_SOLID,true,trace);
     all&=report("engine CM floor trace",trace.fraction>.49f && trace.fraction<.51f);
     all&=report("engine CM point contents",CM_PointContents(Vector(-190,-160,80),0)==CONTENTS_EMPTY && (CM_PointContents(Vector(-190,-160,-8),0)&CONTENTS_SOLID));
+    std::vector<PreviewSpawn> parsedSpawns;
+    all&=report("BSP player spawn origin and eye camera",impl_->spawns.size()==1&&impl_->spawnCamera==Vector(-190,-160,80)&&impl_->spawnAngles==QAngle(8,45,0));
+    const bool csSpawn=parsePreviewSpawns("// map starts\n{ classname worldspawn } { classname info_player_counterterrorist origin \"100 200 16\" angle 90 } { classname info_player_terrorist origin \"-100 0 16\" angles \"0 180 0\" }",parsedSpawns);
+    all&=report("BSP CS team spawn entity data",csSpawn&&parsedSpawns.size()==2&&parsedSpawns[0].origin[1]==200&&parsedSpawns[0].angles[1]==90&&parsedSpawns[1].angles[1]==180);
+    const auto savedSpawns=parsedSpawns;
+    all&=report("BSP malformed spawn and entity bounds rejected",!parsePreviewSpawns("{ classname info_player_start origin \"nan 0 0\" }",parsedSpawns)&&!parsePreviewSpawns("{ classname worldspawn",parsedSpawns)&&!parsePreviewSpawns(std::string(1024*1024+1,' '),parsedSpawns)&&parsedSpawns.size()==savedSpawns.size());
     all&=report("engine worldspawn entities",CM_EntityString() && std::strstr(CM_EntityString(),"worldspawn"));
     auto testScene=physicsScene(impl_->fixtureCollision);
     if(!testScene)return report("live physics body pose advances",false);

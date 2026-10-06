@@ -116,6 +116,19 @@ int main() {
         check(host.executeSource("source_content_mount cm"),"Valid content mount did not recover after rejected import");
         check(host.executeSource("source_bsp_load maps/imported.bsp"), "Valid user BSP preview failed");
         check(host.texture().pixels==bspTexture.pixels&&host.textureRevision()>bspTextureRevision,"Imported BSP material did not resolve or advance revision");
+        // A CS spawn far from the fixture default must change the view, and
+        // camera reset must restore the selected map spawn rather than (0,0,0).
+        std::ifstream entityInput(maps/"imported.bsp",std::ios::binary);
+        std::vector<unsigned char> spawnMap((std::istreambuf_iterator<char>(entityInput)),{});entityInput.close();
+        auto entityFixture=[&](const std::string& text,const char* name){auto bytes=spawnMap;const int offset=bytes.size(),length=text.size()+1;bytes.insert(bytes.end(),text.begin(),text.end());bytes.push_back(0);
+            std::memcpy(bytes.data()+8,&offset,4);std::memcpy(bytes.data()+12,&length,4);std::ofstream out(maps/name,std::ios::binary);out.write(reinterpret_cast<const char*>(bytes.data()),bytes.size());};
+        entityFixture("{ classname worldspawn } { classname info_player_counterterrorist origin \"-120 -80 16\" angles \"0 90 0\" }","team-spawn.bsp");
+        const auto fixtureView=host.vertices(1);check(host.executeSource("source_bsp_load maps/team-spawn.bsp"),"CS team spawn map rejected");
+        const auto spawnView=host.vertices(1);check(!spawnView.empty()&&fixtureView[0].position[0]!=spawnView[0].position[0],"Map spawn did not change camera projection");
+        host.cameraLook(30,5);check(host.executeSource("source_camera_reset")&&host.vertices(1)[0].position[0]==spawnView[0].position[0],"Camera reset ignored map spawn");
+        const auto spawnRevision=host.textureRevision();entityFixture("{ classname info_player_start origin \"nan 0 0\" }","bad-spawn.bsp");
+        check(!host.executeSource("source_bsp_load maps/bad-spawn.bsp")&&host.textureRevision()==spawnRevision&&host.vertices(1)[0].position[0]==spawnView[0].position[0],"Malformed spawn changed active scene or camera");
+        check(host.executeSource("source_bsp_load maps/imported.bsp"),"Map restore after spawn test failed");
         const auto imported=host.vertices(1);
         const auto models=directory/"Source1IOS/game/models";
         std::filesystem::copy_file(models/"__source1ios_static_probe.mdl",models/"bad.mdl");
