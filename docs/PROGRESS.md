@@ -169,4 +169,6 @@ fixture-сцену, сохраняя текущую. На физическом i
 static props используют собственный skin вместо пропуска nonzero skin.
 Проверены invalid selection/unused family references и сохранение сцены при
 повреждённом prop skin. Native runtime и 24 000 ASan mutations прошли;
-iOS CI ожидается. [Отчёт 0.30](VALIDATION-0.30.0.md).
+Linux CI 5/5 и iOS simulator 233 PASS / GPU revision 9 прошли.
+Скачанный ARM64 IPA/SHA256 и кадр проверены отдельно. Физический iPhone
+этой версией пока не проверен. [Отчёт 0.30](VALIDATION-0.30.0.md).

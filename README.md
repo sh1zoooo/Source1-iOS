@@ -149,7 +149,8 @@ mutations, Linux CI 5/5, ARM64 build и simulator 221 PASS / GPU revision 8
 animation или texture atlas. BSP props с ненулевым skin теперь отображаются
 через тот же model cache, со своими texture assignments и сохранённой PHY.
 Неверное семейство отклоняется без замены сцены. Native runtime / 24 000 ASan
-studio mutations прошли, iOS CI ожидается. Demo: две skin variants статической
+studio mutations, Linux CI 5/5 и iOS simulator 233 PASS / GPU revision 9
+прошли. Скачанный ARM64 IPA/SHA256 и кадр проверены отдельно. Demo: две skin variants статической
 модели и анимированная MDL48 с skin 1 (108 startup checks).
 [Проверки skin families](docs/VALIDATION-0.30.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).

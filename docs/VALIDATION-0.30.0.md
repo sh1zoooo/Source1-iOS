@@ -1,7 +1,7 @@
 # 0.30.0 / build 33 — MDL skin families
 
 ~86% минимального prototype, не полного Source/CS:S.
-Native проверки прошли; iPhone ARM64 build / simulator GPU ожидаются в CI.
+Native проверки, iPhone ARM64 build / simulator GPU прошли.
 
 ## Реализация и границы
 
@@ -45,9 +45,23 @@ Native проверки прошли; iPhone ARM64 build / simulator GPU ожи�
   дополнительный animation frame не зависел от hard-coded frame totals.
 - Python syntax, mocked launch diagnostics и diff whitespace PASS.
 
-Ожидается 2 * 108 startup + BBOX 3 + PHY 3 + HDR 1 + materials 3 +
-skin 3 + prop skins 3 + runtime 1 = 233 PASS, GPU revision 9,
-MDL48/external ANI, HDR/PHY, pause/resume, content mount/unmount.
-Downloaded verifier требует `--require-skins` и прежние contracts.
+## Проверенный CI и скачанный артефакт
+
+- Functional commit: `02e4207dfa9fc4967de59b293fec1cf0bcd21f3c`.
+- [Actions 37514952479](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37514952479):
+  Linux и iOS jobs success; Linux 5/5 CTest, runtime 5.56 s,
+  studio mutation suite 2.89 s; total 9.05 s.
+- Artifact `11436719432` скачан и проверен отдельно: plist
+  0.30.0/build 33, bundle identifier и Mach-O 64-bit arm64 подтверждены.
+- IPA SHA256 `aeb444b8e480e0b331df42bb8693e74d51dbc4f606091732d5e05b2a588da2b2`
+  совпадает с manifest.
+- 2 * 108 startup + BBOX 3 + PHY 3 + HDR 1 + materials 3 +
+  skin 3 + prop skins 3 + runtime 1 = 233 PASS, no FAIL; GPU revision 9,
+  MDL48/external ANI, HDR/PHY, pause/resume, content mount/unmount.
+- Downloaded verifier с `--require-skins` и прежними contracts PASS.
+  Старый 0.29 artifact не принимается как evidence skin families.
+- PNG 1170x2532 визуально проверен: HUD ~86% / 108 PASS; две статические
+  instances имеют разные texture assignments (синяя и полосатая front face),
+  центральная animated MDL skin 1, HDR room и PHY spheres сохраняются.
 
 Реальные игровые skin families и физический iPhone этой версией пока не проверены.
