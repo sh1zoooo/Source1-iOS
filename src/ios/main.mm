@@ -22,9 +22,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
     if (in.material < 0) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
     constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
-    float tile=float(texture.get_height());
+    uint columns=min(16u,in.materialCount),rows=(in.materialCount+columns-1u)/columns;
+    float tile=float(texture.get_width())/float(columns);
     float2 local=(fract(in.uv)*(tile-1.0)+0.5)/tile;
-    float2 atlasUV=float2((float(in.material)+local.x)/float(in.materialCount),local.y);
+    uint slot=uint(in.material);
+    float2 atlasUV=float2((float(slot%columns)+local.x)/float(columns),(float(slot/columns)+local.y)/float(rows));
     float3 light=in.lightmap.z > 0.5 ? lightmapTexture.sample(clampSample,in.lightmap.xy).rgb : float3(1);
     return float4(in.color*light,1) * texture.sample(clampSample,atlasUV);
 }
@@ -41,6 +43,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     BOOL _smokeRequested;
     std::uint64_t _mapTextureRevision;
     std::uint64_t _modelTextureRevision;
+    std::uint64_t _submittedSceneRevision;
 }
 @property(nonatomic, strong) MTKView *metalView;
 @property(nonatomic, strong) id<MTLCommandQueue> queue;
@@ -147,7 +150,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~68%\nBSP LDR lightmaps · MDL/ANI animation\nSource self-tests: 76 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~70%\nBSP materials/lightmaps · MDL/ANI animation\nSource self-tests: 77 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -170,6 +173,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 }
 - (void)resumeHost {
     _hasPrevious = NO;
+    _submittedSceneRevision = 0;
     _runtime.setActive(true);
     if (self.pipeline && self.queue) self.metalView.paused = NO;
 }
@@ -186,6 +190,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     if (_smokeRequested && _runtime.frames() == 60) {
         if (!_runtime.executeSource("source_selftest") || !_runtime.executeSource("source_physics_reset")
             || !_runtime.executeSource("source_physics_impulse") || !_runtime.executeSource("source_bsp_terrain")
+            || !_runtime.executeSource("source_bsp_materials")
             || !_runtime.executeSource("source_model_load models/__source1ios_external_probe.mdl") || !_runtime.executeSource("source_anim_play 0")) {
             [self fail:@"Simulator runtime contracts FAIL"]; return;
         }
@@ -232,13 +237,22 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [encoder drawPrimitives:MTLPrimitiveTypeTriangle vertexStart:0 vertexCount:vertices.size()];
     [encoder endEncoding];
     [command presentDrawable:drawable];
-    if (!_submittedFirstFrame) {
+    const BOOL firstFrame=!_submittedFirstFrame;
+    const std::uint64_t sceneRevision=_runtime.textureRevision();
+    if (firstFrame || _submittedSceneRevision!=sceneRevision) {
+        _submittedSceneRevision=sceneRevision;
         _submittedFirstFrame = YES;
         [command addCompletedHandler:^(id<MTLCommandBuffer> finished) {
-            if (finished.status == MTLCommandBufferStatusCompleted) self->_runtime.log("First Metal frame completed on GPU");
-            else self->_runtime.log(std::string("Metal GPU frame FAIL: ") + finished.error.description.UTF8String);
+            const BOOL completed=finished.status==MTLCommandBufferStatusCompleted;
+            NSString *error=finished.error.description ?: @"Unknown GPU error";
+            // Keep runtime/file logging on the same queue as host frames.
+            dispatch_async(dispatch_get_main_queue(), ^{
+                if(completed){if(firstFrame)self->_runtime.log("First Metal frame completed on GPU");
+                    self->_runtime.log("Source Metal scene completed on GPU: map revision "+std::to_string(sceneRevision));}
+                else self->_runtime.log(std::string("Metal GPU frame FAIL: ")+error.UTF8String);
+            });
         }];
-        _runtime.log("First Metal frame submitted");
+        if(firstFrame)_runtime.log("First Metal frame submitted");
     }
     [command commit];
 }
@@ -266,7 +280,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~68%%\nBSP LDR lightmaps · MDL/ANI animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~70%%\nBSP materials/lightmaps · MDL/ANI animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

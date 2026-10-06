@@ -36,6 +36,11 @@ int main() {
         for(size_t i=252;i<288;++i)check(roomVertices[i].lightmap[2]==0,"Studio model incorrectly samples world lightmap");
         check(bakedTexture.pixels[0]==bakedTexture.pixels[4]&&bakedTexture.pixels[0]<bakedTexture.pixels[33*4],"Lightmap border or gradient sampling incorrect");
         check(host.executeSource("source_bsp_selftest"), "BSP geometry/collision contracts failed");
+        check(host.executeSource("source_bsp_materials"),"Seventeen-material BSP demo failed");
+        const auto gridTexture=host.texture();check(gridTexture.width==1024&&gridTexture.height==128,"Material grid dimensions incorrect");
+        bool secondRow=false;for(const auto& vertex:host.vertices(1))secondRow|=vertex.material[0]==16&&vertex.material[1]==17;check(secondRow,"Second-row material slot not staged in GPU vertices");
+        check(std::memcmp(gridTexture.pixels.data()+64*1024*4,bspTexture.pixels.data()+64*4,64*4)==0,"Second-row material pixels incorrect");
+        check(host.executeSource("source_bsp_reset"),"Two-slot map restore after material grid failed");
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
         check(host.executeSource("source_model_reset"),"Built-in Source studio model reload failed");

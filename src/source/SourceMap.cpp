@@ -185,16 +185,17 @@ bool bspMaterials(BspMaterials& out,const std::array<std::vector<unsigned char>,
     }
     out.slots.resize(out.names.size());std::vector<std::string> unique;
     for(size_t i=0;i<out.names.size();++i){auto found=std::find(unique.begin(),unique.end(),out.names[i]);if(found!=unique.end())out.slots[i]=found-unique.begin();
-        else if(unique.size()<16){out.slots[i]=unique.size();unique.push_back(out.names[i]);}else out.slots[i]=0;}
+        else if(unique.size()<512){out.slots[i]=unique.size();unique.push_back(out.names[i]);}else {Warning("Source BSP: more than 512 distinct material names\n");return false;}}
     out.slotCount=std::max(1u,unsigned(unique.size()));return true;
 }
 source1ios::SourceTexture bspAtlas(const BspMaterials& materials,const source1ios::SourceTexture& fallback){
-    constexpr unsigned tile=64;source1ios::SourceTexture atlas;atlas.width=tile*materials.slotCount;atlas.height=tile;atlas.pixels.resize(size_t(atlas.width)*tile*4);
+    constexpr unsigned tile=64;const unsigned columns=std::min(16u,materials.slotCount),rows=(materials.slotCount+columns-1)/columns;
+    source1ios::SourceTexture atlas;atlas.width=tile*columns;atlas.height=tile*rows;atlas.pixels.resize(size_t(atlas.width)*atlas.height*4);
     std::vector<bool> written(materials.slotCount,false);
     for(size_t i=0;i<materials.names.size();++i){const unsigned slot=materials.slots[i];if(written[slot])continue;written[slot]=true;source1ios::SourceTexture decoded;
         if(!decodeMaterial({materials.names[i]},decoded,"BSP"))decoded=fallback;
         for(unsigned y=0;y<tile;++y)for(unsigned x=0;x<tile;++x){const unsigned sx=std::min(decoded.width-1,x*decoded.width/tile),sy=std::min(decoded.height-1,y*decoded.height/tile);
-            std::memcpy(atlas.pixels.data()+(size_t(y)*atlas.width+slot*tile+x)*4,decoded.pixels.data()+(size_t(sy)*decoded.width+sx)*4,4);}
+            std::memcpy(atlas.pixels.data()+(size_t((slot/columns)*tile+y)*atlas.width+(slot%columns)*tile+x)*4,decoded.pixels.data()+(size_t(sy)*decoded.width+sx)*4,4);}
     }return atlas;
 }
 bool lightmapRange(const dface_t& face,const texinfo_t& info,size_t bytes,unsigned& width,unsigned& height){
@@ -271,7 +272,8 @@ void addBox(std::vector<dvertex_t>& vertices,std::vector<dedge_t>& edges,std::ve
     for(const auto& q:quads){dface_t f{};f.firstedge=surfedges.size();f.numedges=4;f.dispinfo=-1;f.texinfo=-1;f.lightofs=-1;
         for(unsigned i=0;i<4;++i){dedge_t e{{}};e.v[0]=first+q[i];e.v[1]=first+q[(i+1)%4];surfedges.push_back(edges.size());edges.push_back(e);}faces.push_back(f);}
 }
-std::vector<unsigned char> fixture(bool displaced=false) {
+std::vector<unsigned char> fixture(bool displaced=false,bool materialGrid=false) {
+    const unsigned materialCount=materialGrid?17:2;
     std::vector<dvertex_t> vertices;std::vector<dedge_t> edges(1);std::vector<int> surfedges;std::vector<dface_t> faces;
     addBox(vertices,edges,surfedges,faces,Vector(-256,-256,-16),Vector(256,256,0));
     addBox(vertices,edges,surfedges,faces,Vector(256,-256,0),Vector(272,272,192));
@@ -292,7 +294,7 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     for(unsigned box=0;box<7;++box){dbrush_t brush{};brush.firstside=sides.size();brush.numsides=6;brush.contents=CONTENTS_SOLID;brushes.push_back(brush);
         for(int axis=0;axis<3;++axis)for(int sign=0;sign<2;++sign){dplane_t plane{};plane.normal[axis]=sign?-1:1;plane.type=axis;plane.dist=sign?-lows[box][axis]:highs[box][axis];planes.push_back(plane);
             dbrushside_t side{};side.planenum=planes.size()-1;side.texinfo=0;side.dispinfo=-1;sides.push_back(side);}
-        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=(f/2)*2+(box+f)%2;}
+        for(unsigned f=0;f<6;++f){faces[box*6+f].planenum=box*6+facePlanes[f];faces[box*6+f].texinfo=(f/2)*materialCount+(materialGrid?(box*6+f)%materialCount:(box+f)%2);}
     }
     if(displaced){
         faces[1].dispinfo=0;ddispinfo_t disp{};disp.startPosition=vertices[4].point;disp.power=2;disp.m_iMapFace=1;disp.smoothingAngle=45;disp.contents=CONTENTS_SOLID;
@@ -312,10 +314,10 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     dmodel_t model{};model.mins=Vector(-272,-272,-16);model.maxs=Vector(272,272,192);model.headnode=0;model.numfaces=faces.size();
     // Each face uses axes in its own plane. XY on a vertical wall would
     // collapse one UV coordinate, turning brick/grid textures into stripes.
-    texinfo_t infos[6]{};for(int i=0;i<6;++i){const int s=i/2==2?1:0,t=i/2==0?1:2;
+    std::vector<texinfo_t> infos(materialCount*3);for(unsigned i=0;i<infos.size();++i){const int s=i/materialCount==2?1:0,t=i/materialCount==0?1:2;
         infos[i].textureVecsTexelsPerWorldUnits[0][s]=infos[i].textureVecsTexelsPerWorldUnits[1][t]=1;
-        infos[i].lightmapVecsLuxelsPerWorldUnits[0][s]=infos[i].lightmapVecsLuxelsPerWorldUnits[1][t]=1.f/16;infos[i].texdata=i%2;}
-    dtexdata_t tex[2]{};for(int i=0;i<2;++i){tex[i].width=tex[i].height=tex[i].view_width=tex[i].view_height=64;tex[i].reflectivity=Vector(1,1,1);tex[i].nameStringTableID=i;}
+        infos[i].lightmapVecsLuxelsPerWorldUnits[0][s]=infos[i].lightmapVecsLuxelsPerWorldUnits[1][t]=1.f/16;infos[i].texdata=i%materialCount;}
+    std::vector<dtexdata_t> tex(materialCount);for(unsigned i=0;i<materialCount;++i){tex[i].width=tex[i].height=tex[i].view_width=tex[i].view_height=64;tex[i].reflectivity=Vector(1,1,1);tex[i].nameStringTableID=i;}
     // Synthetic baked gradient stored in the real BSP lighting format. This
     // fixture exercises loading/sampling, not a radiosity/light compiler.
     std::vector<ColorRGBExp32> lighting;
@@ -331,11 +333,13 @@ std::vector<unsigned char> fixture(bool displaced=false) {
     std::memcpy(bytes.data()+h.lumps[LUMP_FACES].fileofs,faces.data(),faces.size()*sizeof(dface_t));
     std::vector<unsigned short> leafFaces;for(unsigned i=0;i<faces.size();++i)leafFaces.push_back(i);leaves[1].numleaffaces=faces.size();
     append(LUMP_LEAFFACES,leafFaces.data(),leafFaces.size()*sizeof(unsigned short));
-    darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};const char names[]="debug/debugempty\0debug/debugblue\0";const int nameIndex[]={0,17};const char entities[]="{ \"classname\" \"worldspawn\" }\n";
+    darea_t areas[2]{};unsigned short leafbrush[]={0,1,2,3,4,5,6};std::vector<char> names;std::vector<int> nameIndex;
+    for(unsigned i=0;i<materialCount;++i){const std::string name=i==0?"debug/debugempty":i==1?"debug/debugblue":"debug/source1ios_slot"+std::to_string(i);nameIndex.push_back(names.size());names.insert(names.end(),name.begin(),name.end());names.push_back(0);}names.push_back(0);
+    const char entities[]="{ \"classname\" \"worldspawn\" }\n";
     append(LUMP_PLANES,planes.data(),planes.size()*sizeof(dplane_t));append(LUMP_BRUSHSIDES,sides.data(),sides.size()*sizeof(dbrushside_t));append(LUMP_BRUSHES,brushes.data(),brushes.size()*sizeof(dbrush_t));
     append(LUMP_LEAFS,leaves,sizeof(leaves));h.lumps[LUMP_LEAFS].version=1;append(LUMP_LEAFBRUSHES,leafbrush,sizeof(leafbrush));
-    append(LUMP_NODES,&node,sizeof(node));append(LUMP_MODELS,&model,sizeof(model));append(LUMP_TEXINFO,infos,sizeof(infos));
-    append(LUMP_TEXDATA,tex,sizeof(tex));append(LUMP_TEXDATA_STRING_TABLE,nameIndex,sizeof(nameIndex));append(LUMP_TEXDATA_STRING_DATA,names,sizeof(names));
+    append(LUMP_NODES,&node,sizeof(node));append(LUMP_MODELS,&model,sizeof(model));append(LUMP_TEXINFO,infos.data(),infos.size()*sizeof(texinfo_t));
+    append(LUMP_TEXDATA,tex.data(),tex.size()*sizeof(dtexdata_t));append(LUMP_TEXDATA_STRING_TABLE,nameIndex.data(),nameIndex.size()*sizeof(int));append(LUMP_TEXDATA_STRING_DATA,names.data(),names.size());
     append(LUMP_AREAS,areas,sizeof(areas));append(LUMP_ENTITIES,entities,sizeof(entities));
     std::memcpy(bytes.data(),&h,sizeof(h));return bytes;
 }
@@ -376,6 +380,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     bool ok=file && g_pFullFileSystem->Write(bytes.data(),bytes.size(),file)==int(bytes.size());if(file)g_pFullFileSystem->Close(file);
     const auto terrain=fixture(true);auto terrainFile=g_pFullFileSystem->Open("__source1ios_displacement.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok && terrainFile && g_pFullFileSystem->Write(terrain.data(),terrain.size(),terrainFile)==int(terrain.size());if(terrainFile)g_pFullFileSystem->Close(terrainFile);
+    const auto materialGrid=fixture(false,true);auto gridFile=g_pFullFileSystem->Open("__source1ios_material_grid.bsp","wb","PORT_BSP_PREVIEW");
+    ok=ok&&gridFile&&g_pFullFileSystem->Write(materialGrid.data(),materialGrid.size(),gridFile)==int(materialGrid.size());if(gridFile)g_pFullFileSystem->Close(gridFile);
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
@@ -395,6 +401,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     CUtlBuffer blueVtf;ok=ok&&source->Serialize(blueVtf);std::vector<std::uint8_t> blueVtfBytes(static_cast<std::uint8_t*>(blueVtf.Base()),static_cast<std::uint8_t*>(blueVtf.Base())+blueVtf.TellPut());
     const std::string blueVmt="LightmappedGeneric { \"$basetexture\" \"debug/debugblue\" }";
     ok=ok&&writeModel("materials/debug/debugblue.vtf",blueVtfBytes)&&writeModel("materials/debug/debugblue.vmt",std::vector<std::uint8_t>(blueVmt.begin(),blueVmt.end()));
+    for(unsigned i=2;i<17;++i){const std::string name="materials/debug/source1ios_slot"+std::to_string(i)+".vmt";
+        const std::string vmt=i%2?bspVmt:blueVmt;ok=ok&&writeModel(name.c_str(),std::vector<std::uint8_t>(vmt.begin(),vmt.end()));}
     if(!ok || !load(impl_->builtin.c_str(),nullptr) || !loadModel(impl_->builtinModel.c_str())){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
     if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
@@ -406,6 +414,7 @@ bool SourceMap::start(const std::filesystem::path& root) {
 void SourceMap::stop(){impl_.reset();}
 bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);}
 bool SourceMap::demoTerrain(){return impl_ && load("__source1ios_displacement.bsp",nullptr);}
+bool SourceMap::demoMaterials(){return impl_ && load("__source1ios_material_grid.bsp",nullptr);}
 bool SourceMap::resetModel(){return impl_&&loadModel(impl_->builtinModel.c_str());}
 bool SourceMap::loadModel(const char* filename,const char* pathID){
     if(!impl_||!filename||std::strlen(filename)>=MAX_PATH)return false;std::string mdlPath=filename;
@@ -579,6 +588,10 @@ bool SourceMap::selfTest(){
     bool materialSlots=impl_->mapMaterialCount==2&&impl_->texture.width==128&&impl_->texture.height==64&&impl_->texture.pixels.size()==128*64*4;
     all&=report("BSP texinfo multi-material VMT VTF atlas",materialSlots&&impl_->texture.pixels!=impl_->checkerTexture.pixels);
     all&=report("BSP material atlas slots remain distinct",materialSlots&&std::memcmp(impl_->texture.pixels.data(),impl_->texture.pixels.data()+64*4,64*4));
+    BspMaterials gridMaterials;gridMaterials.slotCount=17;for(unsigned slot=0;slot<17;++slot){gridMaterials.names.push_back(slot==16?"debug/debugblue":"source1ios/missing_atlas_probe"+std::to_string(slot));gridMaterials.slots.push_back(slot);}
+    const auto gridAtlas=bspAtlas(gridMaterials,impl_->checkerTexture);
+    all&=report("BSP material atlas seventeenth slot uses second row",gridAtlas.width==1024&&gridAtlas.height==128&&gridAtlas.pixels.size()==1024*128*4
+        &&std::memcmp(gridAtlas.pixels.data()+64*1024*4,impl_->texture.pixels.data()+64*4,64*4)==0);
     bool planarUV=true;for(size_t i=0;i<impl_->mesh.size();i+=3){const auto& a=impl_->mesh[i];const auto& b=impl_->mesh[i+1];const auto& c=impl_->mesh[i+2];
         const float area=(b.uv[0]-a.uv[0])*(c.uv[1]-a.uv[1])-(c.uv[0]-a.uv[0])*(b.uv[1]-a.uv[1]);planarUV&=std::isfinite(area)&&std::abs(area)>1e-6f;}
     all&=report("BSP fixture planar UVs on floors and walls",planarUV);

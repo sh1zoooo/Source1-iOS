@@ -24,6 +24,9 @@ Accepted models must sample/skin to finite vertices. This is a bounds probe,
 not exhaustive format coverage or proof of leak freedom.
 Local seed 0x510519: 2549 accepted, 3451 rejected, no ASan bounds report.
 Local integration runtime also passed all contracts with 76 startup checks.
+Actions run 37366795067 ended before commands ran: both jobs have empty step
+lists and a cancelled result. This supplies no compiler or GPU evidence; the
+combined 0.20 run retries the actual device/simulator build.
 
 Limits: unsectioned raw Quaternion48/64/Vector48 and RLE tracks, at most 128
 clips, 2048 frames per clip and 262144 cached bone poses. Sectioned blocks,
