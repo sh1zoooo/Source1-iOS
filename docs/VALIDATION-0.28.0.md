@@ -1,7 +1,7 @@
 # 0.28.0 / build 31 — HDR-only BSP preview
 
 ~82% минимального prototype, не полного Source/CS:S.
-Native проверки прошли; iPhone ARM64 build / simulator GPU ожидаются в CI.
+Native проверки, iPhone ARM64 build / simulator GPU прошли.
 
 ## Реализация
 
@@ -35,9 +35,22 @@ Native проверки прошли; iPhone ARM64 build / simulator GPU ожи�
   два PHY props. Новый atlas отличается от LDR; PHY checks после reset PASS.
 - Python syntax, mocked launch-timeout diagnostics и diff whitespace PASS.
 
-Ожидается simulator: 2 * 101 startup + BBOX 3 + PHY 3 + HDR 1 + runtime 1 =
-210 PASS, GPU map revision 8, MDL48/external ANI, content mount/unmount,
-pause/resume. Verifier получает `--require-hdr` вместе с прежними contracts.
+## Независимая проверка CI и скачанного артефакта
+
+- Functional commit: `c6f86653b9b5c03f62a4c1af3214e32762d78128`.
+- [Actions 37469173881](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37469173881):
+  оба jobs success с первой попытки. Linux 5/5 suites, runtime 6.26 s.
+- Artifact `11416920897`; plist 0.28.0/build 31, bundle ID,
+  Mach-O 64-bit arm64 проверены отдельно после скачивания.
+- IPA SHA256 `b779153f795d86f0d9919997db92d490edac34c11ac87251718a72339d70a707`
+  совпадает с manifest.
+- Simulator: 2 * 101 startup + BBOX 3 + PHY 3 + HDR 1 + runtime 1 =
+  210 PASS, no FAIL, GPU map revision 8, MDL48/external ANI,
+  content mount/unmount, pause/resume.
+- Verifier с `--require-hdr` и прежними contracts прошёл. Старый 0.27
+  artifact отвергается, когда запрошено подтверждение HDR.
+- PNG 1170x2532 визуально проверен: HUD ~82% / 101 PASS,
+  текстурированная комната, две PHY-модели, анимированная MDL48 и spheres.
 
 Физический iPhone и реальные игровые HDR BSP этой версией ещё не проверены.
 Animated styles, bump-lighting, HDR cubemaps/sky, full game DLL остаются впереди.

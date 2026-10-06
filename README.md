@@ -127,7 +127,8 @@ GPU revision 7, live PHY после reset, pause/resume. Скачанный IPA/
 или общие face records при отсутствии HDR faces. При наличии LDR lighting
 сохраняется прежний LDR путь. HDR RGBExp32 преобразуется с фиксированной
 экспозицией и Reinhard mapping в 8-bit atlas; eye adaptation и полный HDR
-shader backend Source не реализованы. Native checks прошли, iOS CI ожидается.
+shader backend Source не реализованы. Linux 5/5, ARM64 build и simulator
+210 PASS / GPU revision 8 прошли. Скачанный IPA/SHA256 и кадр проверены отдельно.
 Обычный запуск показывает HDR/PHY demo с 101 startup checks.
 [Проверки HDR-only](docs/VALIDATION-0.28.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).

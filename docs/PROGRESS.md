@@ -150,4 +150,6 @@ reset, pause/resume. Скачанный IPA/SHA256 и кадр проверен�
 LDR preference, fixed exposure/Reinhard mapping, edge padding и отказ
 повреждённых метаданных проверены нативно. PHY shapes остаются активны после
 HDR загрузки/reset. Это 8-bit preview, не HDR framebuffer или eye adaptation.
-iOS/GPU CI ожидается. [Отчёт 0.28](VALIDATION-0.28.0.md).
+Linux CI 5/5, ARM64 iPhone build, simulator 210 PASS / GPU revision 8
+прошли. Скачанный IPA/SHA256 и кадр проверены отдельно. Физический iPhone
+для 0.28 пока не проверен. [Отчёт 0.28](VALIDATION-0.28.0.md).
