@@ -20,4 +20,17 @@ Simulator smoke creates a known BSP in content/smoke, mounts it, loads it throug
 Source filesystem and unmounts it after geometry is copied. It requires 155
 PASS, the content log markers and map revision 5 completion on GPU together
 with external ANI and the 17-material grid. Physical-phone verification remains
-at 0.17; the new content path is being checked automatically.
+at 0.17; the new content path is verified automatically below.
+
+## Verified artifact
+
+Commit `1131877ad0cfbcc1ce6982f223a382e2364fe529`,
+[run 37415338772](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37415338772)
+passed Linux Debug runtime/mutation contracts, ARM64 device build and simulator
+smoke. Artifact 11390079833 was downloaded independently: IPA version 0.21.0,
+build 24; 155 PASS, no FAIL; mount/load/unmount of content/smoke; completed GPU
+map revision 5; external ANI and pause/resume. The screenshot shows textured
+brushes, floor, the posed striped model and physics probes. This is synthetic
+content in the simulator, not a full ClientMod cache or physical-device test.
+IPA SHA256 matches the manifest:
+`e23e181e3fd271e3b4c3a82f89810a07bdb2fd4881a3c60a043ab3c915057e58`.

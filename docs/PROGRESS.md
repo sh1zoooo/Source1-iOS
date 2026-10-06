@@ -77,3 +77,9 @@ pause/resume. [Отчёт 0.17](VALIDATION-0.17.0.md). Пользователь�
 build и simulator smoke: 155 PASS, LDR lightmaps, 17-slot material grid, внешний
 ANI, GPU completion обновлённой сцены и pause/resume. Загруженный IPA и скриншот
 проверены отдельно. [Отчёт 0.20](VALIDATION-0.20.0.md).
+
+Версия 0.21/build 24 прошла Linux Debug runtime/mutation tests, ARM64 iPhone
+build и simulator smoke: 155 PASS, mount/load/unmount карты из content/smoke,
+GPU completion revision 5, внешний ANI и pause/resume. Скачанный IPA, его SHA256
+и скриншот проверены отдельно. [Отчёт 0.21](VALIDATION-0.21.0.md).
+Полный кеш ClientMod пока не проверен; добавлен путь импорта распакованных ресурсов.
