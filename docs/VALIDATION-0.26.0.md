@@ -1,7 +1,8 @@
 # 0.26.0 / build 29 — SOLID_BBOX static props
 
 Оценка: ~78% минимального демонстрационного этапа, не полного Source или CS:S.
-Статус: нативные проверки прошли; iOS ARM64 / simulator / Metal ожидаются в Actions.
+Статус: нативные проверки, Linux CI, iPhone ARM64 build и simulator Metal прошли.
+На физическом iPhone эта версия пока не подтверждена.
 
 ## Изменение
 
@@ -46,10 +47,28 @@ rotation speeds не всегда служит верхней границей. 
 - Подготовка pinned upstream и Python syntax checks прошли.
 - Mocked launch-timeout test сохраняет diagnostic log; не является GPU test.
 
-Ожидается 94 стартовых PASS; simulator повторяет их, проверяет три live prop
-collision contracts после reset и runtime contract: всего 192 PASS.
+Подтверждены 94 стартовых PASS; simulator повторяет их, проверяет три live prop
+collision contracts после reset и runtime contract: всего 192 PASS, без FAIL.
 Независимый artifact verifier требует IPA version/build/SHA256,
 map revision 6 на GPU, collision markers, MDL48/ANI и pause/resume.
+
+## Независимая проверка Actions и артефакта
+
+- [Commit](https://github.com/sh1zoooo/Source1-iOS/commit/29e1c58546d3338b0dcb60f7c722919b5a1d5d0f).
+- [Actions run 37433223388](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37433223388): обе jobs success, первая попытка.
+- Linux: 4/4 CTest passed, 0 failed; runtime 5.68 s, общий CTest 6.85 s.
+- [Скачанный artifact 11397874122](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37433223388/artifacts/11397874122).
+- IPA plist: `0.26.0`, build `29`; executable — Mach-O 64-bit arm64.
+- IPA SHA256: `5da4df95f5beb38b5dd7a8da46c16c74370ef628a5074db5040c83b00f6778bf`.
+  Независимый verifier подтвердил совпадение с SHA256SUMS.
+- Runtime log: 192 PASS, GPU completion map revision 6, reset и все три
+  live prop checks, внешний MDL48/ANI, content mount/unmount, pause/resume.
+- PNG 1170×2532 осмотрен: оба striped static props видны впереди, animated
+  studio model позади, textured BSP/lightmaps и spheres; HUD ~78%, 94 PASS.
+- Артефакт 0.25 с требованием prop collision markers корректно отвергнут.
+
+Этот отчёт добавлен отдельным documentation commit после скачивания и
+проверки функционального build; код движка после CI не изменялся.
 
 Полный graphical materialsystem, игровой host/client/server, сеть, звук и
 реальные CS:S assets ещё не проверены. Preview не является запущенной CS:S.

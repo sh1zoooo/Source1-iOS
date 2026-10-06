@@ -70,9 +70,9 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Последняя полностью проверенная сборка: [0.25.0, build 28 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37425496670/artifacts/11395675357).
-90 стартовых проверок в 0.25; симулятор повторяет их и проверяет GPU, terrain,
-BSP material grid/lightmaps, static props, MDL48/49 и ANI-анимацию, background/resume (181 PASS).
+Последняя полностью проверенная сборка: [0.26.0, build 29 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37433223388/artifacts/11397874122).
+94 стартовых проверки в 0.26; симулятор повторяет их и проверяет GPU, terrain,
+BSP material grid/lightmaps, static prop collisions после reset, MDL48/49 и ANI-анимацию, background/resume (192 PASS).
 Версия 0.17 подтверждена пользовательским логом и кадром на iPhone 16e:
 69 PASS, загрузка двух BSP-материалов и studio texture, GPU A18, iOS 18.6.2,
 смена ориентации. Пользователь ранее подтвердил плавную деформацию модели.
@@ -105,7 +105,7 @@ filesystem. [Размещение ресурсов и команды импор�
 Reset сохраняет коллизии. Лимит — 512 collider instances; нулевые bounds
 дают визуальный объект с диагностикой. `SOLID_NONE` не мешает камере,
 `SOLID_VPHYSICS` пока отображается с диагностикой неподдержанного PHY.
-Нативные проверки прошли; iOS/GPU-проверка этой версии ожидается.
+Linux CI, iPhone ARM64 build и simulator GPU прошли; IPA/SHA256 и кадр проверены отдельно.
 [Проверки коллизий static props](docs/VALIDATION-0.26.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 

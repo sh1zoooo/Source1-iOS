@@ -38,8 +38,10 @@ Sections, IK, delta и blend sequences пока впереди.
 Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
 Оригинальные Host_Init и Host_RunFrame работают с -nogamedll, без игровой DLL.
-Последний пользовательский лог iPhone 16e подтверждает 69 проверок версии 0.17,
-GPU A18 и смену ориентации; пользователь подтвердил плавную деформацию модели.
+Последний присланный лог iPhone 16e подтверждает 77 стартовых проверок,
+LDR lightmaps, внешний ANI, GPU A18, смену ориентации и pause/resume;
+пользователь подтвердил плавную деформацию модели. 0.26 проверена сборкой
+ARM64 и симулятором, на физическом телефоне пока не подтверждена.
 
 Новый этап: настоящий CModelLoader и CM_LoadMap загружают встроенный BSP-мир,
 CM_BoxTrace ограничивает движение камеры. VTF читается оригинальной библиотекой;
@@ -126,5 +128,7 @@ GPU revision 6, внешний MDL48/ANI, pause/resume. IPA SHA256 и скрин
 world AABB render bounds. Поворот и масштаб учитываются; reset пересоздаёт
 объекты. Нативный прогон, падение куба/сферы и mutation-тесты прошли.
 `SOLID_NONE` остаётся визуальным; `SOLID_VPHYSICS` пока требует отдельного
-bounded PHY loader. Проверка iOS/GPU ожидается в Actions.
+bounded PHY loader. Linux CI, ARM64 iPhone build и simulator прошли:
+192 PASS, live collisions после reset, GPU revision 6, pause/resume.
+Скачанный IPA/SHA256 и скриншот проверены отдельно.
 [Отчёт 0.26](VALIDATION-0.26.0.md).
