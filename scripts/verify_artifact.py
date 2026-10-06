@@ -9,7 +9,7 @@ import struct
 import zipfile
 
 
-def verify(path, version, build, passes, revision, require_static_props=False, require_mdl48=False, require_prop_collision=False):
+def verify(path, version, build, passes, revision, require_static_props=False, require_mdl48=False, require_prop_collision=False, require_phy=False):
     with zipfile.ZipFile(path) as artifact:
         names = artifact.namelist()
         if len(names) != len(set(names)):
@@ -50,6 +50,11 @@ def verify(path, version, build, passes, revision, require_static_props=False, r
             "live static prop blocks camera without tunneling: PASS"])
         if require_prop_collision and not prop_collision:
             raise ValueError("Static prop collision evidence missing")
+        phy = all(marker in log for marker in ["Source BSP exact PHY collision ready: 2 SOLID_VPHYSICS objects",
+                  "live PHY static vphysics objects: PASS", "live PHY tapered shape differs from bounding box: PASS",
+                  "live PHY swept camera blocks without tunneling: PASS"])
+        if require_phy and not phy:
+            raise ValueError("Exact PHY collision evidence missing")
         png = artifact.read(next(n for n in names if n.endswith("simulator.png")))
         if png[:8] != b"\x89PNG\r\n\x1a\n" or png[12:16] != b"IHDR":
             raise ValueError("Screenshot is not a PNG")
@@ -58,7 +63,7 @@ def verify(path, version, build, passes, revision, require_static_props=False, r
             raise ValueError("Empty screenshot")
         return {"version": version, "build": build, "ipa_sha256": digest,
                 "simulator_passes": passes, "gpu_map_revision": revision,
-                "static_props": static_props, "mdl48": mdl48, "prop_collision": prop_collision,
+                "static_props": static_props, "mdl48": mdl48, "prop_collision": prop_collision, "phy": phy,
                 "screenshot_size": dimensions}
 
 
@@ -72,5 +77,6 @@ if __name__ == "__main__":
     parser.add_argument("--require-static-props", action="store_true")
     parser.add_argument("--require-mdl48", action="store_true")
     parser.add_argument("--require-prop-collision", action="store_true")
+    parser.add_argument("--require-phy", action="store_true")
     args = parser.parse_args()
-    print(json.dumps(verify(args.archive, args.version, args.build, args.passes, args.revision, args.require_static_props, args.require_mdl48, args.require_prop_collision), indent=2))
+    print(json.dumps(verify(args.archive, args.version, args.build, args.passes, args.revision, args.require_static_props, args.require_mdl48, args.require_prop_collision, args.require_phy), indent=2))

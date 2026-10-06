@@ -153,6 +153,7 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
         ||vh->numFixups<0||vh->numFixups>int(maximumModelVertices))return fail("unsupported VVD header or fixups");
     if(fh->version!=OPTIMIZED_MODEL_FILE_VERSION||fh->numLODs<1||fh->numLODs>MAX_NUM_LODS)return fail("unsupported VTX header");
     if(mh->checksum!=vh->checksum||mh->checksum!=fh->checkSum)return fail("MDL/VVD/VTX checksum mismatch");
+    result.checksum=mh->checksum;
     auto stringAt=[&](size_t offset,std::string& out){if(offset>=size_t(mh->length))return false;out.clear();for(size_t i=offset;i<size_t(mh->length)&&out.size()<240;++i){if(!mdl[i])return true;out.push_back(char(mdl[i]));}return false;};
     if(mh->numanimblocks<0||mh->numanimblocks>1024)return fail("animation block count exceeds limit");
     if(mh->numanimblocks>1){if(mh->szanimblocknameindex<=0||!stringAt(mh->szanimblocknameindex,result.animationPath)||result.animationPath.empty()

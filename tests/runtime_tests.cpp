@@ -109,12 +109,24 @@ int main() {
         invalidProps=propBytes;invalidProps[payloadOffset+140+30]=1;rejectProps(invalidProps);
         check(host.executeSource("source_camera_reset"),"Static prop camera reset failed");
         for(unsigned i=0;i<20;++i)host.cameraMove(1,0,.1f);const auto solidDepth=host.vertices(1)[0].position[3];
+        const auto phyPath=directory/"Source1IOS/game/models/__source1ios_static_probe.phy";const auto hiddenPhy=directory/"Source1IOS/game/models/__source1ios_static_probe.phy.hidden";
+        std::filesystem::rename(phyPath,hiddenPhy);
         for(unsigned solid:{0,6}){auto visualOnly=propBytes;visualOnly[payloadOffset+140+30]=solid;visualOnly[payloadOffset+196+30]=solid;
             std::ofstream out(maps/"visualprops.bsp",std::ios::binary);out.write(visualOnly.data(),visualOnly.size());out.close();
             check(host.executeSource("source_bsp_load maps/visualprops.bsp"),"Non-BBOX props lost their visual geometry");
             check(host.vertices(1).size()==propGeometry.size(),"Non-BBOX prop geometry changed");
             for(unsigned i=0;i<20;++i)host.cameraMove(1,0,.1f);
             check(solidDepth-host.vertices(1)[0].position[3]>30,"Non-BBOX props incorrectly gained BBOX collisions");}
+        std::filesystem::rename(hiddenPhy,phyPath);
+        check(host.executeSource("source_bsp_phy")&&host.executeSource("source_phy_selftest"),"Exact PHY static prop scene failed");
+        check(host.executeSource("source_physics_reset")&&host.executeSource("source_phy_selftest"),"Exact PHY collisions lost after reset");
+        std::ifstream phyIn(phyPath,std::ios::binary);std::vector<char> originalPhy((std::istreambuf_iterator<char>(phyIn)),{});phyIn.close();
+        const auto phyRevision=host.textureRevision();auto brokenPhy=originalPhy;brokenPhy[12]^=1;
+        {std::ofstream out(phyPath,std::ios::binary);out.write(brokenPhy.data(),brokenPhy.size());}
+        check(!host.executeSource("source_bsp_phy")&&host.textureRevision()==phyRevision,"Corrupt PHY checksum replaced scene");
+        {std::ofstream out(phyPath,std::ios::binary);out.write(originalPhy.data(),originalPhy.size()-8);}
+        check(!host.executeSource("source_bsp_phy")&&host.textureRevision()==phyRevision,"Truncated PHY replaced scene");
+        {std::ofstream out(phyPath,std::ios::binary);out.write(originalPhy.data(),originalPhy.size());}
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");

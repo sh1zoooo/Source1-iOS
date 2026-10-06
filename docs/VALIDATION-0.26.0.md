@@ -2,7 +2,10 @@
 
 Оценка: ~78% минимального демонстрационного этапа, не полного Source или CS:S.
 Статус: нативные проверки, Linux CI, iPhone ARM64 build и simulator Metal прошли.
-На физическом iPhone эта версия пока не подтверждена.
+Присланный пользователем лог подтверждает 94 стартовых PASS на физическом
+iPhone 16e / A18 / iOS 18.6.2: cube/sphere rest, два SOLID_BBOX objects,
+MDL48, texture/lightmap upload, GPU completion revision 3, смена ориентации.
+Live camera command и pause/resume в этом логе не выполнялись.
 
 ## Изменение
 

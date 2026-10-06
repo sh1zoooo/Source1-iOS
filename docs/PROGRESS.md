@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **78% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **80% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -38,10 +38,10 @@ Sections, IK, delta и blend sequences пока впереди.
 Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
 Оригинальные Host_Init и Host_RunFrame работают с -nogamedll, без игровой DLL.
-Последний присланный лог iPhone 16e подтверждает 77 стартовых проверок,
-LDR lightmaps, внешний ANI, GPU A18, смену ориентации и pause/resume;
-пользователь подтвердил плавную деформацию модели. 0.26 проверена сборкой
-ARM64 и симулятором, на физическом телефоне пока не подтверждена.
+Последний присланный лог iPhone 16e подтверждает 94 стартовые проверки 0.26,
+cube/sphere rest, два SOLID_BBOX objects, MDL48, LDR lightmaps, GPU A18 и
+смену ориентации. Pause/resume и live camera command в этом логе не показаны.
+Пользователь ранее подтвердил плавную деформацию модели.
 
 Новый этап: настоящий CModelLoader и CM_LoadMap загружают встроенный BSP-мир,
 CM_BoxTrace ограничивает движение камеры. VTF читается оригинальной библиотекой;
@@ -132,3 +132,11 @@ bounded PHY loader. Linux CI, ARM64 iPhone build и simulator прошли:
 192 PASS, live collisions после reset, GPU revision 6, pause/resume.
 Скачанный IPA/SHA256 и скриншот проверены отдельно.
 [Отчёт 0.26](VALIDATION-0.26.0.md).
+
+Этап 0.27/build 30 читает terminal convex point clouds из bounded PHY
+и пересобирает формы оригинальным vphysics builder. Для SOLID_VPHYSICS
+сохраняются несколько выпуклых частей, пустые зазоры, поворот/масштаб;
+камера и статические vphysics objects используют эту форму. Imported
+IVP pointers/topology не передаются legacy unserializer. Нативный runtime
+и 20 000 ASan/UBSan PHY mutations прошли; проверка iOS ожидается в CI.
+[Отчёт 0.27](VALIDATION-0.27.0.md).

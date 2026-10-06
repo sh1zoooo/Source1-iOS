@@ -34,6 +34,8 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_bsp_materials` — встроенный BSP с 17 материалами, включая вторую строку atlas.
 - `source_bsp_props` — BSP с двумя статическими MDL-объектами, размещёнными записями `sprp`.
 - `source_props_selftest` — на этой тестовой карте проверяет vphysics-объекты, ray/hull и блокировку камеры; возвращает исходную камеру.
+- `source_bsp_phy` — те же объекты с реальной tapered PHY-формой вместо BBOX.
+- `source_phy_selftest` — проверяет PHY-объекты, луч мимо узкой верхней части и блокировку камеры, сохраняя исходную камеру.
 - `source_content_mount cm` — добавить распакованные ресурсы из `Source1IOS/content/cm`.
 - `source_content_unmount cm` — отключить эту папку от GAME search paths.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
@@ -60,7 +62,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 78% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 80% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -107,6 +109,16 @@ Reset сохраняет коллизии. Лимит — 512 collider instances
 `SOLID_VPHYSICS` пока отображается с диагностикой неподдержанного PHY.
 Linux CI, iPhone ARM64 build и simulator GPU прошли; IPA/SHA256 и кадр проверены отдельно.
 [Проверки коллизий static props](docs/VALIDATION-0.26.0.md).
+
+Этап 0.27/build 30 добавляет bounded `.phy` для `SOLID_VPHYSICS`: один static
+solid, до 128 terminal convex pieces, 2048 points на piece. Из IVPS/VPHY
+читаются проверенные points; оригинальный vphysics builder пересобирает
+каждую часть отдельно, не заполняя зазоры общей convex hull. Учитываются
+поворот/масштаб, формы кэшируются по модели/масштабу. Missing PHY оставляет
+визуальный prop с предупреждением; повреждённый/неподдержанный PHY отклоняет
+карту без замены сцены. Native runtime и 20 000 PHY mutations прошли;
+iOS/GPU проверка ожидается. Обычный запуск показывает PHY demo.
+[Проверки PHY](docs/VALIDATION-0.27.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный
