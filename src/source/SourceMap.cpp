@@ -138,16 +138,33 @@ struct CollisionDelete {
     void operator()(CPhysCollide* p) const { if(p && g_pPhysicsCollision) g_pPhysicsCollision->DestroyCollide(p); }
 };
 using Collision = std::shared_ptr<CPhysCollide>;
+struct PropCollision {Collision shape,cameraShape;Vector origin;QAngle angles;};
+Collision ownedBox(const Vector& lo,const Vector& hi){
+    for(int axis=0;axis<3;++axis)if(!std::isfinite(lo[axis])||!std::isfinite(hi[axis])||hi[axis]-lo[axis]<.01f||std::abs(lo[axis])>65536||std::abs(hi[axis])>65536)return {};
+    auto* convex=g_pPhysicsCollision->BBoxToConvex(lo,hi);if(!convex)return {};
+    return Collision(g_pPhysicsCollision->ConvertConvexToCollide(&convex,1),CollisionDelete{});
+}
+bool propBox(const source1ios::StudioMesh& model,const source1ios::PreviewProp& prop,PropCollision& out){
+    PropCollision staged;staged.origin=Vector(prop.origin[0],prop.origin[1],prop.origin[2]);staged.angles=QAngle(prop.angles[0],prop.angles[1],prop.angles[2]);
+    staged.shape=ownedBox(model.hullMins*prop.scale,model.hullMaxs*prop.scale);if(!staged.shape)return false;
+    matrix3x4_t rotation;AngleMatrix(staged.angles,rotation);Vector lo,hi;TransformAABB(rotation,model.renderMins*prop.scale,model.renderMaxs*prop.scale,lo,hi);
+    staged.cameraShape=ownedBox(lo,hi);if(!staged.cameraShape)return false;out=std::move(staged);return true;
+}
+void tracePropBoxes(const std::vector<PropCollision>& props,const Vector& start,const Vector& end,const Vector& mins,const Vector& maxs,trace_t& result){
+    for(const auto& prop:props){trace_t hit{};g_pPhysicsCollision->TraceBox(start,end,mins,maxs,prop.cameraShape.get(),prop.origin,QAngle(0,0,0),&hit);
+        if(hit.startsolid||hit.allsolid||hit.fraction<result.fraction)result=hit;}
+}
 struct PhysicsScene {
     IPhysics* physics=nullptr;IPhysicsEnvironment* environment=nullptr;
     IPhysicsObject* level=nullptr;IPhysicsObject* anchor=nullptr;IPhysicsObject* body=nullptr;
     IPhysicsConstraint* joint=nullptr;Collision levelShape;
+    std::vector<IPhysicsObject*> props;std::vector<PropCollision> propShapes;
     ~PhysicsScene(){
         if(environment){if(joint)environment->DestroyConstraint(joint);if(body)environment->DestroyObject(body);
-            if(anchor)environment->DestroyObject(anchor);if(level)environment->DestroyObject(level);physics->DestroyEnvironment(environment);}
+            if(anchor)environment->DestroyObject(anchor);for(auto* prop:props)environment->DestroyObject(prop);if(level)environment->DestroyObject(level);physics->DestroyEnvironment(environment);}
     }
 };
-std::unique_ptr<PhysicsScene> physicsScene(Collision shape){
+std::unique_ptr<PhysicsScene> physicsScene(Collision shape,const std::vector<PropCollision>& props={}){
     auto* surfaces=static_cast<IPhysicsSurfaceProps*>(Sys_GetFactoryThis()(VPHYSICS_SURFACEPROPS_INTERFACE_VERSION,nullptr));
     if(!surfaces)return nullptr;
     if(surfaces->GetSurfaceIndex("default")<0)
@@ -160,6 +177,7 @@ std::unique_ptr<PhysicsScene> physicsScene(Collision shape){
     objectparams_t params{nullptr,5,1,0,0,.05f,"Source iOS scene",nullptr,0,1,true};
     scene->level=scene->environment->CreatePolyObjectStatic(scene->levelShape.get(),material,Vector(0,0,0),QAngle(0,0,0),&params);
     if(!scene->level)return nullptr;
+    scene->propShapes=props;for(const auto& prop:scene->propShapes){auto* object=scene->environment->CreatePolyObjectStatic(prop.shape.get(),material,prop.origin,prop.angles,&params);if(!object)return nullptr;scene->props.push_back(object);}
     scene->anchor=scene->environment->CreateSphereObject(8,material,Vector(-32,64,144),QAngle(0,0,0),&params,true);
     scene->body=scene->environment->CreateSphereObject(8,material,Vector(-32,64,96),QAngle(0,0,0),&params,false);
     if(!scene->anchor || !scene->body)return nullptr;
@@ -418,7 +436,7 @@ std::vector<std::uint8_t> propFixture(){
     int count=1;append(&count,4);char name[128]="models/__source1ios_static_probe.mdl";append(name,128);
     count=0;append(&count,4);count=2;append(&count,4);
     for(unsigned i=0;i<2;++i){std::array<std::uint8_t,56> record{};const float origin[3]={i?-140.f:-100.f,i?-90.f:-100.f,0};const float angles[3]={0,i?90.f:30.f,0};
-        std::memcpy(record.data(),origin,12);std::memcpy(record.data()+12,angles,12);append(record.data(),record.size());}
+        std::memcpy(record.data(),origin,12);std::memcpy(record.data()+12,angles,12);record[30]=2;append(record.data(),record.size());}
     auto& lump=header.lumps[LUMP_GAME_LUMP];lump.fileofs=bytes.size();lump.filelen=4+sizeof(dgamelump_t)+payload.size();
     dgamelump_t entry{};entry.id=0x73707270;entry.version=4;entry.fileofs=lump.fileofs+4+sizeof(entry);entry.filelen=payload.size();count=1;
     const auto* p=reinterpret_cast<const std::uint8_t*>(&count);bytes.insert(bytes.end(),p,p+4);p=reinterpret_cast<const std::uint8_t*>(&entry);bytes.insert(bytes.end(),p,p+sizeof(entry));bytes.insert(bytes.end(),payload.begin(),payload.end());
@@ -430,6 +448,7 @@ struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0;
+    std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
     std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
@@ -513,6 +532,18 @@ bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);
 bool SourceMap::demoTerrain(){return impl_ && load("__source1ios_displacement.bsp",nullptr);}
 bool SourceMap::demoMaterials(){return impl_ && load("__source1ios_material_grid.bsp",nullptr);}
 bool SourceMap::demoProps(){return impl_ && load("__source1ios_props.bsp",nullptr);}
+bool SourceMap::propsSelfTest(){
+    if(!impl_)return false;bool all=report("live static prop vphysics objects",impl_->propCollisions.size()==2&&impl_->scene&&impl_->scene->props.size()==2);
+    if(impl_->propCollisions.empty())return false;const auto& prop=impl_->propCollisions[0];trace_t ray{},hull{};ray.fraction=hull.fraction=1;
+    const auto start=prop.origin+Vector(80,0,32),end=prop.origin+Vector(-80,0,32);
+    tracePropBoxes({prop},start,end,Vector(0,0,0),Vector(0,0,0),ray);tracePropBoxes({prop},start,end,Vector(-8,-8,-24),Vector(8,8,8),hull);
+    all&=report("live static prop ray and swept hull",!ray.startsolid&&ray.fraction>0&&ray.fraction<.5f&&!hull.startsolid&&hull.fraction<ray.fraction);
+    const auto savedCamera=impl_->camera;const auto savedAngles=impl_->angles;impl_->camera=prop.origin+Vector(-80,-15,80);impl_->angles=QAngle(0,0,0);
+    for(unsigned i=0;i<20;++i)move(1,0,.1f);const float distance=prop.origin.x-impl_->camera.x;const auto stopped=impl_->camera;for(unsigned i=0;i<20;++i)move(1,0,.1f);
+    const float drift=(impl_->camera-stopped).Length();const bool blocked=distance>16&&distance<40&&drift<.05f;
+    if(!blocked)Warning("Source static prop camera check: distance %.3f, drift %.3f\n",distance,drift);impl_->camera=savedCamera;impl_->angles=savedAngles;
+    all&=report("live static prop blocks camera without tunneling",blocked);return all;
+}
 bool SourceMap::resetModel(){return impl_&&loadModel(impl_->builtinModel.c_str());}
 bool SourceMap::loadModel(const char* filename,const char* pathID){
     if(!impl_||!filename||std::strlen(filename)>=MAX_PATH)return false;std::string mdlPath=filename;
@@ -623,7 +654,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         }
     }
     if(mesh.empty())return false;
-    std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0;
+    std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
     struct CachedProp {std::string name;StudioMesh mesh;unsigned slot=0;bool valid=false;};std::vector<CachedProp> cached;
     size_t cachedVertices=0,modelBytes=0;
     for(const auto& prop:props){if(prop.skin!=0){++skipped;continue;}
@@ -648,11 +679,14 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             if(!position.IsValid()||std::abs(position.x)>65536||std::abs(position.y)>65536||std::abs(position.z)>65536)return false;
             const float light=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);propsMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},found->slot});}
         ++propInstances;
+        if(prop.solid==2){if(propCollisions.size()>=512){Warning("Source BSP: static prop collision budget exceeded\n");return false;}PropCollision collider;
+            if(propBox(found->mesh,prop,collider))propCollisions.push_back(std::move(collider));else{++collisionSkipped;Warning("Source BSP static prop collision skipped: invalid or degenerate bounds (%s)\n",prop.model.c_str());}}
+        else if(prop.solid==6){++collisionSkipped;Warning("Source BSP static prop PHY collision pending: %s\n",prop.model.c_str());}
     }
     auto* soup=g_pPhysicsCollision->PolysoupCreate();if(!soup)return false;
     for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
     Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
-    auto live=physicsScene(collision);if(!live)return false;
+    auto live=physicsScene(collision,propCollisions);if(!live)return false;
     impl_->spawns=std::move(spawns);impl_->spawnCamera=Vector(-190,-160,80);impl_->spawnAngles=QAngle(8,45,0);
     if(!impl_->spawns.empty()){
         auto rank=[](const PreviewSpawn& spawn){return spawn.classname=="info_player_start"?0:spawn.classname=="info_player_counterterrorist"?1:spawn.classname=="info_player_terrorist"?2:3;};
@@ -663,6 +697,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     }else Msg("Source BSP camera spawn: no player start; preview fallback\n");
     impl_->scene=std::move(live);
     impl_->propsMesh=std::move(propsMesh);impl_->propInstances=propInstances;
+    impl_->propCollisions=std::move(propCollisions);Msg("Source BSP static prop collision ready: %zu SOLID_BBOX objects, %u unsupported/degenerate\n",impl_->propCollisions.size(),collisionSkipped);
     Msg("Source BSP static props staged: %u instances, %zu triangles, %zu model types, %u skipped\n",propInstances,impl_->propsMesh.size()/3,cached.size(),skipped);
     impl_->displacementCollision=std::move(displacementCollision);
     impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;
@@ -672,7 +707,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->angles=impl_->spawnAngles;}}
 bool SourceMap::resetPhysics(){
-    if(!impl_)return false;auto scene=physicsScene(impl_->collision);if(!scene)return false;
+    if(!impl_)return false;auto scene=physicsScene(impl_->collision,impl_->propCollisions);if(!scene)return false;
     impl_->scene=std::move(scene);Msg("Source live physics scene reset: two bodies and original ragdoll joint\n");return true;
 }
 bool SourceMap::impulsePhysics(){
@@ -693,6 +728,7 @@ void SourceMap::move(float forward,float right,float seconds){
         Ray_t hull;hull.Init(impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8));const auto inv=hull.InvDelta();
         for(const auto& tree:impl_->displacementCollision)tree->AABBTree_SweepAABB(hull,inv,&trace);
     }
+    tracePropBoxes(impl_->propCollisions,impl_->camera,impl_->camera+delta,Vector(-8,-8,-24),Vector(8,8,8),trace);
     if(!trace.startsolid)impl_->camera+=delta*std::max(0.f,trace.fraction-.001f);
 }
 void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(seconds))return;seconds=std::min(seconds,.05f);
@@ -772,6 +808,22 @@ bool SourceMap::selfTest(){
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
     const auto studio=makeStudioFixture();StudioMesh model;std::string modelError;
     all&=report("MDL/VVD/VTX static mesh",parseStudioModel(studio.mdl,studio.vvd,studio.vtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==36&&model.meshes==1);
+    auto badBounds=studio.mdl;float invalidBound=std::numeric_limits<float>::quiet_NaN();std::memcpy(badBounds.data()+offsetof(studiohdr_t,hull_min),&invalidBound,4);StudioMesh rejectedBounds;
+    all&=report("studio collision bounds decoded and invalid bounds rejected",model.hullMins==Vector(-12,-8,0)&&model.hullMaxs==Vector(12,8,64)&&!parseStudioModel(badBounds,studio.vvd,studio.vtx,rejectedBounds,modelError));
+    auto solidPayload=propPayload;bool solidFlags=true;for(unsigned solid:{0,2,6}){solidPayload[170]=solid;solidFlags&=parsePreviewProps(solidPayload,4,20,parsedProps)&&parsedProps[0].solid==solid;}solidPayload[170]=1;solidFlags&=!parsePreviewProps(solidPayload,4,20,parsedProps);
+    all&=report("BSP static prop SOLID_NONE BBOX VPHYSICS flags",solidFlags);
+    PreviewProp boxProp;boxProp.scale=1.5f;boxProp.angles[1]=30;PropCollision box;bool boxReady=propBox(model,boxProp,box);trace_t boxRay{},boxHull{};boxRay.fraction=boxHull.fraction=1;
+    if(boxReady){tracePropBoxes({box},Vector(-100,0,32),Vector(100,0,32),Vector(0,0,0),Vector(0,0,0),boxRay);tracePropBoxes({box},Vector(-100,0,32),Vector(100,0,32),Vector(-8,-8,-24),Vector(8,8,8),boxHull);}
+    all&=report("static prop scaled rotated world AABB ray and hull",boxReady&&!boxRay.startsolid&&std::abs(boxRay.fraction-.39206f)<.005f&&!boxHull.startsolid&&std::abs(boxHull.fraction-.35206f)<.005f);
+    StudioMesh platform;platform.hullMins=platform.renderMins=Vector(-32,-32,0);platform.hullMaxs=platform.renderMaxs=Vector(32,32,64);PreviewProp platformProp;platformProp.origin={-190,-160,0};PropCollision platformBox;
+    auto boxScene=propBox(platform,platformProp,platformBox)?physicsScene(impl_->fixtureCollision,{platformBox}):nullptr;bool resting=false;
+    auto fallingShape=ownedBox(Vector(-8,-8,-8),Vector(8,8,8));
+    if(boxScene&&fallingShape){objectparams_t params{nullptr,5,1,0,0,.05f,"Source prop drop test",nullptr,0,1,true};auto* falling=boxScene->environment->CreatePolyObject(fallingShape.get(),0,Vector(-190,-160,96),QAngle(0,0,0),&params);
+        if(falling){falling->Wake();for(unsigned i=0;i<240;++i)boxScene->environment->Simulate(1.f/120);Vector position;QAngle angles;falling->GetPosition(&position,&angles);resting=boxScene->props.size()==1&&position.IsValid()&&position.z>70&&position.z<75;boxScene->environment->DestroyObject(falling);}}
+    auto sphereScene=propBox(platform,platformProp,platformBox)?physicsScene(impl_->fixtureCollision,{platformBox}):nullptr;
+    if(sphereScene){objectparams_t params{nullptr,5,1,0,0,.05f,"Source prop sphere drop test",nullptr,0,1,true};auto* sphere=sphereScene->environment->CreateSphereObject(8,0,Vector(-190,-160,96),QAngle(0,0,0),&params,false);
+        if(sphere){sphere->Wake();for(unsigned i=0;i<240;++i)sphereScene->environment->Simulate(1.f/120);Vector position;sphere->GetPosition(&position,nullptr);const bool sphereRest=position.IsValid()&&position.z>70&&position.z<75;if(!sphereRest)Warning("Source prop sphere drop: position %.3f %.3f %.3f\n",position.x,position.y,position.z);resting&=sphereRest;sphereScene->environment->DestroyObject(sphere);}else resting=false;}else resting=false;
+    all&=report("static prop original vphysics cube and sphere rest on box",resting);
     auto mdl48=studio.mdl;const int version48=48;std::memcpy(mdl48.data()+4,&version48,4);StudioMesh legacy;StudioPose legacyPose;
     all&=report("studio MDL48 geometry and embedded clip",parseStudioModel(mdl48,studio.vvd,studio.vtx,legacy,modelError)&&legacy.triangles.size()==36&&legacy.bones.size()==2&&sampleStudioAnimation(legacy,0,.375,legacyPose));
     bool unsupportedVersions=true;for(int version:{47,50}){auto unsupported=mdl48;std::memcpy(unsupported.data()+4,&version,4);unsupportedVersions&=!parseStudioModel(unsupported,studio.vvd,studio.vtx,legacy,modelError);}

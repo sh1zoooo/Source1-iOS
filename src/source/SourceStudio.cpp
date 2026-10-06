@@ -91,6 +91,7 @@ namespace source1ios {
 StudioFixture makeStudioFixture(bool external){
     StudioFixture f;constexpr int checksum=0x510510;
     studiohdr_t mdl{};mdl.id=idStudioHeader;mdl.version=STUDIO_VERSION;mdl.checksum=checksum;
+    mdl.hull_min=mdl.view_bbmin=Vector(-12,-8,0);mdl.hull_max=mdl.view_bbmax=Vector(12,8,64);
     std::strncpy(mdl.name,"source1ios_static_probe.mdl",sizeof(mdl.name)-1);mdl.numbodyparts=1;
     const size_t mdlHeader=append(f.mdl,mdl),boneOffset=f.mdl.size();
     mstudiobone_t bones[2]{};for(auto& bone:bones){bone.quat=Quaternion(0,0,0,1);SetIdentityMatrix(bone.poseToBone);for(auto& controller:bone.bonecontroller)controller=-1;}
@@ -145,6 +146,9 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     if(mdl.size()>maximumModelFile||vvd.size()>maximumModelFile||vtx.size()>maximumModelFile||ani.size()>maximumModelFile)return fail("model companion exceeds 32 MiB limit");
     const auto* mh=at<studiohdr_t>(mdl,0);const auto* vh=at<vertexFileHeader_t>(vvd,0);const auto* fh=at<OptimizedModel::FileHeader_t>(vtx,0);
     if(mh->id!=idStudioHeader||(mh->version!=48&&mh->version!=49)||mh->length<int(sizeof(studiohdr_t))||size_t(mh->length)>mdl.size())return fail("unsupported MDL signature/version/length");
+    auto boundsValid=[](const Vector& lo,const Vector& hi){for(int axis=0;axis<3;++axis)if(!std::isfinite(lo[axis])||!std::isfinite(hi[axis])||lo[axis]>hi[axis]||std::abs(lo[axis])>32768||std::abs(hi[axis])>32768)return false;return true;};
+    if(!boundsValid(mh->hull_min,mh->hull_max)||!boundsValid(mh->view_bbmin,mh->view_bbmax))return fail("invalid studio collision/render bounds");
+    result.hullMins=mh->hull_min;result.hullMaxs=mh->hull_max;result.renderMins=mh->view_bbmin;result.renderMaxs=mh->view_bbmax;
     if(vh->id!=MODEL_VERTEX_FILE_ID||vh->version!=MODEL_VERTEX_FILE_VERSION||vh->numLODs<1||vh->numLODs>MAX_NUM_LODS
         ||vh->numFixups<0||vh->numFixups>int(maximumModelVertices))return fail("unsupported VVD header or fixups");
     if(fh->version!=OPTIMIZED_MODEL_FILE_VERSION||fh->numLODs<1||fh->numLODs>MAX_NUM_LODS)return fail("unsupported VTX header");

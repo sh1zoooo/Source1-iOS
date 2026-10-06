@@ -36,6 +36,13 @@ def replace(path, old, new):
     file.write_text(text.replace(old, new), errors="surrogateescape")
     patch_count += 1
 
+# Projected rotational speeds below use sqrt(1.001 - dot^2), which can
+# exceed the unprojected rotation speed. Keep the event solver's upper
+# bound conservative, including exactly axial sphere/box contacts.
+replace("ivp/ivp_collision/ivp_mindist.cxx",
+        "mim.worst_case_speed = mim.sum_max_surface_rot_speed + core0->current_speed + core1->current_speed;",
+        "mim.worst_case_speed = (mim.sum_max_surface_rot_speed + core0->current_speed + core1->current_speed) * 1.001 + P_DOUBLE_EPS;")
+
 # C++11 and later have a real nullptr keyword. Do not redefine it to integer 0.
 replace("public/tier0/basetypes.h", "#if !defined(PLATFORM_GLIBC) && defined(LINUX)",
         "#if !defined(PLATFORM_GLIBC) && defined(LINUX) && (!defined(__cplusplus) || __cplusplus < 201103L)")

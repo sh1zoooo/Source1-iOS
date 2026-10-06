@@ -20,6 +20,7 @@ struct StudioBone { int parent=-1; Vector position; Quaternion rotation; matrix3
 struct StudioPose { std::vector<Quaternion> rotations; std::vector<Vector> positions; };
 struct StudioAnimation { std::string name; float fps=0; bool looping=false; std::vector<StudioPose> frames; };
 struct StudioMesh {
+    Vector hullMins{0,0,0},hullMaxs{0,0,0},renderMins{0,0,0},renderMaxs{0,0,0};
     std::vector<StudioVertex> triangles;
     std::vector<StudioBone> bones;
     std::vector<StudioAnimation> animations;

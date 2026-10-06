@@ -40,8 +40,8 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 181:
-                raise RuntimeError(f"Expected two sets of 90 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 192:
+                raise RuntimeError(f"Expected two sets of 94 Source checks, three prop collision checks, runtime contracts and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
             if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP LDR lightmap atlas uploaded to Metal" not in text:
@@ -54,6 +54,11 @@ try:
                 raise RuntimeError("Second-row material grid was not loaded for the GPU smoke test")
             if "Source BSP static props staged: 2 instances, 24 triangles, 1 model types, 0 skipped" not in text:
                 raise RuntimeError(f"Static BSP prop instances missing:\n{text}")
+            prop_checks = ["Source BSP static prop collision ready: 2 SOLID_BBOX objects, 0 unsupported/degenerate",
+                           "live static prop vphysics objects: PASS", "live static prop ray and swept hull: PASS",
+                           "live static prop blocks camera without tunneling: PASS"]
+            if any(marker not in text for marker in prop_checks):
+                raise RuntimeError(f"Static prop collisions were not verified after physics reset:\n{text}")
             if "Source studio MDL version: 48" not in text or "from models/__source1ios_external48_probe.mdl" not in text:
                 raise RuntimeError(f"MDL48 animated model missing:\n{text}")
             if "Source Metal scene completed on GPU: map revision 6" not in text:

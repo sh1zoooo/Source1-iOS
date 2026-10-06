@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **76% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **78% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -120,3 +120,11 @@ GPU revision 6, внешний MDL48/ANI, pause/resume. IPA SHA256 и скрин
 проверены отдельно; на изображении видны обе static props и анимированная
 модель. Физический iPhone в этом этапе не тестировался.
 [Отчёт 0.25](VALIDATION-0.25.0.md).
+
+Этап 0.26/build 29 добавляет столкновения `SOLID_BBOX` static props:
+оригинальные vphysics-объекты из hull bounds MDL и swept camera hull по
+world AABB render bounds. Поворот и масштаб учитываются; reset пересоздаёт
+объекты. Нативный прогон, падение куба/сферы и mutation-тесты прошли.
+`SOLID_NONE` остаётся визуальным; `SOLID_VPHYSICS` пока требует отдельного
+bounded PHY loader. Проверка iOS/GPU ожидается в Actions.
+[Отчёт 0.26](VALIDATION-0.26.0.md).

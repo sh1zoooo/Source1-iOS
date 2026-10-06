@@ -46,6 +46,8 @@ int main() {
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
         const auto beforeProps=host.vertices(1);check(host.executeSource("source_bsp_props"),"Static prop BSP load failed");const auto withProps=host.vertices(1);
         check(withProps.size()==beforeProps.size()+72&&host.texture().width==192,"Static prop instances or atlas missing");
+        check(host.executeSource("source_props_selftest"),"Live static prop collision checks failed");
+        check(host.executeSource("source_physics_reset")&&host.executeSource("source_props_selftest"),"Physics reset lost static prop collisions");
         for(size_t i=252;i<324;++i)check(withProps[i].material[0]==2&&withProps[i].material[1]==3&&withProps[i].lightmap[2]==0,"Static prop texture slot or lighting incorrect");
         const auto portraitProps=host.vertices(.46f);for(size_t first:{size_t(252),size_t(288)}){float center[4]{};for(size_t i=first;i<first+36;++i)for(int axis=0;axis<4;++axis)center[axis]+=portraitProps[i].position[axis]/36;check(center[3]>1&&std::abs(center[0])<center[3]&&std::abs(center[1])<center[3],"Static prop centroid is outside portrait viewport");}
         check(host.executeSource("source_bsp_reset")&&host.vertices(1).size()==beforeProps.size()&&host.texture().width==128,"Static props survived map reset");
@@ -104,6 +106,15 @@ int main() {
         auto invalidProps=propBytes;std::uint16_t badModel=1;std::memcpy(invalidProps.data()+payloadOffset+140+24,&badModel,2);rejectProps(invalidProps);
         invalidProps=propBytes;int badOffset=gameOffset;std::memcpy(invalidProps.data()+gameOffset+12,&badOffset,4);rejectProps(invalidProps);
         invalidProps=propBytes;std::uint16_t badVersion=99;std::memcpy(invalidProps.data()+gameOffset+10,&badVersion,2);rejectProps(invalidProps);
+        invalidProps=propBytes;invalidProps[payloadOffset+140+30]=1;rejectProps(invalidProps);
+        check(host.executeSource("source_camera_reset"),"Static prop camera reset failed");
+        for(unsigned i=0;i<20;++i)host.cameraMove(1,0,.1f);const auto solidDepth=host.vertices(1)[0].position[3];
+        for(unsigned solid:{0,6}){auto visualOnly=propBytes;visualOnly[payloadOffset+140+30]=solid;visualOnly[payloadOffset+196+30]=solid;
+            std::ofstream out(maps/"visualprops.bsp",std::ios::binary);out.write(visualOnly.data(),visualOnly.size());out.close();
+            check(host.executeSource("source_bsp_load maps/visualprops.bsp"),"Non-BBOX props lost their visual geometry");
+            check(host.vertices(1).size()==propGeometry.size(),"Non-BBOX prop geometry changed");
+            for(unsigned i=0;i<20;++i)host.cameraMove(1,0,.1f);
+            check(solidDepth-host.vertices(1)[0].position[3]>30,"Non-BBOX props incorrectly gained BBOX collisions");}
         check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
