@@ -140,6 +140,10 @@ int main() {
         const auto textureBefore=host.modelTexture();const auto revisionBefore=host.modelTextureRevision();
         check(!host.executeSource("source_model_load models/bad.mdl")&&host.modelTexture().pixels==textureBefore.pixels&&host.modelTextureRevision()==revisionBefore,"Rejected model replaced texture or advanced GPU upload revision");
         const auto vmt=directory/"Source1IOS/game/materials/models/source1ios/__source1ios_model.vmt";
+        {std::ofstream patch(vmt);patch<<"Patch { include \"materials/debug/debugempty.vmt\" replace { \"$basetexture\" \"models/source1ios/__source1ios_model\" } }";}
+        check(host.executeSource("source_model_reset")&&host.modelTexture().pixels==textureBefore.pixels,"Model VMT Patch include/replace failed to resolve base texture");
+        {std::ofstream patch(vmt);patch<<"Patch { include \"materials/models/source1ios/__source1ios_model.vmt\" }";}
+        check(host.executeSource("source_model_reset")&&host.modelTexture().pixels==host.texture().pixels,"Cyclic VMT Patch did not use optional material fallback");
         {std::ofstream invalidVmt(vmt);invalidVmt<<"VertexLitGeneric { \"$basetexture\" \"../../outside\" }";}
         check(host.executeSource("source_model_reset"),"Missing/invalid optional material blocked model geometry");
         check(host.modelTexture().pixels==host.texture().pixels,"Invalid material did not use checker fallback");

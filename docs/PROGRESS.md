@@ -93,3 +93,8 @@ info_player_counterterrorist / info_player_terrorist / info_player_deathmatch.
 77 PASS, LDR lightmap/base/model texture upload, GPU revision 2, pause/resume,
 смену ориентации и разные позы встроенной модели. External ANI и кеш в этом
 конкретном запуске не проверялись.
+
+Этап 0.23/build 26 добавляет ограниченную цепочку VMT Patch include с применением
+insert/replace к $basetexture по правилам Source. Общий путь используется для BSP
+и studio model; циклы, traversal и KeyValues filesystem macros отклоняются.
+Это поддержка базовой текстуры, не полного графического shader/material system.

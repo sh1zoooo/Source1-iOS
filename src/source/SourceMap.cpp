@@ -62,12 +62,53 @@ bool vtfResourceRangesValid(const std::vector<std::uint8_t>& bytes){
         budget+=size_t(length);
     }return true;
 }
+bool vmtBaseTexture(std::string name,std::string& base){
+    std::vector<std::string> visited;std::string insert,replace;bool hasInsert=false,hasReplace=false;
+    for(unsigned chain=0;chain<10;++chain){
+        if(!materialPath(name))return false;
+        std::string key=name;for(char& c:key)if(c>='A'&&c<='Z')c+='a'-'A';
+        if(std::find(visited.begin(),visited.end(),key)!=visited.end())return false;visited.push_back(key);
+        std::vector<std::uint8_t> vmt;const std::string path="materials/"+name+".vmt";
+        if(!readBounded(path.c_str(),"GAME",65536,vmt))return false;
+        if(!vmt.empty()&&vmt.back()==0)vmt.pop_back();
+        if(std::find(vmt.begin(),vmt.end(),0)!=vmt.end())return false;
+        std::string directiveScan(vmt.begin(),vmt.end());
+        for(char& c:directiveScan)if(c>='A'&&c<='Z')c+='a'-'A';
+        if(directiveScan.find("#include")!=std::string::npos||directiveScan.find("#base")!=std::string::npos)return false;
+        // No KeyValues #include/#base filesystem recursion: only the bounded
+        // VMT Patch chain below can read another file.
+        int depth=0;bool quoted=false,valid=true;
+        for(size_t i=0;i<vmt.size();++i){const unsigned char c=vmt[i];
+            if(c=='"'){quoted=!quoted;continue;}
+            if(!quoted&&c=='/'&&i+1<vmt.size()&&vmt[i+1]=='/'){while(i<vmt.size()&&vmt[i]!='\n')++i;continue;}
+            if(!quoted&&c=='#'){valid=false;break;}
+            if(!quoted&&c=='{'&&++depth>16){valid=false;break;}
+            if(!quoted&&c=='}'&&--depth<0){valid=false;break;}
+        }
+        if(!valid||quoted||depth)return false;
+        auto* kv=new KeyValues("preview");kv->UsesEscapeSequences(false);const std::string text(vmt.begin(),vmt.end());
+        const bool loaded=kv->LoadFromBuffer(path.c_str(),text.c_str());
+        if(!loaded||kv->GetNextKey()){kv->deleteThis();return false;}
+        const std::string shader=kv->GetName();
+        if(!V_stricmp(shader.c_str(),"Patch")){
+            // Match Source ApplyPatchKeyValues: insert overwrites/adds, replace
+            // only changes an existing key. Inner patch keys win when gathered.
+            if(auto* section=kv->FindKey("insert"))if(section->FindKey("$basetexture")){insert=section->GetString("$basetexture");hasInsert=true;}
+            if(auto* section=kv->FindKey("replace"))if(section->FindKey("$basetexture")){replace=section->GetString("$basetexture");hasReplace=true;}
+            std::string include=kv->GetString("include","");kv->deleteThis();
+            std::replace(include.begin(),include.end(),'\\','/');
+            if(include.size()>10&&!V_strnicmp(include.c_str(),"materials/",10))include.erase(0,10);
+            if(include.size()<5||V_stricmp(include.substr(include.size()-4).c_str(),".vmt"))return false;
+            include.resize(include.size()-4);name=std::move(include);continue;
+        }
+        bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");kv->deleteThis();
+        if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric"))return false;
+        if(hasInsert){base=insert;exists=true;}if(hasReplace&&exists)base=replace;
+        return materialPath(base);
+    }return false;
+}
 bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture,const char* kind){
-    for(const auto& name:candidates){if(!materialPath(name))continue;std::vector<std::uint8_t> vmt;const std::string path="materials/"+name+".vmt";if(!readBounded(path.c_str(),"GAME",65536,vmt))continue;
-        // Bound parser recursion before using the original KeyValues implementation.
-        int depth=0;bool quoted=false,escaped=false,valid=true;for(unsigned char c:vmt){if(escaped){escaped=false;continue;}if(quoted&&c=='\\'){escaped=true;continue;}if(c=='"'){quoted=!quoted;continue;}if(!quoted&&c=='{'){if(++depth>16){valid=false;break;}}if(!quoted&&c=='}'&&--depth<0){valid=false;break;}}
-        if(!valid||quoted||depth)continue;std::string text(vmt.begin(),vmt.end());auto* kv=new KeyValues("model");const bool loaded=kv->LoadFromBuffer(path.c_str(),text.c_str());const std::string shader=kv->GetName(),base=kv->GetString("$basetexture","");kv->deleteThis();
-        if(!loaded||(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric"))||!materialPath(base))continue;
+    for(const auto& name:candidates){std::string base;if(!vmtBaseTexture(name,base))continue;const std::string path="materials/"+name+".vmt";
         std::vector<std::uint8_t> vtf;const std::string texturePath="materials/"+base+".vtf";if(!readBounded(texturePath.c_str(),"GAME",16*1024*1024,vtf))continue;
         if(!vtfResourceRangesValid(vtf))continue;
         auto* image=CreateVTFTexture();if(!image)continue;CUtlBuffer buffer(vtf.data(),vtf.size(),CUtlBuffer::READ_ONLY);
@@ -401,10 +442,19 @@ bool SourceMap::start(const std::filesystem::path& root) {
     std::filesystem::create_directories(root/"game/materials/debug");ok=ok&&writeModel("materials/debug/debugempty.vtf",bspVtfBytes)&&writeModel("materials/debug/debugempty.vmt",std::vector<std::uint8_t>(bspVmt.begin(),bspVmt.end()));
     for(int mip=0;mip<source->MipCount();++mip){const int size=std::max(1,64>>mip);auto* pixels=source->ImageData(0,0,mip);for(int y=0;y<size;++y)for(int x=0;x<size;++x){const bool grid=((x*64/size)%16<2)||((y*64/size)%16<2);auto* p=pixels+(y*size+x)*4;p[0]=grid?90:30;p[1]=grid?150:75;p[2]=grid?210:155;p[3]=255;}}
     CUtlBuffer blueVtf;ok=ok&&source->Serialize(blueVtf);std::vector<std::uint8_t> blueVtfBytes(static_cast<std::uint8_t*>(blueVtf.Base()),static_cast<std::uint8_t*>(blueVtf.Base())+blueVtf.TellPut());
-    const std::string blueVmt="LightmappedGeneric { \"$basetexture\" \"debug/debugblue\" }";
+    const std::string blueVmt="Patch { include \"materials/debug/debugempty.vmt\" replace { \"$basetexture\" \"debug/debugblue\" } }";
     ok=ok&&writeModel("materials/debug/debugblue.vtf",blueVtfBytes)&&writeModel("materials/debug/debugblue.vmt",std::vector<std::uint8_t>(blueVmt.begin(),blueVmt.end()));
     for(unsigned i=2;i<17;++i){const std::string name="materials/debug/source1ios_slot"+std::to_string(i)+".vmt";
         const std::string vmt=i%2?bspVmt:blueVmt;ok=ok&&writeModel(name.c_str(),std::vector<std::uint8_t>(vmt.begin(),vmt.end()));}
+    const std::pair<const char*,const char*> patchFixtures[]={
+        {"__source1ios_patch_empty","LightmappedGeneric { }"},
+        {"__source1ios_patch_insert","Patch { include \"materials/debug/__source1ios_patch_empty.vmt\" insert { \"$basetexture\" \"debug/debugblue\" } replace { \"$basetexture\" \"debug/debugempty\" } }"},
+        {"__source1ios_patch_noinsert","Patch { include \"materials/debug/__source1ios_patch_empty.vmt\" replace { \"$basetexture\" \"debug/debugblue\" } }"},
+        {"__source1ios_patch_outer","Patch { include \"materials/debug/debugblue.vmt\" replace { \"$basetexture\" \"debug/debugempty\" } }"},
+        {"__source1ios_patch_cycle","Patch { include \"materials/debug/__source1ios_patch_cycle.vmt\" }"},
+        {"__source1ios_patch_unsafe","Patch { include \"materials/../../outside.vmt\" }"},
+        {"__source1ios_patch_macro","#include \"outside.vmt\"\nLightmappedGeneric { }"}};
+    for(const auto& entry:patchFixtures){const std::string path=std::string("materials/debug/")+entry.first+".vmt",text=entry.second;ok=ok&&writeModel(path.c_str(),std::vector<std::uint8_t>(text.begin(),text.end()));}
     if(!ok || !load(impl_->builtin.c_str(),nullptr) || !loadModel(impl_->builtinModel.c_str())){stop();return false;}
     impl_->world=modelloader->GetModelForName(impl_->builtin.c_str(),IModelLoader::FMODELLOADER_SERVER);
     if(!impl_->world || !modelloader->IsLoaded(impl_->world) || impl_->world->type!=mod_brush){stop();return false;}
@@ -680,6 +730,10 @@ bool SourceMap::selfTest(){
     all&=report("original MDLCache studio header",cached&&cached->id==idStudioHeader&&cached->version==STUDIO_VERSION&&cached->checksum==0x510510);
     if(handle!=MDLHANDLE_INVALID)g_pMDLCache->Release(handle);
     all&=report("Metal static model geometry staged",impl_->modelMesh.size()==36);
+    std::string patchBase;
+    all&=report("VMT Patch include chain base texture",vmtBaseTexture("debug/debugblue",patchBase)&&patchBase=="debug/debugblue"&&vmtBaseTexture("debug/__source1ios_patch_outer",patchBase)&&patchBase=="debug/debugblue");
+    all&=report("VMT Patch insert replace existing-key semantics",vmtBaseTexture("debug/__source1ios_patch_insert",patchBase)&&patchBase=="debug/debugempty"&&!vmtBaseTexture("debug/__source1ios_patch_noinsert",patchBase));
+    all&=report("VMT Patch cycle unsafe include and KV macros rejected",!vmtBaseTexture("debug/__source1ios_patch_cycle",patchBase)&&!vmtBaseTexture("debug/__source1ios_patch_unsafe",patchBase)&&!vmtBaseTexture("debug/__source1ios_patch_macro",patchBase));
     all&=report("studio MDL VMT VTF base texture",impl_->modelTexture.width==64&&impl_->modelTexture.height==64&&impl_->modelTexture.pixels.size()==64*64*4&&impl_->modelTexture.pixels!=impl_->texture.pixels);
     const std::vector<Vector> quad={Vector(-64,-64,0),Vector(-64,64,0),Vector(64,64,0),Vector(64,-64,0)};
     ddispinfo_t disp{};disp.startPosition=quad[0];disp.power=2;disp.smoothingAngle=45;

@@ -6,7 +6,11 @@ import subprocess
 import sys
 import time
 def simctl(*args):
-    return subprocess.check_output(["xcrun", "simctl", *args], text=True).strip()
+    # Bound CoreSimulator boot separately from app startup so a stalled runner
+    # still reaches artifact upload with its IPA and any available diagnostics.
+    timeout = 420 if args and args[0] == "bootstatus" else 120
+    print(f"simctl {args[0]}", flush=True)
+    return subprocess.check_output(["xcrun", "simctl", *args], text=True, timeout=timeout).strip()
 devices = json.loads(simctl("list", "devices", "available", "--json"))["devices"]
 iphones = [d for group in devices.values() for d in group
            if d["name"].startswith("iPhone") and d.get("isAvailable", False)]
@@ -34,8 +38,8 @@ try:
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 161:
-                raise RuntimeError(f"Expected two sets of 80 Source checks, runtime contracts and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 167:
+                raise RuntimeError(f"Expected two sets of 83 Source checks, runtime contracts and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
             if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP LDR lightmap atlas uploaded to Metal" not in text:
@@ -79,4 +83,7 @@ finally:
     if crash_directory.exists():
         for crash in crash_directory.glob("Source1IOS*.ips"):
             Path("artifacts",crash.name).write_bytes(crash.read_bytes())
-    subprocess.run(["xcrun", "simctl", "shutdown", udid], check=False)
+    try:
+        subprocess.run(["xcrun", "simctl", "shutdown", udid], check=False, timeout=30)
+    except subprocess.TimeoutExpired:
+        print("Simulator shutdown timed out", flush=True)

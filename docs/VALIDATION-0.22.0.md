@@ -22,4 +22,7 @@ disabled for this bounded parser probe; it is not exhaustive fuzzing.
 
 Startup has 80 checks. Simulator smoke requires two sets plus runtime contracts
 (161 PASS), the selected spawn marker, imported BSP GPU revision 5, textures,
-external ANI and pause/resume. Actions verification is pending.
+external ANI and pause/resume. Linux Actions contracts and ARM64 device/simulator
+builds passed in run 37419416851. Its unbounded simulator-startup step did not
+finish while the next stage was prepared. The combined 0.23 run supersedes that
+smoke check; 0.22 itself has no independently verified simulator artifact.
