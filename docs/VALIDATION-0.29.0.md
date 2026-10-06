@@ -1,7 +1,7 @@
 # 0.29.0 / build 32 — per-mesh studio materials
 
 ~84% минимального prototype, не полного Source/CS:S.
-Native проверки прошли; ARM64 iPhone / simulator GPU ожидаются в CI.
+Native проверки, ARM64 iPhone build / simulator GPU прошли.
 
 ## Реализация и границы
 
@@ -48,8 +48,25 @@ Native проверки прошли; ARM64 iPhone / simulator GPU ожидаю�
   libraries не инструментированы этим отдельным тестом.
 - Python syntax, mocked launch diagnostics и diff whitespace PASS.
 
-Ожидается 2 * 105 startup + BBOX 3 + PHY 3 + HDR 1 + materials 3 + runtime 1
-= 221 PASS, GPU map revision 8, texture upload, pause/resume, MDL48/ANI.
-Downloaded verifier получает `--require-model-materials` и прежние flags.
+## Проверенный CI и скачанный артефакт
+
+- Per-mesh implementation: `57656797d998cb5f390d12db7484fc48002dc80a`.
+  Final functional commit with isolated fixture checks:
+  `58e196cf3f4c960ac36a972c96ee69892b501611`.
+- [Actions 37472241389](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37472241389):
+  Linux и iOS jobs success; Linux 5/5 CTest, runtime 5.96 s,
+  24 000 studio mutation suite 2.87 s.
+- Artifact `11418075911`, скачан и проверен отдельно; plist
+  0.29.0/build 32, bundle identifier и Mach-O 64-bit arm64 подтверждены.
+- IPA SHA256 `affa747732ce817ae731316487807b60df0177ffe8215dba0f3d0c8e0222bd06`
+  совпадает с manifest.
+- 2 * 105 startup + BBOX 3 + PHY 3 + HDR 1 + materials 3 + runtime 1
+  = 221 PASS, no FAIL; GPU map revision 8, texture upload, pause/resume,
+  MDL48/ANI, content mount/unmount.
+- Downloaded verifier с `--require-model-materials` и прежними flags PASS.
+  Старый HDR artifact 0.28 отвергается как подтверждение multiple materials.
+- PNG 1170x2532 визуально проверен: HUD ~84% / 105 PASS; у центральной
+  animated fixture видны синяя грань и полосатая грань, static PHY props,
+  текстуры и lighting комнаты сохраняются.
 
 Реальные модели CS:S и физический iPhone для этой версии ещё не проверены.

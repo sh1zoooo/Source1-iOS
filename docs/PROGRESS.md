@@ -157,6 +157,9 @@ Linux CI 5/5, ARM64 iPhone build, simulator 210 PASS / GPU revision 8
 Этап 0.29/build 32 добавляет per-mesh материалы MDL и remap default skin family.
 Studio и BSP static props сохраняют разные texture slots; weighted skinning
 сохраняет их при анимации. Bounded skin references проверяются до geometry
-emission. Native runtime и 24 000 ASan mutations прошли; iOS CI ожидается.
+emission. Native runtime и 24 000 ASan mutations, Linux CI 5/5, ARM64 build
+и simulator 221 PASS / GPU revision 8 прошли. Скачанный IPA/SHA256 и кадр
+проверены отдельно. Самотест после смены карты/модели проверяет отдельную
+fixture-сцену, сохраняя текущую. На физическом iPhone 0.29 не проверен.
 Другие skin families / bodygroup selection / полный shader backend остаются
 впереди. [Отчёт 0.29](VALIDATION-0.29.0.md).

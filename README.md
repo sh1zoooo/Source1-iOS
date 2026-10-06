@@ -136,7 +136,8 @@ shader backend Source не реализованы. Linux 5/5, ARM64 build и sim
 и использует remap семейства 0. До 256 VMT/VTF slots модели помещаются в atlas,
 статические props добавляют свои slots в BSP atlas (общий лимит 512).
 Анимация сохраняет назначение материалов. Native runtime и 24 000 ASan studio
-mutations прошли; iOS CI ожидается. Обычный запуск показывает MDL48 с двумя
+mutations, Linux CI 5/5, ARM64 build и simulator 221 PASS / GPU revision 8
+прошли. Скачанный IPA/SHA256 и кадр проверены отдельно. Обычный запуск показывает MDL48 с двумя
 материалами (105 startup checks). Выбор других skin families и shader features
 ещё не реализован. [Проверки материалов MDL](docs/VALIDATION-0.29.0.md).
 Общие BSP самотесты после смены карты/модели используют отдельную fixture-сцену,
