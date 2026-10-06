@@ -25,9 +25,11 @@ try:
         simctl("boot", udid)
     simctl("bootstatus", udid, "-b")
     simctl("install", udid, sys.argv[1])
-    simctl("launch", udid, bundle, "--port-smoke")
     container = Path(simctl("get_app_container", udid, bundle, "data"))
     log = container / "Documents" / "Source1IOS" / "runtime.log"
+    # Resolve diagnostics before launch: simctl can time out even when the
+    # process started, and the finally block must still preserve its log.
+    simctl("launch", udid, bundle, "--port-smoke")
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""
@@ -55,7 +57,7 @@ try:
             if "Source studio MDL version: 48" not in text or "from models/__source1ios_external48_probe.mdl" not in text:
                 raise RuntimeError(f"MDL48 animated model missing:\n{text}")
             if "Source Metal scene completed on GPU: map revision 6" not in text:
-                raise RuntimeError("Imported seventeen-material/ANI scene did not complete on GPU")
+                raise RuntimeError("Static-prop/MDL48 scene did not complete on GPU")
             if "Source content mounted: smoke" not in text or "Source content unmounted: smoke" not in text or "Source BSP polygons loaded: 84 triangles from maps/cache_smoke.bsp" not in text:
                 raise RuntimeError("Loose content import did not mount/load/unmount on iOS")
             if "Source BSP camera spawn: info_player_start; eye -190.00 -160.00 80.00" not in text:

@@ -69,9 +69,9 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Последняя полностью проверенная сборка: [0.24.0, build 27 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37424243312/artifacts/11395305318).
-77 стартовых проверок; симулятор повторяет их и проверяет GPU, terrain,
-BSP material grid/lightmaps, внешнюю ANI-анимацию и background/resume (155 PASS).
+Последняя полностью проверенная сборка: [0.25.0, build 28 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37425496670/artifacts/11395675357).
+90 стартовых проверок в 0.25; симулятор повторяет их и проверяет GPU, terrain,
+BSP material grid/lightmaps, static props, MDL48/49 и ANI-анимацию, background/resume (181 PASS).
 Версия 0.17 подтверждена пользовательским логом и кадром на iPhone 16e:
 69 PASS, загрузка двух BSP-материалов и studio texture, GPU A18, iOS 18.6.2,
 смена ориентации. Пользователь ранее подтвердил плавную деформацию модели.

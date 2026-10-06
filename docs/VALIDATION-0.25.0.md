@@ -26,8 +26,29 @@ skins/IK/delta/blend/sectioned sequences and original graphical shader API are
 still incomplete. MDL48 static props use the same bounded parser. Approximate
 76% applies to the minimal demonstration only; CS:S is not playable yet.
 
-Local original-engine integration and ASan mutation checks passed. iPhone ARM64,
-simulator GPU and independent downloaded artifact verification are pending.
+Local original-engine integration and ASan mutation checks passed. Actions
+[37425496670](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37425496670),
+functional commit `ebf18f010e6b60aa9612bd0c5a396f525263093b`, passed all four
+Linux CTest sets and iPhone ARM64/simulator builds. Attempt 2 passed simulator
+GPU and lifecycle verification: 181 PASS, no FAIL, static props, MDL48 external
+ANI playback, GPU map revision 6 and pause/resume.
+
+Downloaded successful artifact **11395675357** was independently inspected:
+version 0.25.0/build 28, ARM64 Mach-O executable, SHA256
+`9eba817a1569f540ad7d0e67dc3f14d75b596937caccd1c1c572a65478e811bc`.
+The portrait screenshot visibly contains both striped static objects in the
+foreground and the animated studio model behind them. No physical iPhone test
+of this version is claimed; simulator output does not substitute for one.
+
+Actions run 37425496670, attempt 1: four Linux CTest sets and both iOS builds
+passed. `simctl launch` timed out after 120 seconds before the script resolved
+the app container; no runtime log or screenshot was captured. This is not GPU
+validation and does not establish whether the application started. The failed
+iOS job passed on a fresh runner in attempt 2. A following diagnostics-only
+change resolves the log path before launch; `tests/smoke_launch_diagnostics.py`
+passed locally with mocked simctl to verify log preservation without concealing
+the timeout. This separate script test is not engine/GPU validation and the
+diagnostic-order change was not in the functional commit tested by attempt 2.
 
 Reproduce artifact checks with `python3 scripts/verify_artifact.py <artifact.zip>
---version 0.25.0 --build 28 --passes 181 --revision 6 --require-static-props`.
+--version 0.25.0 --build 28 --passes 181 --revision 6 --require-static-props --require-mdl48`.
