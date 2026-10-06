@@ -44,6 +44,10 @@ int main() {
         check(host.executeSource("source_bsp_reset"),"Two-slot map restore after material grid failed");
         check(host.executeSource("source_bsp_terrain"),"Built-in Source terrain demo failed");
         check(host.executeSource("source_bsp_reset"),"Original room restore after terrain failed");
+        const auto beforeProps=host.vertices(1);check(host.executeSource("source_bsp_props"),"Static prop BSP load failed");const auto withProps=host.vertices(1);
+        check(withProps.size()==beforeProps.size()+72&&host.texture().width==192,"Static prop instances or atlas missing");
+        for(size_t i=252;i<324;++i)check(withProps[i].material[0]==2&&withProps[i].material[1]==3&&withProps[i].lightmap[2]==0,"Static prop texture slot or lighting incorrect");
+        check(host.executeSource("source_bsp_reset")&&host.vertices(1).size()==beforeProps.size()&&host.texture().width==128,"Static props survived map reset");
         check(host.executeSource("source_model_reset"),"Built-in Source studio model reload failed");
         check(host.executeSource("source_model_load models/__source1ios_external_probe.mdl"),"External ANI model load failed");
         check(host.executeSource("source_anim_play 0"),"External ANI clip unavailable");const auto aniBefore=host.vertices(1);host.frame(.03);const auto aniAfter=host.vertices(1);
@@ -89,6 +93,15 @@ int main() {
         check(host.executeSource("source_camera_reset"), "Camera reset after movement failed");
         const auto maps=directory/"Source1IOS/game/maps";
         std::filesystem::create_directories(maps);
+        std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_props.bsp",maps/"props.bsp");
+        check(host.executeSource("source_bsp_load maps/props.bsp"),"Imported static prop BSP failed");const auto propRevision=host.textureRevision();const auto propGeometry=host.vertices(1);
+        std::ifstream propsInput(maps/"props.bsp",std::ios::binary);std::vector<char> propBytes((std::istreambuf_iterator<char>(propsInput)),{});propsInput.close();
+        int gameOffset=0,payloadOffset=0;std::memcpy(&gameOffset,propBytes.data()+8+35*16,4);std::memcpy(&payloadOffset,propBytes.data()+gameOffset+12,4);
+        auto rejectProps=[&](const std::vector<char>& data){std::ofstream broken(maps/"badprops.bsp",std::ios::binary);broken.write(data.data(),data.size());broken.close();check(!host.executeSource("source_bsp_load maps/badprops.bsp")&&host.textureRevision()==propRevision&&host.vertices(1).size()==propGeometry.size(),"Malformed prop BSP replaced live scene");};
+        auto invalidProps=propBytes;std::uint16_t badModel=1;std::memcpy(invalidProps.data()+payloadOffset+140+24,&badModel,2);rejectProps(invalidProps);
+        invalidProps=propBytes;int badOffset=gameOffset;std::memcpy(invalidProps.data()+gameOffset+12,&badOffset,4);rejectProps(invalidProps);
+        invalidProps=propBytes;std::uint16_t badVersion=99;std::memcpy(invalidProps.data()+gameOffset+10,&badVersion,2);rejectProps(invalidProps);
+        check(host.executeSource("source_bsp_reset"),"Reset after invalid prop imports failed");
         std::filesystem::copy_file(directory/"Source1IOS/selftest/__source1ios_geometry.bsp",maps/"imported.bsp");
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
         std::filesystem::copy_file(maps/"imported.bsp",cm/"maps/cache_probe.bsp");

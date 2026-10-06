@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **70%**: BSP-сцена, камера, столкновения, VTF, живая физика и
+Ориентировочно **74% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -103,3 +103,9 @@ insert/replace к $basetexture по правилам Source. Общий путь
 builds и simulator smoke: 167 PASS, map spawn camera, Patch texture resolution,
 импортированная BSP, GPU revision 5, external ANI и pause/resume. Скачанный IPA,
 SHA256 и скриншот проверены отдельно. [Отчёт 0.23](VALIDATION-0.23.0.md).
+
+Этап 0.24/build 27 добавляет визуальные static props BSP: словарь `sprp`,
+MDL/VVD/VTX, положение/поворот/масштаб и общий VMT/VTF atlas. Повторяющиеся
+модели декодируются один раз. Нативные тесты и 10 000 ASan/UBSan mutations
+прошли; iOS CI и артефакт проверяются отдельно. Это ещё не PHY-коллизии
+объектов и не игровой static prop manager. [Отчёт 0.24](VALIDATION-0.24.0.md).

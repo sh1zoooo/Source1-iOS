@@ -32,6 +32,7 @@ CRC32, bitbuf, KeyValues, матрицы, таймер и ConVar. Результ
 - `source_bsp_reset` — вернуться к встроенной комнате.
 - `source_bsp_terrain` — встроенный пример displacement-рельефа.
 - `source_bsp_materials` — встроенный BSP с 17 материалами, включая вторую строку atlas.
+- `source_bsp_props` — BSP с двумя статическими MDL-объектами, размещёнными записями `sprp`.
 - `source_content_mount cm` — добавить распакованные ресурсы из `Source1IOS/content/cm`.
 - `source_content_unmount cm` — отключить эту папку от GAME search paths.
 - `source_camera_reset` — вернуть камеру в начальную позицию.
@@ -58,7 +59,7 @@ desktop main loop. Исправлены откат частичного запу
 родительской фабрики после остановки. Самотесты намеренно вызывают ошибки
 двух тестовых систем; сообщения `intentional ... failure` в логе ожидаемы.
 
-**Прогресс: ориентировочно 70% до минимального запуска Source с тестовой картой
+**Прогресс: ориентировочно 74% до минимального запуска Source с тестовой картой
 и камерой на iPhone.** Это оценка по подсистемам, а не процент исходников.
 [Критерий готовности и оставшиеся этапы](docs/PROGRESS.md).
 
@@ -90,6 +91,9 @@ filesystem. [Размещение ресурсов и команды импор�
 [Проверки и границы spawn camera](docs/VALIDATION-0.22.0.md).
 Этап 0.23/build 26 разрешает VMT Patch include/insert/replace для базовой текстуры.
 [Проверки Patch материалов](docs/VALIDATION-0.23.0.md).
+Этап 0.24/build 27 отображает статические BSP props через MDL/VVD/VTX и VMT/VTF.
+Модели получают положение и поворот из карты; это пока визуальные объекты без PHY-коллизии.
+[Проверки и границы static props](docs/VALIDATION-0.24.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

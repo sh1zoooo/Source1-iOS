@@ -2,6 +2,7 @@
 #include "BspLzmaFixture.hpp"
 #include "SourceStudio.hpp"
 #include "SourceEntities.hpp"
+#include "SourceProps.hpp"
 #include "studio.h"
 #include "optimize.h"
 #include "quakedef.h"
@@ -122,6 +123,17 @@ bool report(const char* name, bool ok) {
     Msg("Source BSP self-test %s: %s\n",name,ok?"PASS":"FAIL");return ok;
 }
 struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; float lightmap[3]{}; };
+unsigned appendAtlasTile(source1ios::SourceTexture& atlas,unsigned& count,const source1ios::SourceTexture& texture){
+    const unsigned slot=count++,oldColumns=std::min(16u,slot),columns=std::min(16u,count),rows=(count+columns-1)/columns;
+    source1ios::SourceTexture next{columns*64,rows*64,std::vector<std::uint8_t>(size_t(columns)*rows*64*64*4)};
+    for(unsigned i=0;i<slot;++i)for(unsigned y=0;y<64;++y)
+        std::memcpy(next.pixels.data()+(size_t(i/columns*64+y)*next.width+i%columns*64)*4,
+            atlas.pixels.data()+(size_t(i/oldColumns*64+y)*atlas.width+i%oldColumns*64)*4,64*4);
+    for(unsigned y=0;y<64;++y)for(unsigned x=0;x<64;++x)
+        std::memcpy(next.pixels.data()+(size_t(slot/columns*64+y)*next.width+slot%columns*64+x)*4,
+            texture.pixels.data()+(size_t(y*texture.height/64)*texture.width+x*texture.width/64)*4,4);
+    atlas=std::move(next);return slot;
+}
 struct CollisionDelete {
     void operator()(CPhysCollide* p) const { if(p && g_pPhysicsCollision) g_pPhysicsCollision->DestroyCollide(p); }
 };
@@ -213,6 +225,21 @@ struct LoaderScope {
     LoaderScope(const char* path) { CMapLoadHelper::Init(nullptr,path); }
     ~LoaderScope(){ CMapLoadHelper::Shutdown(); }
 };
+bool readProps(FileHandle_t file,const dheader_t& header,std::vector<source1ios::PreviewProp>& props){
+    const auto& parent=header.lumps[LUMP_GAME_LUMP];if(!parent.filelen)return true;
+    if(parent.version||parent.uncompressedSize||parent.filelen<4||parent.filelen>16*1024*1024)return false;
+    g_pFullFileSystem->Seek(file,parent.fileofs,FILESYSTEM_SEEK_HEAD);int count=0;
+    if(g_pFullFileSystem->Read(&count,4,file)!=4||count<0||count>64||4+size_t(count)*sizeof(dgamelump_t)>size_t(parent.filelen))return false;
+    std::vector<dgamelump_t> entries(count);
+    if(count&&g_pFullFileSystem->Read(entries.data(),entries.size()*sizeof(dgamelump_t),file)!=int(entries.size()*sizeof(dgamelump_t)))return false;
+    bool found=false;
+    for(const auto& entry:entries){if(entry.id!=0x73707270)continue;
+        if(found||entry.flags||entry.filelen<0||entry.filelen>4*1024*1024||entry.fileofs<parent.fileofs+4+count*int(sizeof(dgamelump_t))
+            ||size_t(entry.fileofs-parent.fileofs)>size_t(parent.filelen)||size_t(entry.filelen)>size_t(parent.filelen)-size_t(entry.fileofs-parent.fileofs))return false;
+        found=true;std::vector<std::uint8_t> bytes(entry.filelen);g_pFullFileSystem->Seek(file,entry.fileofs,FILESYSTEM_SEEK_HEAD);
+        if(g_pFullFileSystem->Read(bytes.data(),bytes.size(),file)!=int(bytes.size())||!source1ios::parsePreviewProps(bytes,entry.version,header.version,props))return false;
+    }return true;
+}
 struct BspMaterials {std::vector<texinfo_t> infos;std::vector<dtexdata_t> data;std::vector<int> table;std::vector<char> strings;std::vector<std::string> names;std::vector<unsigned> slots;unsigned slotCount=0;};
 bool bspMaterials(BspMaterials& out,const std::array<std::vector<unsigned char>,HEADER_LUMPS>& decoded){
     out.infos=lump<texinfo_t>(LUMP_TEXINFO,decoded[LUMP_TEXINFO]);out.data=lump<dtexdata_t>(LUMP_TEXDATA,decoded[LUMP_TEXDATA]);out.table=lump<int>(LUMP_TEXDATA_STRING_TABLE,decoded[LUMP_TEXDATA_STRING_TABLE]);out.strings=lump<char>(LUMP_TEXDATA_STRING_DATA,decoded[LUMP_TEXDATA_STRING_DATA]);
@@ -385,11 +412,24 @@ std::vector<unsigned char> fixture(bool displaced=false,bool materialGrid=false)
     append(LUMP_AREAS,areas,sizeof(areas));append(LUMP_ENTITIES,entities,sizeof(entities));
     std::memcpy(bytes.data(),&h,sizeof(h));return bytes;
 }
+std::vector<std::uint8_t> propFixture(){
+    auto bytes=fixture();dheader_t header;std::memcpy(&header,bytes.data(),sizeof(header));
+    std::vector<std::uint8_t> payload;auto append=[&](const void* p,size_t n){const auto* b=static_cast<const std::uint8_t*>(p);payload.insert(payload.end(),b,b+n);};
+    int count=1;append(&count,4);char name[128]="models/__source1ios_static_probe.mdl";append(name,128);
+    count=0;append(&count,4);count=2;append(&count,4);
+    for(unsigned i=0;i<2;++i){std::array<std::uint8_t,56> record{};const float origin[3]={i?-120.f:70.f,i?90.f:-80.f,0};const float angles[3]={0,i?90.f:30.f,0};
+        std::memcpy(record.data(),origin,12);std::memcpy(record.data()+12,angles,12);append(record.data(),record.size());}
+    auto& lump=header.lumps[LUMP_GAME_LUMP];lump.fileofs=bytes.size();lump.filelen=4+sizeof(dgamelump_t)+payload.size();
+    dgamelump_t entry{};entry.id=0x73707270;entry.version=4;entry.fileofs=lump.fileofs+4+sizeof(entry);entry.filelen=payload.size();count=1;
+    const auto* p=reinterpret_cast<const std::uint8_t*>(&count);bytes.insert(bytes.end(),p,p+4);p=reinterpret_cast<const std::uint8_t*>(&entry);bytes.insert(bytes.end(),p,p+sizeof(entry));bytes.insert(bytes.end(),payload.begin(),payload.end());
+    std::memcpy(bytes.data(),&header,sizeof(header));return bytes;
+}
 }
 namespace source1ios {
 struct SourceMap::Impl {
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
+    std::vector<MeshPoint> propsMesh;unsigned propInstances=0;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     std::vector<PreviewSpawn> spawns;Vector spawnCamera{-190,-160,80};QAngle spawnAngles{8,45,0};
     std::string builtin,builtinModel;Vector camera;QAngle angles;SourceTexture checkerTexture,texture,modelTexture,lightmapTexture;unsigned mapMaterialCount=1,lightmappedFaces=0;std::uint64_t textureRevision=0,modelTextureRevision=0;model_t* world=nullptr;bool builtinActive=false;
@@ -425,6 +465,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     ok=ok && terrainFile && g_pFullFileSystem->Write(terrain.data(),terrain.size(),terrainFile)==int(terrain.size());if(terrainFile)g_pFullFileSystem->Close(terrainFile);
     const auto materialGrid=fixture(false,true);auto gridFile=g_pFullFileSystem->Open("__source1ios_material_grid.bsp","wb","PORT_BSP_PREVIEW");
     ok=ok&&gridFile&&g_pFullFileSystem->Write(materialGrid.data(),materialGrid.size(),gridFile)==int(materialGrid.size());if(gridFile)g_pFullFileSystem->Close(gridFile);
+    const auto propBytes=propFixture();auto propFile=g_pFullFileSystem->Open("__source1ios_props.bsp","wb","PORT_BSP_PREVIEW");
+    ok=ok&&propFile&&g_pFullFileSystem->Write(propBytes.data(),propBytes.size(),propFile)==int(propBytes.size());if(propFile)g_pFullFileSystem->Close(propFile);
     std::filesystem::create_directories(root/"game/models");const auto studio=makeStudioFixture();
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
@@ -467,6 +509,7 @@ void SourceMap::stop(){impl_.reset();}
 bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);}
 bool SourceMap::demoTerrain(){return impl_ && load("__source1ios_displacement.bsp",nullptr);}
 bool SourceMap::demoMaterials(){return impl_ && load("__source1ios_material_grid.bsp",nullptr);}
+bool SourceMap::demoProps(){return impl_ && load("__source1ios_props.bsp",nullptr);}
 bool SourceMap::resetModel(){return impl_&&loadModel(impl_->builtinModel.c_str());}
 bool SourceMap::loadModel(const char* filename,const char* pathID){
     if(!impl_||!filename||std::strlen(filename)>=MAX_PATH)return false;std::string mdlPath=filename;
@@ -525,6 +568,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         if(!decodeLump(entityBytes,entitySize,expanded,reason)){g_pFullFileSystem->Close(file);return false;}entityBytes=std::move(expanded);}
     std::vector<PreviewSpawn> spawns;
     if(!parsePreviewSpawns(std::string(entityBytes.begin(),entityBytes.end()),spawns)){g_pFullFileSystem->Close(file);Warning("Source BSP: malformed entity text or player spawn\n");return false;}
+    std::vector<PreviewProp> props;if(!readProps(file,h,props)){g_pFullFileSystem->Close(file);Warning("Source BSP: invalid or unsupported static prop lump\n");return false;}
     g_pFullFileSystem->Close(file);
     // External .lmp overlays bypass the validated on-disk header. Reject them.
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
@@ -575,6 +619,32 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         }
     }
     if(mesh.empty())return false;
+    std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0;
+    struct CachedProp {std::string name;StudioMesh mesh;unsigned slot=0;bool valid=false;};std::vector<CachedProp> cached;
+    size_t cachedVertices=0,modelBytes=0;
+    for(const auto& prop:props){if(prop.skin!=0){++skipped;continue;}
+        auto found=std::find_if(cached.begin(),cached.end(),[&](const auto& c){return c.name==prop.model;});
+        if(found==cached.end()){
+            if(cached.size()>=128){Warning("Source BSP: static prop model budget exceeded\n");return false;}
+            CachedProp candidate;candidate.name=prop.model;const std::string base=prop.model.substr(0,prop.model.size()-4);
+            std::vector<std::uint8_t> mdl,vvd,vtx;std::string reason;
+            auto readModel=[&](const std::string& name,std::vector<std::uint8_t>& data){if(!readBounded(name.c_str(),"GAME",32*1024*1024,data)||data.size()>64*1024*1024-modelBytes)return false;modelBytes+=data.size();return true;};
+            if(readModel(prop.model,mdl)&&readModel(base+".vvd",vvd)&&readModel(base+".dx90.vtx",vtx)&&parseStudioModel(mdl,vvd,vtx,candidate.mesh,reason)){
+                candidate.mesh.animations.clear();candidate.mesh.bones.clear();
+                if(candidate.mesh.triangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512)return false;
+                cachedVertices+=candidate.mesh.triangles.size();SourceTexture texture;if(!decodeMaterial(candidate.mesh.materialPaths,texture,"static prop"))texture=impl_->checkerTexture;
+                candidate.slot=appendAtlasTile(stagedMapTexture,stagedMaterialCount,texture);candidate.valid=true;
+            }else Warning("Source BSP static prop model unavailable: %s (%s)\n",prop.model.c_str(),reason.c_str());
+            cached.push_back(std::move(candidate));found=cached.end()-1;
+        }
+        if(!found->valid){++skipped;continue;}
+        if(found->mesh.triangles.size()>maximumVertices-mesh.size()-propsMesh.size())return false;
+        matrix3x4_t transform;AngleMatrix(QAngle(prop.angles[0],prop.angles[1],prop.angles[2]),Vector(prop.origin[0],prop.origin[1],prop.origin[2]),transform);
+        for(const auto& v:found->mesh.triangles){Vector position,normal;VectorTransform(v.position*prop.scale,transform,position);VectorRotate(v.normal,transform,normal);
+            if(!position.IsValid()||std::abs(position.x)>65536||std::abs(position.y)>65536||std::abs(position.z)>65536)return false;
+            const float light=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);propsMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},found->slot});}
+        ++propInstances;
+    }
     auto* soup=g_pPhysicsCollision->PolysoupCreate();if(!soup)return false;
     for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
     Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
@@ -588,6 +658,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         Msg("Source BSP camera spawn: %s; eye %.2f %.2f %.2f; angles %.2f %.2f; %zu candidates\n",spawn.classname.c_str(),impl_->spawnCamera.x,impl_->spawnCamera.y,impl_->spawnCamera.z,impl_->spawnAngles.x,impl_->spawnAngles.y,impl_->spawns.size());
     }else Msg("Source BSP camera spawn: no player start; preview fallback\n");
     impl_->scene=std::move(live);
+    impl_->propsMesh=std::move(propsMesh);impl_->propInstances=propInstances;
+    Msg("Source BSP static props staged: %u instances, %zu triangles, %zu model types, %u skipped\n",propInstances,impl_->propsMesh.size()/3,cached.size(),skipped);
     impl_->displacementCollision=std::move(displacementCollision);
     impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;
     Msg("Source BSP LDR lightmap atlas ready: %u faces, 1024x1024 RGBA\n",impl_->lightmappedFaces);
@@ -630,6 +702,7 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
         out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-1.f:float(v.material),float(impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
     for(const auto& v:impl_->mesh)append(v);
+    for(const auto& v:impl_->propsMesh)append(v);
     for(const auto& v:impl_->modelMesh)append(v,true);
     if(impl_->scene){
         constexpr int rings=6,slices=12;
@@ -657,6 +730,15 @@ bool SourceMap::selfTest(){
     bool materialSlots=impl_->mapMaterialCount==2&&impl_->texture.width==128&&impl_->texture.height==64&&impl_->texture.pixels.size()==128*64*4;
     all&=report("BSP texinfo multi-material VMT VTF atlas",materialSlots&&impl_->texture.pixels!=impl_->checkerTexture.pixels);
     all&=report("BSP material atlas slots remain distinct",materialSlots&&std::memcmp(impl_->texture.pixels.data(),impl_->texture.pixels.data()+64*4,64*4));
+    const auto propBytes=propFixture();dheader_t propHeader;std::memcpy(&propHeader,propBytes.data(),sizeof(propHeader));dgamelump_t propEntry;std::memcpy(&propEntry,propBytes.data()+propHeader.lumps[LUMP_GAME_LUMP].fileofs+4,sizeof(propEntry));
+    std::vector<std::uint8_t> propPayload(propBytes.begin()+propEntry.fileofs,propBytes.begin()+propEntry.fileofs+propEntry.filelen);std::vector<PreviewProp> parsedProps;
+    all&=report("BSP static prop dictionary and instances",parsePreviewProps(propPayload,4,propHeader.version,parsedProps)&&parsedProps.size()==2&&parsedProps[0].origin[0]==70&&parsedProps[1].angles[1]==90);
+    bool propVersions=true;for(unsigned version=4;version<=11;++version){const unsigned stride=version==4?56:version==5?60:version==6?64:version<=8?68:version<=10?72:80;std::vector<std::uint8_t> upgraded(propPayload.begin(),propPayload.begin()+140);upgraded.resize(140+2*stride);for(unsigned i=0;i<2;++i){std::memcpy(upgraded.data()+140+i*stride,propPayload.data()+140+i*56,56);if(version==11){float scale=1.5f;std::memcpy(upgraded.data()+140+i*stride+76,&scale,4);}}propVersions&=parsePreviewProps(upgraded,version,20,parsedProps)&&parsedProps.size()==2;}
+    all&=report("BSP static prop versions 4 through 11",propVersions);
+    auto badProps=propPayload;std::uint16_t invalidPropModel=1;std::memcpy(badProps.data()+140+24,&invalidPropModel,2);bool propRejects=!parsePreviewProps(badProps,4,20,parsedProps)&&parsedProps.size()==2;badProps=propPayload;badProps.pop_back();propRejects&=!parsePreviewProps(badProps,4,20,parsedProps);badProps=propPayload;float badPropOrigin=std::numeric_limits<float>::quiet_NaN();std::memcpy(badProps.data()+140,&badPropOrigin,4);propRejects&=!parsePreviewProps(badProps,4,20,parsedProps);
+    all&=report("BSP malformed static prop ranges rejected",propRejects);
+    auto propAtlas=impl_->texture;unsigned propSlots=2;const auto propSlot=appendAtlasTile(propAtlas,propSlots,impl_->modelTexture);
+    all&=report("BSP static prop atlas preserves world materials",propSlot==2&&propSlots==3&&propAtlas.width==192&&std::memcmp(propAtlas.pixels.data(),impl_->texture.pixels.data(),128*4)==0&&std::memcmp(propAtlas.pixels.data()+128*4,impl_->modelTexture.pixels.data(),64*4)==0);
     BspMaterials gridMaterials;gridMaterials.slotCount=17;for(unsigned slot=0;slot<17;++slot){gridMaterials.names.push_back(slot==16?"debug/debugblue":"source1ios/missing_atlas_probe"+std::to_string(slot));gridMaterials.slots.push_back(slot);}
     const auto gridAtlas=bspAtlas(gridMaterials,impl_->checkerTexture);
     all&=report("BSP material atlas seventeenth slot uses second row",gridAtlas.width==1024&&gridAtlas.height==128&&gridAtlas.pixels.size()==1024*128*4

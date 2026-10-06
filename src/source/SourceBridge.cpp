@@ -147,6 +147,7 @@ bool SourceBridge::execute(const std::string& input) {
     if (!std::strcmp(args[0], "source_bsp_reset")) return map_.resetMap();
     if (!std::strcmp(args[0], "source_bsp_terrain")) return map_.demoTerrain();
     if (!std::strcmp(args[0], "source_bsp_materials")) return map_.demoMaterials();
+    if (!std::strcmp(args[0], "source_bsp_props")) return map_.demoProps();
     if (!std::strcmp(args[0], "source_model_reset")) return map_.resetModel();
     if (!std::strcmp(args[0], "source_anim_pause")) return map_.setAnimationPlaying(false);
     if (!std::strcmp(args[0], "source_anim_resume")) return map_.setAnimationPlaying(true);

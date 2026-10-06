@@ -113,6 +113,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         share.enabled = !_runtime.logPath().empty();
         return;
     }
+    if (!_smokeRequested && !_runtime.executeSource("source_bsp_props")) { [self fail:@"Static prop demo failed"]; return; }
     _runtime.log(std::string("iOS ") + UIDevice.currentDevice.systemVersion.UTF8String);
     id<MTLDevice> device = MTLCreateSystemDefaultDevice();
     if (!device) { [self fail:@"Metal device unavailable"]; return; }
@@ -150,7 +151,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
-    self.status.text = @"Source 1 iOS · minimal milestone ~70%\nBSP materials/lightmaps · MDL/ANI animation\nSource self-tests: 83 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · minimal milestone ~74%\nBSP static props/lightmaps · MDL/ANI animation\nSource self-tests: 87 PASS\nLeft move / right look";
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;
@@ -199,6 +200,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if(!error)std::filesystem::copy_file(root/"selftest/__source1ios_material_grid.bsp",root/"content/smoke/maps/cache_smoke.bsp",std::filesystem::copy_options::overwrite_existing,error);
         if(error || !_runtime.executeSource("source_content_mount smoke") || !_runtime.executeSource("source_bsp_load maps/cache_smoke.bsp")
             || !_runtime.executeSource("source_content_unmount smoke")){[self fail:@"Simulator content import FAIL"];return;}
+        if (!_runtime.executeSource("source_bsp_props")) { [self fail:@"Simulator static props FAIL"]; return; }
         _runtime.cameraLook(10, 0);
         _runtime.cameraMove(1, 0, .1f);
         _runtime.executeSource("source_camera_reset");
@@ -285,7 +287,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~70%%\nBSP materials/lightmaps · MDL/ANI animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~74%%\nBSP static props/lightmaps · MDL/ANI animation\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

@@ -16,6 +16,7 @@ public:
     bool resetMap();
     bool demoTerrain();
     bool demoMaterials();
+    bool demoProps();
     bool loadModel(const char* filename, const char* pathID = "GAME");
     bool resetModel();
     bool playAnimation(unsigned index);
