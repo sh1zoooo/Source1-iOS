@@ -11,7 +11,7 @@ struct PreviewProp {
     std::array<float,3> origin{},angles{};
     float scale=1;
     int skin=0;
-    unsigned solid=0;
+    unsigned solid=0,body=0;
 };
 // sprp payload after the game-lump directory; records follow gamebspfile.h.
 inline bool parsePreviewProps(const std::vector<std::uint8_t>& bytes,unsigned version,int bspVersion,
