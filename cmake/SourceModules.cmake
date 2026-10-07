@@ -4,8 +4,19 @@ if(NOT EXISTS "${SOURCE_UPSTREAM}/tier0/wscript")
   message(FATAL_ERROR "Initialize Source dependency: git submodule update --init --depth 1")
 endif()
 set(SOURCE_ROOT "${CMAKE_CURRENT_BINARY_DIR}/source-port")
+option(SOURCE_BUILD_CSTRIKE "Compile the original CS:S server archive (not connected to Host yet)" OFF)
+set(SOURCE_PREPARE_OPTIONS)
+if(SOURCE_BUILD_CSTRIKE)
+  list(APPEND SOURCE_PREPARE_OPTIONS --cstrike)
+  execute_process(COMMAND "${Python3_EXECUTABLE}"
+    "${CMAKE_CURRENT_SOURCE_DIR}/scripts/cstrike_manifest.py"
+    RESULT_VARIABLE CSTRIKE_MANIFEST_RESULT)
+  if(NOT CSTRIKE_MANIFEST_RESULT EQUAL 0)
+    message(FATAL_ERROR "CS:S source manifest no longer matches the pinned VPC configuration")
+  endif()
+endif()
 execute_process(COMMAND "${Python3_EXECUTABLE}"
-  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/prepare_source.py" "${SOURCE_UPSTREAM}" "${SOURCE_ROOT}"
+  "${CMAKE_CURRENT_SOURCE_DIR}/scripts/prepare_source.py" "${SOURCE_UPSTREAM}" "${SOURCE_ROOT}" ${SOURCE_PREPARE_OPTIONS}
   RESULT_VARIABLE SOURCE_PREPARE_RESULT)
 if(NOT SOURCE_PREPARE_RESULT EQUAL 0)
   message(FATAL_ERROR "Could not prepare pinned Source modules")
@@ -113,4 +124,8 @@ if(APPLE)
 else()
   target_link_libraries(source_modules INTERFACE
     "$<LINK_GROUP:RESCAN,$<LINK_LIBRARY:WHOLE_ARCHIVE,source_engine,source_materialsystem,source_shaderapiempty,source_datacache,source_studiorender,source_vphysics,source_filesystem>,source_shaderlib,source_vtf,source_ivp_physics,source_ivp_compactbuilder,source_havana_constraints,source_hk_base,source_hk_math,source_offline,source_tier3,source_bitmap,source_appframework,source_vpklib,source_tier2,source_vstdlib,source_tier1,source_mathlib,source_tier0>" dl pthread)
+endif()
+
+if(SOURCE_BUILD_CSTRIKE)
+  include("${CMAKE_CURRENT_SOURCE_DIR}/cmake/CStrike.cmake")
 endif()

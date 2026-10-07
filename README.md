@@ -5,6 +5,11 @@
 
 **Текущий этап: настоящий dedicated host, загрузка встроенного BSP через engine, камера со столкновениями и сцена vphysics. Изображение выводит наш адаптер Metal. Графический shaderapi Source и игра ещё не запущены.**
 
+Отдельный этап `SOURCE_BUILD_CSTRIKE=ON` компилирует 561 оригинальную единицу
+сервера CS:S и пять вспомогательных библиотек (ещё 24 единицы). Это подготовка
+GameDLL: архивы пока не подключены к приложению, host работает с `-nogamedll`.
+Проверка и границы этапа описаны в [CSTRIKE-COMPILE.md](docs/CSTRIKE-COMPILE.md).
+
 ## Что реально подключено
 
 540 единиц компиляции (539 из manifest и tool-mode displacement collision) из `tier0`, `tier1`, `mathlib`, `vstdlib`, `filesystem`, `vpklib`

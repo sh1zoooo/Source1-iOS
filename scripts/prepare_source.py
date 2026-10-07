@@ -11,6 +11,7 @@ PIN = "ed8209cc35c61fbd8ddff8480962a01c981eef2f"
 parser = argparse.ArgumentParser()
 parser.add_argument("upstream", type=Path)
 parser.add_argument("output", type=Path)
+parser.add_argument("--cstrike", action="store_true", help="Prepare the optional CS:S server compilation stage")
 args = parser.parse_args()
 actual = subprocess.check_output(["git", "-C", str(args.upstream), "rev-parse", "HEAD"], text=True).strip()
 if actual != PIN:
@@ -26,6 +27,10 @@ args.output.mkdir(parents=True, exist_ok=True)
 for folder in ("public", "common", "tier0", "tier1", "mathlib", "vstdlib", "filesystem", "vpklib", "tier2", "appframework", "engine", "tier3", "bitmap", "utils/lzma/C", "utils/bzip2", "datacache", "studiorender", "vtf", "materialsystem", "vphysics", "ivp"):
     shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
 
+if args.cstrike:
+    for folder in ("game", "particles", "dmxloader", "choreoobjects", "soundemittersystem", "scenefilecache", "utils/common"):
+        shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
+
 patch_count = 0
 def replace(path, old, new):
     global patch_count
@@ -35,6 +40,39 @@ def replace(path, old, new):
         raise RuntimeError(f"Patch context changed: {path}: {old[:70]}")
     file.write_text(text.replace(old, new), errors="surrogateescape")
     patch_count += 1
+
+if args.cstrike:
+    # The old monolithic Xbox branch concatenates an unexpanded function macro.
+    # This stage contains one server game; use the ordinary unique class name.
+    replace("game/shared/gamerules_register.h",
+            "#if !defined(_STATIC_LINKED)",
+            "#if !defined(_STATIC_LINKED) || defined(SOURCE_ENGINE_PORT)")
+    # The context declarations are already guarded by NO_STEAM upstream;
+    # match their lifecycle calls to the same offline configuration.
+    for operation in ("Init", "Clear"):
+        replace("game/server/gameinterface.cpp",
+                f"#ifndef _X360\n\ts_SteamAPIContext.{operation}();",
+                f"#if !defined(_X360) && !defined(NO_STEAM)\n\ts_SteamAPIContext.{operation}();")
+    # Account-based vote history cannot operate without Steam identities.
+    replace("game/server/vote_controller.cpp",
+            "void CVoteController::TrackVoteCaller( CBasePlayer *pPlayer )\n{",
+            "void CVoteController::TrackVoteCaller( CBasePlayer *pPlayer )\n{\n#ifdef NO_STEAM\n\treturn;\n#else")
+    replace("game/server/vote_controller.cpp",
+            "m_VoteCallers.Insert( steamID.ConvertToUint64(), gpGlobals->curtime + sv_vote_creation_timer.GetInt() );\n};",
+            "m_VoteCallers.Insert( steamID.ConvertToUint64(), gpGlobals->curtime + sv_vote_creation_timer.GetInt() );\n#endif\n};")
+    replace("game/server/vote_controller.cpp",
+            "bool CVoteController::CanEntityCallVote( CBasePlayer *pPlayer, int &nCooldown )\n{",
+            "bool CVoteController::CanEntityCallVote( CBasePlayer *pPlayer, int &nCooldown )\n{\n#ifdef NO_STEAM\n\tnCooldown = 0;\n\treturn false; // No authenticated identity in the offline port.\n#else")
+    replace("game/server/vote_controller.cpp",
+            "m_VoteCallers.Remove( iIdx );\n\t}\n\n\treturn true;\n};",
+            "m_VoteCallers.Remove( iIdx );\n\t}\n\n\treturn true;\n#endif\n};")
+    # Keep local money statistics; skip account-keyed market reporting offline.
+    replace("game/server/cstrike/cs_gamestats.cpp",
+            "\t\tIncrementStat(pPlayer, CSSTAT_MONEY_SPENT, moneySpent);\n\t\tif",
+            "\t\tIncrementStat(pPlayer, CSSTAT_MONEY_SPENT, moneySpent);\n#ifndef NO_STEAM\n\t\tif")
+    replace("game/server/cstrike/cs_gamestats.cpp",
+            "m_MarketPurchases.AddToTail( new SMarketPurchases( steamIDForBuyer.ConvertToUint64(), moneySpent, pItemName ) );\n\t\t}",
+            "m_MarketPurchases.AddToTail( new SMarketPurchases( steamIDForBuyer.ConvertToUint64(), moneySpent, pItemName ) );\n\t\t}\n#endif")
 
 # Projected rotational speeds below use sqrt(1.001 - dot^2), which can
 # exceed the unprojected rotation speed. Keep the event solver's upper
