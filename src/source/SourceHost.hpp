@@ -3,7 +3,7 @@
 #include <string>
 
 namespace source1ios {
-// Original dedicated host in its upstream -nogamedll mode. No game or renderer.
+// Original dedicated host; optionally initializes the statically linked CS:S GameDLL.
 class SourceHost final {
 public:
     bool start(const std::filesystem::path& root);

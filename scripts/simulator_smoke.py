@@ -43,15 +43,15 @@ try:
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""
-        if "First Metal frame completed on GPU" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text and "Source Host_Init completed: dedicated idle host" in text and "Source host self-test Host_RunFrame idle ticks: PASS" in text and "Source assets/physics self-test physics ragdoll joint under impulse: PASS" in text and "Source BSP preview ready" in text and "Source BSP VMT/VTF base texture uploaded to Metal" in text and "Source simulator runtime contracts: PASS" in text:
+        if "First Metal frame completed on GPU" in text and "Source core initialized: tier0/tier1/mathlib/vstdlib" in text and "Source filesystem initialized: filesystem_stdio/vpklib" in text and "Source appframework initialized: CAppSystemGroup" in text and "Source engine linked: dedicated engine" in text and "Source dependencies initialized: materialsystem/shaderapiempty" in text and "Source engine app-system connected and initialized" in text and "Source Host_Init completed: original CS:S GameDLL initialized" in text and "Source host self-test Host_RunFrame idle ticks: PASS" in text and "Source assets/physics self-test physics ragdoll joint under impulse: PASS" in text and "Source BSP preview ready" in text and "Source BSP VMT/VTF base texture uploaded to Metal" in text and "Source simulator runtime contracts: PASS" in text:
             if "FAIL" in text:
                 raise RuntimeError(f"Source core self-test failed:\n{text}")
             time.sleep(5)
             text = log.read_text()
             if "Source BSP polygons loaded: 114 triangles from __source1ios_displacement.bsp" not in text:
                 raise RuntimeError("Displacement demo was not loaded for the GPU smoke test")
-            if "FAIL" in text or text.count(": PASS") != 256:
-                raise RuntimeError(f"Expected two sets of 118 Source checks, VPK content 1, BBOX 3, PHY 3, HDR 1, entities 2, materials 3, skin 3, prop skins 3, runtime 1 and a completed GPU frame:\n{text}")
+            if "FAIL" in text or text.count(": PASS") != 264:
+                raise RuntimeError(f"Expected two sets of 122 Source checks, VPK content 1, BBOX 3, PHY 3, HDR 1, entities 2, materials 3, skin 3, prop skins 3, runtime 1 and a completed GPU frame:\n{text}")
             if "Source studio external ANI loaded: models/__source1ios_external_probe.ani" not in text or "Source studio animation selected: 0" not in text:
                 raise RuntimeError("External ANI model was not loaded and played in the GPU scene")
             if "Source BSP LDR lightmap atlas ready: 42 faces, 1024x1024 RGBA" not in text or "Source BSP preview lightmap atlas uploaded to Metal" not in text:

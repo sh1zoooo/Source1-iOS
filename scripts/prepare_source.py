@@ -6,6 +6,7 @@ import json
 import re
 import shutil
 import subprocess
+import os
 
 PIN = "ed8209cc35c61fbd8ddff8480962a01c981eef2f"
 parser = argparse.ArgumentParser()
@@ -13,6 +14,18 @@ parser.add_argument("upstream", type=Path)
 parser.add_argument("output", type=Path)
 parser.add_argument("--cstrike", action="store_true", help="Prepare the optional CS:S server compilation stage")
 args = parser.parse_args()
+# Reconfiguration must not rebuild the whole SDK when audited patches are
+# unchanged. Remember previously prepared files before copying original input.
+patched_paths = set(re.findall(r'replace(?:_all)?\("([^"\n]+)"', Path(__file__).read_text()))
+patched_paths.update(("public/dispcoll_preview.h", "public/dispcoll_preview.cpp",
+                      "tier2/tier2.cpp", "tier3/tier3.cpp",
+                      "game/shared/gamemovement.cpp", "game/shared/weapon_parse.cpp",
+                      "game/shared/props_shared.cpp", "game/shared/mapentities_shared.cpp"))
+previous = {}
+for path in patched_paths:
+    file = args.output / path
+    if file.is_file():
+        previous[path] = (file.read_bytes(), file.stat().st_mtime_ns)
 actual = subprocess.check_output(["git", "-C", str(args.upstream), "rev-parse", "HEAD"], text=True).strip()
 if actual != PIN:
     parser.error(f"Source revision mismatch: expected {PIN}, got {actual}")
@@ -40,6 +53,15 @@ def replace(path, old, new):
         raise RuntimeError(f"Patch context changed: {path}: {old[:70]}")
     file.write_text(text.replace(old, new), errors="surrogateescape")
     patch_count += 1
+
+def replace_all(path, old, new, expected):
+    global patch_count
+    file = args.output / path
+    text = file.read_text(errors="surrogateescape")
+    if text.count(old) != expected:
+        raise RuntimeError(f"Patch count changed: {path}: expected {expected}")
+    file.write_text(text.replace(old, new), errors="surrogateescape")
+    patch_count += expected
 
 if args.cstrike:
     # The old monolithic Xbox branch concatenates an unexpanded function macro.
@@ -73,6 +95,76 @@ if args.cstrike:
     replace("game/server/cstrike/cs_gamestats.cpp",
             "m_MarketPurchases.AddToTail( new SMarketPurchases( steamIDForBuyer.ConvertToUint64(), moneySpent, pItemName ) );\n\t\t}",
             "m_MarketPurchases.AddToTail( new SMarketPurchases( steamIDForBuyer.ConvertToUint64(), moneySpent, pItemName ) );\n\t\t}\n#endif")
+    # The edict change-info pointer is process-owned in a monolithic build.
+    replace("game/server/gameinterface.cpp",
+            "CSharedEdictChangeInfo *g_pSharedChangeInfo = NULL;",
+            "extern CSharedEdictChangeInfo *g_pSharedChangeInfo;")
+    replace("game/server/gameinterface.cpp",
+            "IChangeInfoAccessor *CBaseEdict::GetChangeAccessor()\n{",
+            "#ifndef SOURCE_GAME_LINK\nIChangeInfoAccessor *CBaseEdict::GetChangeAccessor()\n{")
+    replace("game/server/gameinterface.cpp",
+            "\nconst char *GetHintTypeDescription( CAI_Hint *pHint );",
+            "\n#endif // SOURCE_GAME_LINK owns edict accessors in engine\nconst char *GetHintTypeDescription( CAI_Hint *pHint );")
+    replace("game/shared/baseplayer_shared.cpp",
+            "float IntervalDistance( float x, float x0, float x1 )",
+            "static float IntervalDistance( float x, float x0, float x1 )")
+    # The embedded GameDLL has no loadable module handle. Retain its original
+    # plugin-helper interface; desktop third-party DLL plugins cannot load here.
+    replace("engine/sv_plugin.cpp",
+            "void CServerPlugin::LoadPlugins()\n{",
+            "void CServerPlugin::LoadPlugins()\n{\n#ifdef SOURCE_GAME_LINK\n\tm_PluginHelperCheck = (IPluginHelpersCheck*)Sys_GetFactoryThis()(INTERFACEVERSION_PLUGINHELPERSCHECK, NULL);\n\treturn;\n#endif")
+    # Static game systems survive DLLShutdown; do not add the same singleton
+    # twice when the embedded host is started again in the same process.
+    replace("game/shared/igamesystem.cpp",
+            "void IGameSystem::Add( IGameSystem* pSys )\n{",
+            "void IGameSystem::Add( IGameSystem* pSys )\n{\n#ifdef SOURCE_GAME_LINK\n\tif (s_GameSystems.Find(pSys) != s_GameSystems.InvalidIndex()) return;\n#endif")
+    replace("game/shared/steamworks_gamestats.cpp",
+            "\tif ( steamapicontext && steamapicontext->SteamUtils() )\n\t\treturn steamapicontext->SteamUtils()->GetServerRealTime();\n\telse",
+            "#ifndef NO_STEAM\n\tif ( steamapicontext && steamapicontext->SteamUtils() )\n\t\treturn steamapicontext->SteamUtils()->GetServerRealTime();\n\telse\n#endif")
+    for path, expected in (("game/shared/gamemovement.cpp", 3),
+                           ("game/shared/weapon_parse.cpp", 2),
+                           ("game/shared/props_shared.cpp", 3),
+                           ("game/shared/mapentities_shared.cpp", 1)):
+        replace_all(path, "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL)",
+                    "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL) || defined(SOURCE_ENGINE_PORT)", expected)
+    # Only callbacks require Steam; the per-frame virtual must exist offline too.
+    replace("game/shared/steamworks_gamestats.cpp",
+            "void CSteamWorksGameStatsUploader::FrameUpdatePostEntityThink()",
+            "#endif // NO_STEAM callbacks\n\nvoid CSteamWorksGameStatsUploader::FrameUpdatePostEntityThink()")
+    replace("game/shared/steamworks_gamestats.cpp",
+            "\n#endif\n\n//-----------------------------------------------------------------------------\n// Purpose: Opens a session:",
+            "\n//-----------------------------------------------------------------------------\n// Purpose: Opens a session:")
+    replace("game/shared/steamworks_gamestats.cpp",
+            "bool CSteamWorksGameStatsUploader::AccessToSteamAPI( void )\n{",
+            "bool CSteamWorksGameStatsUploader::AccessToSteamAPI( void )\n{\n#ifdef NO_STEAM\n\treturn false;\n#else")
+    replace("game/shared/steamworks_gamestats.cpp",
+            "\treturn false;\n}\n\n//-----------------------------------------------------------------------------\n// Purpose: There's no guarantee",
+            "\treturn false;\n#endif\n}\n\n//-----------------------------------------------------------------------------\n// Purpose: There's no guarantee")
+    replace("game/shared/steamworks_gamestats.cpp",
+            "ISteamGameStats* CSteamWorksGameStatsUploader::GetInterface( void )\n{",
+            "ISteamGameStats* CSteamWorksGameStatsUploader::GetInterface( void )\n{\n#ifdef NO_STEAM\n\treturn NULL;\n#else")
+    replace("game/shared/steamworks_gamestats.cpp",
+            "// If we haven't returned already, then we can't get access to the interface\n\treturn NULL;\n}",
+            "// If we haven't returned already, then we can't get access to the interface\n\treturn NULL;\n#endif\n}")
+
+# The one shared studio implementation must initialize gameplay activities when
+# the original game is linked; its engine-only mode remains unchanged otherwise.
+replace("public/studio.cpp",
+        "#if defined(SERVER_DLL) || defined(CLIENT_DLL) || defined(GAME_DLL)",
+        "#if defined(SERVER_DLL) || defined(CLIENT_DLL) || defined(GAME_DLL) || defined(SOURCE_GAME_LINK)")
+replace("public/stringregistry.cpp", "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL)",
+        "#if !defined(_STATIC_LINKED) || defined(CLIENT_DLL) || defined(SOURCE_ENGINE_PORT)")
+replace("public/editor_sendcommand.cpp", "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB)",
+        "#if !defined(_STATIC_LINKED) || defined(_SHARED_LIB) || defined(SOURCE_ENGINE_PORT)")
+replace("engine/sys_dll.cpp",
+        "\tCSysModule *pDLL = NULL;\n\n\t// check signature",
+        "\tCSysModule *pDLL = NULL;\n#ifdef SOURCE_GAME_LINK\n\tif (Q_stricmp(szDllFilename, \"server\" DLL_EXT_STRING)) return false;\n\tg_iServerGameDLLVersion = 0;\n\tg_ServerFactory = Sys_GetFactoryThis();\n#else\n\t// check signature")
+replace("engine/sys_dll.cpp", "\tg_ServerFactory = Sys_GetFactory( pDLL );\n\tif ( g_ServerFactory )",
+        "\tg_ServerFactory = Sys_GetFactory( pDLL );\n#endif // SOURCE_GAME_LINK\n\tif ( g_ServerFactory )")
+replace("engine/sys_dll.cpp", "\tif ( !g_GameDLL )\n\t\treturn;",
+        "#ifndef SOURCE_GAME_LINK\n\tif ( !g_GameDLL )\n\t\treturn;\n#endif")
+replace("engine/sys_dll.cpp", "\tFileSystem_UnloadModule( g_GameDLL );",
+        "\tif (g_GameDLL) FileSystem_UnloadModule( g_GameDLL );")
 
 # Projected rotational speeds below use sqrt(1.001 - dot^2), which can
 # exceed the unprojected rotation speed. Keep the event solver's upper
@@ -173,4 +265,8 @@ for suffix in ("h", "cpp"):
     text = text.replace('"dispcoll_common.h"', '"dispcoll_preview.h"')
     (args.output / f"public/dispcoll_preview.{suffix}").write_text(text)
 (args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": patch_count}, indent=2))
+for path, (content, modified) in previous.items():
+    file = args.output / path
+    if file.is_file() and file.read_bytes() == content:
+        os.utime(file, ns=(file.stat().st_atime_ns, modified))
 print(f"Prepared real Source modules from {PIN}")
