@@ -211,7 +211,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     else if(!_runtime.startGame())self.hud.text=[NSString stringWithUTF8String:_runtime.gameError().c_str()];
     else self.status.text=@"CS:S offline practice · original player movement\nLeft move / right look · hold Jump / Duck / Fire";
     [sender setTitle:_runtime.playerState().active?@"Stop":@"Play" forState:UIControlStateNormal];
-    _thirdPerson=NO;_hasPrevious=NO;
+    _runtime.thirdPerson(_thirdPerson);_hasPrevious=NO;
 }
 - (void)togglePerspective:(UIButton *)sender {
     _thirdPerson=!_thirdPerson;_runtime.thirdPerson(_thirdPerson);
