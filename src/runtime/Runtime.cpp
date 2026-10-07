@@ -30,6 +30,7 @@ bool Runtime::start(const std::filesystem::path& documents) {
 void Runtime::setActive(bool active) {
     if (!running_ || active == active_) return;
     active_ = active;
+    source_.clearInput();
     log(active ? "Host resumed" : "Host paused");
 }
 void Runtime::frame(double seconds) {

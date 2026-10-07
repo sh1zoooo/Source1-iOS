@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderTypes.hpp"
+#include "PlayerState.hpp"
 #include <filesystem>
 #include <memory>
 #include <vector>
@@ -38,6 +39,8 @@ public:
     void frame(float seconds);
     void move(float forward, float right, float seconds);
     void resetCamera();
+    void setGameView(const PlayerState& player,bool thirdPerson,bool modelReady=true);
+    void clearGameView();
     bool resetPhysics();
     bool impulsePhysics();
     std::vector<SourceVertex> vertices(float aspect) const;

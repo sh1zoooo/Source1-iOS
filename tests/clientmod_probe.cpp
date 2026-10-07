@@ -1,4 +1,5 @@
 #include "Runtime.hpp"
+#include "PlayerState.hpp"
 #include "tier0/platform.h"
 #include "filesystem.h"
 #include "host_cmd.h"
@@ -11,6 +12,8 @@
 #include "tier2/tier2.h"
 #include "eiface.h"
 #include "tier1/interface.h"
+#include "game/server/iplayerinfo.h"
+#include "game/shared/in_buttons.h"
 #include <filesystem>
 #include <iostream>
 #include <stdexcept>
@@ -45,6 +48,7 @@ int main(int argc, char** argv) {
         for (unsigned cycle = 1; cycle <= 2; ++cycle) {
             if (!runtime.start(documents)) throw std::runtime_error("Original host startup failed");
             if (auto* hibernate = g_pCVar->FindVar("sv_hibernate_when_empty")) hibernate->SetValue(0);
+            if (auto* freeze = g_pCVar->FindVar("mp_freezetime")) freeze->SetValue(0);
             std::cerr << "ClientMod probe: original Host_NewGame(" << map << ")\n";
             if (!Host_NewGame(map.data(), false, false)) throw std::runtime_error("Host_NewGame rejected map");
             if (!sv.IsActive()) throw std::runtime_error("Game server was not activated");
@@ -62,11 +66,30 @@ int main(int argc, char** argv) {
             // without needing a generated navigation mesh or external networking.
             if (std::getenv("SOURCE_CLIENTMOD_PLAYER")) {
                 auto* engine = static_cast<IVEngineServer*>(Sys_GetFactoryThis()(INTERFACEVERSION_VENGINESERVER, nullptr));
-                auto* player = engine ? engine->CreateFakeClient("Source1IOS probe") : nullptr;
+                auto* botManager=static_cast<IBotManager*>(Sys_GetFactoryThis()(INTERFACEVERSION_PLAYERBOTMANAGER,nullptr));
+                auto* player = std::getenv("SOURCE_CLIENTMOD_MOVE") ? (botManager?botManager->CreateBot("Source1IOS movement"):nullptr) : (engine ? engine->CreateFakeClient("Source1IOS probe") : nullptr);
                 auto* networkable = player ? player->GetNetworkable() : nullptr;
                 auto* cls = networkable ? networkable->GetServerClass() : nullptr;
                 if (!cls || std::string(cls->GetName()) != "CCSPlayer")
                     throw std::runtime_error("Original fake-client/player creation failed");
+                if (std::getenv("SOURCE_CLIENTMOD_MOVE")) {
+                    auto factory=Sys_GetFactoryThis();
+                    auto* clients=static_cast<IServerGameClients*>(factory(INTERFACEVERSION_SERVERGAMECLIENTS,nullptr));
+                    auto* manager=static_cast<IPlayerInfoManager*>(factory(INTERFACEVERSION_PLAYERINFOMANAGER,nullptr));
+                    auto* bots=static_cast<IBotManager*>(factory(INTERFACEVERSION_PLAYERBOTMANAGER,nullptr));
+                    if(!clients||!manager||!bots)throw std::runtime_error("Player control interfaces missing");
+                    CCommand team;team.Tokenize("jointeam 2");clients->ClientCommand(player,team);
+                    CCommand model;model.Tokenize("joinclass 1");clients->ClientCommand(player,model);
+                    if(!source1ios::gamePlayerSpawn(player,2))throw std::runtime_error("Original offline round respawn failed");
+                    auto* info=manager->GetPlayerInfo(player);auto* controller=bots->GetBotController(player);
+                    if(!info||!controller||info->IsDead()||info->IsObserver())throw std::runtime_error("CCSPlayer did not spawn alive");
+                    const auto start=info->GetAbsOrigin();
+                    std::cerr<<"CCSPlayer spawned hp="<<info->GetHealth()<<" team="<<info->GetTeamIndex()<<" origin="<<start.x<<","<<start.y<<","<<start.z<<" model="<<info->GetModelName()<<" weapon="<<info->GetWeaponName()<<'\n';
+                    for(int i=0;i<100;++i){runtime.frame(1.0/66);CBotCmd cmd;cmd.command_number=i+1;cmd.tick_count=sv.GetTick();cmd.viewangles=info->GetAbsAngles();cmd.forwardmove=200;controller->RunPlayerMove(&cmd);}
+                    const auto finish=info->GetAbsOrigin();
+                    std::cerr<<"CCSPlayer original movement distance="<<(finish-start).Length()<<" end="<<finish.x<<","<<finish.y<<","<<finish.z<<'\n';
+                    if((finish-start).Length()<8)throw std::runtime_error("Original player movement did not move");
+                }
             }
             const int before = sv.GetTick();
             const int hostBefore = host_tickcount;
