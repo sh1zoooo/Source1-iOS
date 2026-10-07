@@ -63,6 +63,8 @@ jobs:
             build-ios/Release-iphoneos/libsource_scenefilecache.a
             cmake/cstrike-files.json
             docs/CSTRIKE-COMPILE.md
+            third_party/SOURCE1_LICENSE.txt
+            third_party/SOURCE1_THIRD_PARTY_NOTICES.txt
           if-no-files-found: error
           retention-days: 14
       - name: Package unsigned IPA

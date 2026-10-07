@@ -67,6 +67,16 @@ physical iPhone game execution remain separate work.
 ## Validation
 
 Linux GCC 13 Debug: all six archives compiled successfully; archive verification
-passed 561/561 server objects and 24/24 supporting objects. Existing five CTest
-suites passed before the final full rebuild. iOS ARM64 CI validation is pending.
+passed 561/561 server objects and 24/24 supporting objects. The final full Linux
+Debug rebuild and all five CTest suites passed with the option enabled.
+iOS ARM64 CI validation is pending.
 No playable CS:S or new device game run is implied by archive compilation.
+
+A Linux `nm -g --defined-only` audit found 226 strong symbol names shared between
+the existing engine archives and these game/support archives. Many are common
+helpers (send tables, collision utilities, studio code) that can have one owner.
+Others require deliberate isolation: engine `sv_cheats` is a ConVar object while
+the game uses a pointer; `modelinfo`, `physprops`, `registry` and `developer` also
+have desktop DLL ownership assumptions. This is a symbol inventory, not a claim
+that every overlap would be a final linker error. Simply force-loading the game
+archive into the current executable is not a validated integration strategy.
