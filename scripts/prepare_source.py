@@ -45,6 +45,7 @@ if args.cstrike:
         shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
 
 patch_count = 0
+
 def replace(path, old, new):
     global patch_count
     file = args.output / path
@@ -62,6 +63,12 @@ def replace_all(path, old, new, expected):
         raise RuntimeError(f"Patch count changed: {path}: expected {expected}")
     file.write_text(text.replace(old, new), errors="surrogateescape")
     patch_count += expected
+
+# The server uses studio metadata and collision, not desktop shader flags.
+# Empty shaderapi materials have no compiled shader variables to inspect.
+replace("engine/modelloader.cpp",
+        "\tcase MDLCACHE_STUDIOHWDATA:\n\t\tComputeModelFlags( pModel, handle );",
+        "\tcase MDLCACHE_STUDIOHWDATA:\n#ifndef SWDS\n\t\tComputeModelFlags( pModel, handle );\n#endif")
 
 if args.cstrike:
     # The old monolithic Xbox branch concatenates an unexpanded function macro.

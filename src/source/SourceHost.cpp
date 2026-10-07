@@ -2,6 +2,7 @@
 #include "quakedef.h"
 #include "host.h"
 #include "host_cmd.h"
+#include "host_state.h"
 #include "common.h"
 #include "cmd.h"
 #include "sys_dll.h"
@@ -90,7 +91,7 @@ bool SourceHost::start(const std::filesystem::path& root) {
     return true;
 }
 void SourceHost::frame(float seconds) {
-    if (started_ && host_initialized && seconds > 0) Host_RunFrame(seconds);
+    if (started_ && host_initialized && seconds > 0) HostState_Frame(seconds);
 }
 bool SourceHost::selfTest() {
     if (!started_) return false;
@@ -121,6 +122,13 @@ bool SourceHost::selfTest() {
 void SourceHost::stop() {
     if (!started_) return;
 #ifdef SOURCE_GAME_LINK
+    if (sv.IsActive()) {
+        // Drain the original state machine before freeing engine edicts. It
+        // owns LevelShutdown and GameShutdown, which remove game entities.
+        HostState_GameShutdown();
+        for (unsigned i = 0; i < 3 && (sv.IsActive() || HostState_IsGameShuttingDown()); ++i)
+            HostState_Frame(0);
+    }
     Host_Disconnect(true);
     SV_ShutdownGameDLL();
 #endif

@@ -383,3 +383,5 @@ texture vectors и разрешает первый `LightmappedGeneric` VMT `$ba
 atlas tiles. TEXINFO каждой поверхности сохраняет свой slot, а Metal повторяет UV
 внутри него без протекания соседней текстуры. Fixture чередует кирпичный и синий
 материалы. Это base textures preview; lightmaps и полноценные Source shaders ещё впереди.
+
+Следующий этап 0.36: [оригинальный игровой уровень на ресурсах ClientMod](docs/CLIENTMOD-0.36.md). Проверен локально; новый iOS build требует отдельной CI-проверки.
