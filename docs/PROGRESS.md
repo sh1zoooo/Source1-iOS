@@ -242,3 +242,5 @@ CI 37603005915 прошёл: Linux 6/6, ARM64 IPA и simulator smoke (строг
 Архив из предоставленной ссылки скачан повторно; SHA256 совпал с проверенным Rec1.4. Исправлены MOD/MOD_WRITE/GAME_WRITE search paths, штатное завершение активного уровня и серверная обработка studio model flags без desktop shader variables. Ручная проверка `awp_lego_2` прошла LevelInit/ServerActivate: 49 сущностей, 36 team spawns, 300 кадров. Оригинальный fake client создаёт CCSPlayer и позволяет серверу продвигать simulation ticks. Это локальная проверка серверной части, а не запуск полноценного ClientMod на iPhone.
 
 [Пакет, воспроизведение, результаты и оставшиеся ограничения](CLIENTMOD-0.36.md).
+
+Финальная локальная проверка 0.36: 6/6 CTest PASS; два полных цикла карты с CCSPlayer, 303/302 simulation ticks. Дополнительно устранены устаревшие material references статического particle manager между перезапусками. Изменения: [PR #4](https://github.com/sh1zoooo/Source1-iOS/pull/4), поверх #3.

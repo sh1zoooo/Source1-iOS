@@ -18,6 +18,9 @@ SHA256 `75b56b7eaf6b495b1234b3de2aaf7a3cf5eee3b590223fcfac88627a31aac973`.
   активного сервера state machine выполняет LevelShutdown/GameShutdown,
   затем освобождаются engine edicts и GameDLL. Ранее игровые сущности
   оставались со ссылками на освобождённые edicts и падали при выходе процесса.
+- Перед остановкой material system штатный particle manager освобождает
+  material references. Это исправляет падение при повторном DLLInit после
+  запуска карты с ресурсами ClientMod.
 - В SWDS отключена обработка desktop material flags при уведомлении
   `MDLCACHE_STUDIOHWDATA`. Серверные studio metadata и collision сохранены;
   headless shaderapi не предоставляет shader variables для этой обработки.
@@ -34,7 +37,8 @@ SHA256 `75b56b7eaf6b495b1234b3de2aaf7a3cf5eee3b590223fcfac88627a31aac973`.
 
 Опциональный штатный `IVEngineServer::CreateFakeClient` вызывает оригинальный
 ClientPutInServer и создаёт серверного CCSPlayer без внешней сети. С ним
-прогон продвинул simulation ticks на 303. Это не проверка HUD, движения,
+два полных цикла в одном процессе продвинули simulation ticks на 303 и 302
+соответственно. Проверен именно ServerClass `CCSPlayer`. Это не проверка HUD, движения,
 выбора команды, стрельбы или AI бота. Завершение активного уровня проходит
 без прежнего падения в entity list.
 
@@ -47,7 +51,7 @@ SOURCE_CLIENTMOD_PLAYER=1 build/clientmod_probe DOCUMENTS awp_lego_2
 ```
 
 Probe проверяет два полных цикла запуска/закрытия в одном процессе.
-Общие runtime contracts отдельно проверяют MOD VPK lookup, удаление MOD
+Linux: 6/6 CTest PASS (22,67 с). Общие runtime contracts проверяют MOD VPK lookup, удаление MOD
 search paths и фактическое размещение MOD writes в собственной папке game.
 
 ## Ограничения
@@ -67,3 +71,6 @@ called`, с предупреждениями о non-brush inline models и backw
 client DLL, local connection/usercmd, управление CCSPlayer, HUD и оружие.
 Для точного переноса специфичных механик ClientMod нужен их код или
 отдельная спецификация поведения; архив ресурсов их не определяет.
+
+CI для актуальной ветки проверяется отдельно; native content probe не
+запускается в CI, поскольку пользовательские ресурсы туда не загружаются.

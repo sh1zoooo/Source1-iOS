@@ -16,6 +16,9 @@
 #include "tier0/icommandline.h"
 #include "tier0/dbg.h"
 #include "tier1/strtools.h"
+#ifdef SOURCE_GAME_LINK
+#include "particles/particles.h"
+#endif
 #include <fstream>
 
 #ifdef SOURCE_GAME_LINK
@@ -131,6 +134,9 @@ void SourceHost::stop() {
     }
     Host_Disconnect(true);
     SV_ShutdownGameDLL();
+    // Static particle definitions outlive DLLShutdown. Release their material
+    // references while the original material system is still alive.
+    if (g_pParticleSystemMgr) g_pParticleSystemMgr->UncacheAllParticleSystems();
 #endif
     Host_Shutdown();
 #ifdef SOURCE_GAME_LINK
