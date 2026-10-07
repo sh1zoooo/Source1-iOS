@@ -72,5 +72,18 @@ client DLL, local connection/usercmd, управление CCSPlayer, HUD и о�
 Для точного переноса специфичных механик ClientMod нужен их код или
 отдельная спецификация поведения; архив ресурсов их не определяет.
 
-CI для актуальной ветки проверяется отдельно; native content probe не
+CI [37611935182](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37611935182)
+прошёл на code head `5d454e3d89579422b9bf0674052e6b619c24116e`,
+merge ref `91569caec29397abbc6c80b706ff4bd8a7f92890`: Linux 6/6,
+ARM64 IPA и simulator smoke. Скачанная IPA независимо проверена:
+0.36.0/build 40, Mach-O ARM64 executable, 264 PASS без FAIL, GPU revision 10,
+pause/resume; screenshot просмотрен. Физический iPhone не проверен.
+
+[IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37611935182/artifacts/11479071277).
+SHA256 IPA: `dfddc9019800bfcbb5f4a242b8985c1ad1083d9a69d53f9bff5ca8ef7a842e9e`.
+ARM64 archives также скачаны и проверены независимо: 571 Mach-O MH_OBJECT
+(548 game, 10 particles, 5 dmx, 5 choreo, 2 soundemitter, 1 scene).
+SHA256 archive artifact: `e5dfbe3c118aac625300a110f17fcaafa7b15e1982e6dcd90e53b37fa8e109e4`.
+
+Native content probe не
 запускается в CI, поскольку пользовательские ресурсы туда не загружаются.

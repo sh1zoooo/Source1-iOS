@@ -244,3 +244,5 @@ CI 37603005915 прошёл: Linux 6/6, ARM64 IPA и simulator smoke (строг
 [Пакет, воспроизведение, результаты и оставшиеся ограничения](CLIENTMOD-0.36.md).
 
 Финальная локальная проверка 0.36: 6/6 CTest PASS; два полных цикла карты с CCSPlayer, 303/302 simulation ticks. Дополнительно устранены устаревшие material references статического particle manager между перезапусками. Изменения: [PR #4](https://github.com/sh1zoooo/Source1-iOS/pull/4), поверх #3.
+
+CI 37611935182 для 0.36 прошёл: Linux 6/6, ARM64 IPA, simulator smoke (264 PASS, GPU revision 10, pause/resume). Скачанная IPA 0.36.0/build 40 и 571 ARM64 объект проверены независимо, screenshot просмотрен. Штатный уровень/игрок на ресурсах ClientMod проверены локально; на iOS остаётся preview, без клиентского управления. Физический запуск 0.36 не проверен.
