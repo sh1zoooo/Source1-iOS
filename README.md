@@ -5,6 +5,11 @@
 
 **Текущий этап: настоящий dedicated host, загрузка встроенного BSP через engine, камера со столкновениями и сцена vphysics. Изображение выводит наш адаптер Metal. Графический shaderapi Source и игра ещё не запущены.**
 
+Отдельный этап `SOURCE_BUILD_CSTRIKE=ON` компилирует 561 оригинальную единицу
+сервера CS:S и пять вспомогательных библиотек (ещё 24 единицы). Это подготовка
+GameDLL: архивы пока не подключены к приложению, host работает с `-nogamedll`.
+Проверка и границы этапа описаны в [CSTRIKE-COMPILE.md](docs/CSTRIKE-COMPILE.md).
+
 ## Что реально подключено
 
 540 единиц компиляции (539 из manifest и tool-mode displacement collision) из `tier0`, `tier1`, `mathlib`, `vstdlib`, `filesystem`, `vpklib`
@@ -78,9 +83,10 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Последняя полностью проверенная сборка: [0.26.0, build 29 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37433223388/artifacts/11397874122).
-94 стартовых проверки в 0.26; симулятор повторяет их и проверяет GPU, terrain,
-BSP material grid/lightmaps, static prop collisions после reset, MDL48/49 и ANI-анимацию, background/resume (192 PASS).
+Последняя полностью проверенная CI-сборка: [0.34.0, build 38 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37579634052/artifacts/11463912773).
+118 стартовых проверок; симулятор подтверждает GPU, terrain, BSP materials/lightmaps,
+PHY, MDL44/48/49, ANI, skins/bodygroups, BSP entities и background/resume (256 PASS).
+Архивы сервера CS:S проверяются отдельно и пока не включены в IPA.
 Версия 0.17 подтверждена пользовательским логом и кадром на iPhone 16e:
 69 PASS, загрузка двух BSP-материалов и studio texture, GPU A18, iOS 18.6.2,
 смена ориентации. Пользователь ранее подтвердил плавную деформацию модели.
