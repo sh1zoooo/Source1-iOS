@@ -1,6 +1,6 @@
 # Прогресс Source 1 → iOS
 
-Ориентировочно **92% минимального демонстрационного этапа**: BSP-сцена, камера, столкновения, VTF, живая физика и
+**100% этапа разработки минимального демо** по ранее заданному критерию: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
 первый VMT/VTF материал модели.
 Этап 0.13 добавляет чтение костей/весов и CPU skinning с процедурной позой fixture.
@@ -37,7 +37,7 @@ Sections, IK, delta и blend sequences пока впереди.
 
 Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
-Оригинальные Host_Init и Host_RunFrame работают с -nogamedll, без игровой DLL.
+В 0.35 оригинальные Host_Init и Host_RunFrame работают со связанной GameDLL CS:S: DLLInit и 196 server classes. Игровой уровень и игрок ещё не активированы.
 Последний присланный лог iPhone 16e подтверждает 94 стартовые проверки 0.26,
 cube/sphere rest, два SOLID_BBOX objects, MDL48, LDR lightmaps, GPU A18 и
 смену ориентации. Pause/resume и live camera command в этом логе не показаны.
@@ -234,5 +234,5 @@ DLLInit, доступны 196 server classes и исходные интерфе�
 startup checks (122 PASS), штатный DLLShutdown и повторный запуск. Linux
 проверяет оригинальный CGameServer::SpawnServer на тестовом BSP отдельно
 от LevelInit/activation. Полная игровая карта и игрок ещё не запущены.
-ARM64 и simulator CI ожидаются; процент ~92% пока сохраняется.
+CI 37603005915 прошёл: Linux 6/6, ARM64 IPA и simulator smoke (строго 264 PASS, GPU revision 10, pause/resume). Минимальное демо завершено на 100% по реализации: настоящий engine, тестовый BSP, адаптированные материалы/Metal и камера. Полный CS:S — отдельный этап; новый запуск 0.35 на физическом iPhone ещё не проверен.
 [Состав связки, проверки и оставшиеся зависимости](GAMEDLL-0.35.md).

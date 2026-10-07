@@ -28,7 +28,7 @@ duplicate singleton entries across host restarts.
 
 Local Linux Debug validation: final 6/6 CTest passed, including repeated
 host startup/shutdown and the four existing sanitizer mutation suites.
-iOS CI is pending. The dedicated game contract also
+CI 37603005915 also passed Linux 6/6, ARM64 IPA and iOS simulator. The dedicated game contract also
 uses original CGameServer::SpawnServer to load the authored test BSP. This is
 not LevelInit or SV_ActivateServer. A diagnostic attempt at LevelInit identified
 the missing world PHYSCOLLIDE lump; it is not counted as a passing check.
@@ -39,6 +39,26 @@ resources and linkage to the Metal presentation. The existing BSP camera and
 visual model entities continue using the bounded preview adapter. Full Source
 shader rendering, networking and audio remain separate porting work.
 
-ARM64 IPA and iOS simulator validation are pending. No new physical iPhone run
-has been performed. The previous ~92% estimate belongs to the minimal visual
-demo, not full CS:S, and is not raised by compilation alone.
+## Final validation
+
+- Commit b0cb02ddf1307bedba16fd2d451f38a1463d244c; CI merge ref
+  0d422f7becc6560ddd5c60db3c487a94f16c2c23.
+- Workflow 37603005915: Linux job 112731672331 and iOS job 112731672073 passed.
+- Simulator smoke requires exactly 264 PASS (two startup sets of 122 plus
+  20 scene/runtime checks), original GameDLL initialization, GPU revision 10,
+  camera spawn, textures, HDR/PHY/skins/bodygroups and pause/resume. Its step passed.
+- Independently downloaded ARM64 compilation artifact 11473996886: ZIP integrity,
+  all 571 Mach-O MH_OBJECT CPU_TYPE_ARM64 members, counts, licenses and manifest
+  matched. ZIP SHA256 db8e9abaafc7202f05260c3e876f042564cf794aa40781666d0ff9626bf57902.
+- [IPA 0.35.0/build 39 and simulator diagnostics](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37603005915/artifacts/11473993544)
+  are in artifact 11473993544 (6,134,565 bytes). GitHub reports outer ZIP SHA256
+  f4711dfced7ad6cc52cdd7dfac1ebc790d6e70415d813f3bd13484f554c86504.
+- The workspace disconnected during the final IPA/diagnostics download; the IPA
+  and screenshot were not independently inspected. The CI checks above passed.
+  No new physical iPhone run has been performed.
+
+The **minimal demo implementation milestone is complete (100%)** under the
+existing criterion: genuine engine, authored BSP world, adapted materials/Metal
+rendering and camera controls. This is not a percentage of full CS:S readiness
+or certification of real-cache compatibility. Active GameDLL LevelInit, player,
+client, full Source shaders and game content remain a separate stage.
