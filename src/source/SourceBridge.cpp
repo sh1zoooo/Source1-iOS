@@ -32,7 +32,11 @@ SpewRetval_t sourceSpew(SpewType_t type, const char* message) {
 }
 void statusCommand(const CCommand&) {
     Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib, appframework, tier2, tier3, bitmap, engine (dedicated), materialsystem/shaderapiempty, VTF, datacache, studiorender, vphysics/IVP.\n");
+#ifdef SOURCE_GAME_LINK
+    Msg("Original CS:S GameDLL DLLInit and 196 server classes active; dedicated host frames and Metal BSP preview. GameDLL LevelInit, player simulation and original graphical shaders remain pending.\n");
+#else
     Msg("Original Host_Init and idle frames active; BSP polygon preview uses a Metal adapter. Built-in engine brush world loaded; original Source graphical shaders and game DLL remain pending.\n");
+#endif
 }
 ConCommand status("source_status", statusCommand, "Report the actual port scope");
 void logCheck(const char* name, bool passed) {

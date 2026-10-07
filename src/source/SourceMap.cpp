@@ -611,7 +611,7 @@ bool SourceMap::start(const std::filesystem::path& root) {
     Msg("Source engine brush world loaded: %d vertices, %d surfaces, %d leaves\n",impl_->world->brush.pShared->numvertexes,impl_->world->brush.pShared->numsurfaces,impl_->world->brush.pShared->numleafs);
     impl_->fixtureCollision=impl_->collision;
     if(!selfTest()){stop();return false;}
-    Msg("Source BSP preview ready: original lump loader + polygon collision + Metal adapter. Engine brush world loaded; original graphical materialsystem and game remain pending.\n");return true;
+    Msg("Source BSP preview ready: original lump loader + polygon collision + Metal adapter. Engine brush world loaded; original graphical materialsystem and active game level remain pending.\n");return true;
 }
 void SourceMap::stop(){impl_.reset();}
 bool SourceMap::resetMap(){return impl_ && load(impl_->builtin.c_str(),nullptr);}

@@ -86,7 +86,9 @@ desktop main loop. Исправлены откат частичного запу
 Последняя полностью проверенная CI-сборка: [0.34.0, build 38 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37579634052/artifacts/11463912773).
 118 стартовых проверок; симулятор подтверждает GPU, terrain, BSP materials/lightmaps,
 PHY, MDL44/48/49, ANI, skins/bodygroups, BSP entities и background/resume (256 PASS).
-Архивы сервера CS:S проверяются отдельно и пока не включены в IPA.
+Архивы сервера CS:S в этой проверенной IPA ещё не включены.
+Новый этап 0.35 связывает оригинальную GameDLL и запускает DLLInit;
+его ARM64/simulator CI пока ожидается. [Подробности](docs/GAMEDLL-0.35.md).
 Версия 0.17 подтверждена пользовательским логом и кадром на iPhone 16e:
 69 PASS, загрузка двух BSP-материалов и studio texture, GPU A18, iOS 18.6.2,
 смена ориентации. Пользователь ранее подтвердил плавную деформацию модели.

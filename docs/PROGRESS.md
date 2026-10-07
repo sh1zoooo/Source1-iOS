@@ -226,3 +226,13 @@ simulator smoke прошли; 256 PASS, GPU revision 10 и pause/resume.
 Приложение остаётся 0.34.0, host пока запускается с `-nogamedll`; **92%**
 минимального прототипа сохраняются. Детали и следующие зависимости:
 [CSTRIKE-COMPILE.md](CSTRIKE-COMPILE.md).
+
+## 0.35: связка и инициализация GameDLL
+
+Оригинальный сервер CS:S связан со статическим движком; Host_Init вызывает
+DLLInit, доступны 196 server classes и исходные интерфейсы. Добавлены четыре
+startup checks (122 PASS), штатный DLLShutdown и повторный запуск. Linux
+проверяет оригинальный CGameServer::SpawnServer на тестовом BSP отдельно
+от LevelInit/activation. Полная игровая карта и игрок ещё не запущены.
+ARM64 и simulator CI ожидаются; процент ~92% пока сохраняется.
+[Состав связки, проверки и оставшиеся зависимости](GAMEDLL-0.35.md).

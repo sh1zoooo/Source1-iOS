@@ -154,7 +154,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     depth.depthWriteEnabled = YES;
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
+#ifdef SOURCE_GAME_LINK
+    self.status.text = @"Source 1 iOS · CS:S GameDLL initialized\n196 server classes · BSP preview\nSource self-tests: 122 PASS\nLeft move / right look";
+#else
     self.status.text = @"Source 1 iOS · minimal milestone ~92%\nBSP bodygroups · ClientMod VPK\nSource self-tests: 118 PASS\nLeft move / right look";
+#endif
     UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
     [self.metalView addGestureRecognizer:cameraPan];
     self.metalView.delegate = self;

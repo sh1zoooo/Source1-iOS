@@ -16,12 +16,16 @@
 #include "vphysics_interface.h"
 #include "engine_hlds_api.h"
 #include "idedicatedexports.h"
+#ifdef SOURCE_GAME_LINK
+#include "SoundEmitterSystem/isoundemittersystembase.h"
+#include "scenefilecache/ISceneFileCache.h"
+#endif
 
 extern CreateInterfaceFn SourceFileSystem_GetFactory();
 
 namespace {
 // Native platform front-end required by the real dedicated engine API.
-// UIKit owns the loop; SourceHost owns original Host_Init / idle frames; no game server is loaded.
+// UIKit owns the loop; SourceHost owns original Host_Init and frames.
 class IOSDedicatedExports final : public CBaseAppSystem<IDedicatedExports> {
 public:
     void Sys_Printf(char* text) override { Msg("%s", text); }
@@ -42,6 +46,10 @@ public:
         if (!materials) return false;
         materials->SetShaderAPI("shaderapiempty");
         AddSystem(&exports_, VENGINE_DEDICATEDEXPORTS_API_VERSION);
+#ifdef SOURCE_GAME_LINK
+        if (!AddSystem(modules, SOUNDEMITTERSYSTEM_INTERFACE_VERSION)
+            || !AddSystem(modules, SCENE_FILE_CACHE_INTERFACE_VERSION)) return false;
+#endif
         return AddSystem(modules, MATERIAL_SYSTEM_INTERFACE_VERSION)
             && AddSystem(modules, VPHYSICS_INTERFACE_VERSION)
             && AddSystem(modules, DATACACHE_INTERFACE_VERSION)

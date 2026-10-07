@@ -20,9 +20,9 @@ jobs:
           submodules: true
       - name: Initialize pinned Source dependencies
         run: git -C third_party/source submodule update --init --depth 1 thirdparty ivp
-      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSOURCE_BUILD_CSTRIKE=ON
+      - run: cmake -S . -B build -DCMAKE_BUILD_TYPE=Debug -DSOURCE_BUILD_CSTRIKE=ON -DSOURCE_LINK_CSTRIKE=ON
       - run: cmake --build build --parallel 4
-      - run: python3 scripts/verify_cstrike_archives.py build
+      - run: python3 scripts/verify_cstrike_archives.py build --linked
       - run: ctest --test-dir build --output-on-failure
   ios:
     name: iOS ARM64 IPA and simulator smoke
@@ -45,11 +45,11 @@ jobs:
           -DCMAKE_OSX_SYSROOT=iphoneos
           -DCMAKE_OSX_ARCHITECTURES=arm64
           -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
-          -DSOURCE_BUILD_CSTRIKE=ON
+          -DSOURCE_BUILD_CSTRIKE=ON -DSOURCE_LINK_CSTRIKE=ON
       - name: Build device app
         run: cmake --build build-ios --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
       - name: Verify original CS:S compilation archives
-        run: python3 scripts/verify_cstrike_archives.py build-ios/Release-iphoneos
+        run: python3 scripts/verify_cstrike_archives.py build-ios/Release-iphoneos --linked
       - name: Upload iPhone ARM64 game compilation archives
         uses: actions/upload-artifact@v4
         with:
@@ -78,6 +78,7 @@ jobs:
           -DCMAKE_OSX_SYSROOT=iphonesimulator
           -DCMAKE_OSX_ARCHITECTURES=$(uname -m)
           -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+          -DSOURCE_BUILD_CSTRIKE=ON -DSOURCE_LINK_CSTRIKE=ON
       - name: Build simulator app
         run: cmake --build build-sim --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
       - name: Verify simulator startup
