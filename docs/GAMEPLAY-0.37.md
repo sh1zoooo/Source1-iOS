@@ -50,8 +50,7 @@ Walking matched at 60 and 120 display calls; jump height was 65.4975 units.
 Final native verification also passed both original bone-pose and projected
 model-frustum checks: 50 player bones and 57 AWP viewmodel bones. Crouching
 changes bone rotations; firing/reloading changed the actual cache-defined AWP
-magazine 5 → 4 → 5 and reserve 30 → 29. Pause cleared movement, crouch and fire. iOS CI
-verification is in progress.
+magazine 5 → 4 → 5 and reserve 30 → 29. Pause cleared movement, crouch and fire. Final CI verification passed.
 
 Reproduce with user-supplied resources:
 
@@ -72,3 +71,28 @@ recoil, sound, full client HUD, death/respawn UX, bots, other maps and physical
 0.37 iPhone validation remain separate work. Source server poses cannot supply
 client-only visual effects. Unsupported model poses use bounded fallback data;
 an unavailable model is hidden rather than replaced with the preview fixture.
+
+
+## Verified iOS artifact
+
+[CI run 37621264912](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37621264912)
+passed both Linux and iOS jobs for code head
+`935c6944f7ec0848977c82652392319edf50dc5e`, merge
+`5488e07257328cc5c052b5e9228eb1ed02ad92e1`.
+
+[IPA and diagnostics](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37621264912/artifacts/11483041984):
+0.37.0/build 41; outer ZIP 6,150,728 bytes, SHA256
+`24d30850c6db5d3dea15ca2a472f3fb10c8ba95617aced5fefd762c0e10d6c9d`.
+The unsigned IPA is 5,278,988 bytes, SHA256
+`9a8ce2c100a14740331b151169a7b296ada2a30f31c125a5d5096faf54f6d858`.
+ZIP CRC, ARM64 Mach-O executable and Info.plist were independently checked.
+The downloaded runtime log contains exactly 264 PASS, no FAIL, GPU revision 10
+and pause/resume. The screenshot was inspected: all six practice controls
+are visible. CI does not contain the user's game archive, so it shows the
+fixture preview; actual gameplay on the archive is covered by the native probe.
+
+The [ARM64 game compilation archive](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37621264912/artifacts/11482233339)
+contains 571 verified Mach-O ARM64 object files (548 game and 23 helpers);
+manifest and licenses match the checkout. ZIP SHA256
+`bc1da7b8e1f7408f8ff459c6eb7b6f1522b8a6ea4737cecbb88fffc8505affa7`.
+Physical 0.37 iPhone gameplay and multi-touch behavior are not yet verified.

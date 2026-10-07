@@ -92,13 +92,16 @@ desktop main loop. Исправлены откат частичного запу
 
 ## Скачать IPA
 
-Последняя прошедшая CI-сборка: [0.36.0, build 40 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37611935182/artifacts/11479071277).
+Последняя прошедшая CI-сборка: [0.37.0, build 41 — IPA и диагностика](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37621264912/artifacts/11483041984).
 122 стартовые проверки; симулятор подтверждает GPU, terrain, BSP materials/lightmaps,
 PHY, MDL44/48/49, ANI, skins/bodygroups, BSP entities и background/resume (264 PASS).
 В IPA связана оригинальная GameDLL CS:S: DLLInit, 196 server classes и штатный
-DLLShutdown. На экране пока остаётся демо-комната и камера. Штатный LevelInit
-и серверный CCSPlayer проверены отдельно в native probe на ресурсах ClientMod;
-игровой клиент и управление ещё не подключены. [Проверки и границы этапа](docs/CLIENTMOD-0.36.md).
+DLLShutdown. Добавлены Play/Stop, Jump/Duck/Fire/Reload, реальный HUD и модели
+1P/3P с оригинальными bone poses. Без ресурсов открывается демо-комната;
+для практики импортируйте `cm`, `cstrike`, `hl2`, `platform` в
+`Source1IOS/content` и нажмите Play. Карта `awp_lego_2` и все игровые действия
+проверены локально двумя циклами; симулятор CI проверяет UI/startup/Metal без
+пользовательских ресурсов. [Проверки и границы этапа](docs/GAMEPLAY-0.37.md).
 Версия 0.17 подтверждена пользовательским логом и кадром на iPhone 16e:
 69 PASS, загрузка двух BSP-материалов и studio texture, GPU A18, iOS 18.6.2,
 смена ориентации. Пользователь ранее подтвердил плавную деформацию модели.

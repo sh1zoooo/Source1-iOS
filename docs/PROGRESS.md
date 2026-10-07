@@ -1,8 +1,9 @@
 # Прогресс Source 1 → iOS
 
-**Этап 0.37 в проверке:** original CCSPlayer movement, HUD, 1P/3P models на
+**Этап 0.37 реализован и прошёл CI:** original CCSPlayer movement, HUD, 1P/3P models на
 `awp_lego_2`. Два полных native gameplay цикла, оригинальные bone poses, видимость моделей
-1P/3P и 7/7 CTest прошли; финальная iOS CI проверка выполняется. [Подробности](GAMEPLAY-0.37.md).
+1P/3P и 7/7 CTest прошли; ARM64 IPA и симулятор (264 PASS, GPU, pause/resume)
+проверены. Физический iPhone 0.37 ещё не проверен. [Подробности](GAMEPLAY-0.37.md).
 
 **100% этапа разработки минимального демо** по ранее заданному критерию: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и
@@ -250,3 +251,22 @@ CI 37603005915 прошёл: Linux 6/6, ARM64 IPA и simulator smoke (строг
 Финальная локальная проверка 0.36: 6/6 CTest PASS; два полных цикла карты с CCSPlayer, 303/302 simulation ticks. Дополнительно устранены устаревшие material references статического particle manager между перезапусками. Изменения: [PR #4](https://github.com/sh1zoooo/Source1-iOS/pull/4), поверх #3.
 
 CI 37611935182 для 0.36 прошёл: Linux 6/6, ARM64 IPA, simulator smoke (264 PASS, GPU revision 10, pause/resume). Скачанная IPA 0.36.0/build 40 и 571 ARM64 объект проверены независимо, screenshot просмотрен. Штатный уровень/игрок на ресурсах ClientMod проверены локально; на iOS остаётся preview, без клиентского управления. Физический запуск 0.36 не проверен.
+
+
+## 0.37: движение, HUD и модели офлайн-игрока
+
+[PR #5](https://github.com/sh1zoooo/Source1-iOS/pull/5) поверх #4 связывает
+UIKit с оригинальным CCSPlayer на `awp_lego_2`: ходьба, коллизии, прыжок,
+приседание, стрельба, перезарядка, HUD и модели 1P/3P. На реальном кеше
+два цикла native gameplay прошли при 60/120 display calls; прыжок 65.4975 units,
+магазин 5 → 4 → 5, запас 30 → 29. Проверены оригинальные 50/57 bone poses,
+изменение костей при приседании, видимость моделей и сброс ввода при паузе.
+
+CI [37621264912](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37621264912)
+успешен для code head `935c6944f7ec0848977c82652392319edf50dc5e`
+(merge `5488e07257328cc5c052b5e9228eb1ed02ad92e1`): Linux 7/7, ARM64 IPA
+0.37.0/build 41, симулятор 264 PASS, GPU revision 10 и pause/resume.
+Скачанные IPA и 571 ARM64 объект, manifest/лицензии и screenshot проверены
+независимо. Это завершение первого этапа offline practice, а не 100% полного
+ClientMod. Полный клиент, точное оформление HUD и новый физический запуск
+остаются впереди. [Подробности](GAMEPLAY-0.37.md).
