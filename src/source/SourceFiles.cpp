@@ -90,6 +90,14 @@ bool SourceFiles::start(const std::filesystem::path& root, void* filesystem) {
     initialized_ = true; // Lifecycle is owned by the original CAppSystemGroup.
     fs->AddSearchPath((root_ / "game").c_str(), "GAME");
     fs->AddSearchPath((root_ / "game").c_str(), "DEFAULT_WRITE_PATH");
+    // Original encrypted weapon scripts are requested through MOD, while game
+    // writes must stay in the app-owned directory rather than imported content.
+    fs->AddSearchPath((root_ / "game").c_str(), "MOD");
+    fs->AddSearchPath((root_ / "game").c_str(), "MOD_WRITE");
+    fs->AddSearchPath((root_ / "game").c_str(), "GAME_WRITE");
+    fs->MarkPathIDByRequestOnly("MOD", true);
+    fs->MarkPathIDByRequestOnly("MOD_WRITE", true);
+    fs->MarkPathIDByRequestOnly("GAME_WRITE", true);
     fs->AddSearchPath((root_ / "selftest").c_str(), "PORT_TEST");
     fs->MarkPathIDByRequestOnly("PORT_TEST", true);
     fs->MarkPathIDByRequestOnly("PORT_VPK", true);
@@ -139,11 +147,20 @@ bool SourceFiles::mountContent(const std::string& name){
     std::sort(archives.begin(),archives.end());
     auto* fs=static_cast<IFileSystem*>(interface_);fs->AddSearchPath(path.c_str(),"GAME",PATH_ADD_TO_TAIL);
     for(const auto& archive:archives)fs->AddSearchPath(archive.c_str(),"GAME",PATH_ADD_TO_TAIL);
+    if(name=="cm"||name=="cstrike_clientmod"||name=="cstrike"){
+        fs->AddSearchPath(path.c_str(),"MOD",PATH_ADD_TO_TAIL);
+        for(const auto& archive:archives)fs->AddSearchPath(archive.c_str(),"MOD",PATH_ADD_TO_TAIL);
+    }
     content_.push_back({name,path,archives});Msg("Source content mounted: %s; GAME search path: %s; %zu bounded VPK archives, %zu chunks, %llu bytes\n",name.c_str(),path.c_str(),archives.size(),chunks.size(),static_cast<unsigned long long>(packedBytes));return true;
 }
 bool SourceFiles::unmountContent(const std::string& name){
     if(!initialized_)return false;const auto found=std::find_if(content_.begin(),content_.end(),[&](const auto& entry){return entry.name==name;});if(found==content_.end())return false;
     auto* fs=static_cast<IFileSystem*>(interface_);fs->AsyncFinishAll();bool removed=fs->RemoveSearchPath(found->path.c_str(),"GAME");for(auto archive=found->archives.rbegin();archive!=found->archives.rend();++archive)removed=fs->RemoveSearchPath(archive->c_str(),"GAME")&&removed;if(!removed)return false;
+    if(name=="cm"||name=="cstrike_clientmod"||name=="cstrike"){
+        removed=fs->RemoveSearchPath(found->path.c_str(),"MOD")&&removed;
+        for(const auto& archive:found->archives)removed=fs->RemoveSearchPath(archive.c_str(),"MOD")&&removed;
+        if(!removed)return false;
+    }
     content_.erase(found);Msg("Source content unmounted: %s\n",name.c_str());return true;
 }
 bool SourceFiles::contentSelfTest(){

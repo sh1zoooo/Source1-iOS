@@ -37,7 +37,7 @@ Sections, IK, delta и blend sequences пока впереди.
 
 Подключены 24 оригинальные библиотеки (540 единиц компиляции), filesystem/VPK,
 appframework, headless materials, model cache, studiorender и vphysics/IVP.
-В 0.35 оригинальные Host_Init и Host_RunFrame работают со связанной GameDLL CS:S: DLLInit и 196 server classes. Игровой уровень и игрок ещё не активированы.
+В 0.35 оригинальные Host_Init и Host_RunFrame работают со связанной GameDLL CS:S: DLLInit и 196 server classes. В 0.36 штатный уровень и серверный игрок дополнительно проверены локально на ресурсах ClientMod; игровой клиент ещё не подключён.
 Последний присланный лог iPhone 16e подтверждает 94 стартовые проверки 0.26,
 cube/sphere rest, два SOLID_BBOX objects, MDL48, LDR lightmaps, GPU A18 и
 смену ориентации. Pause/resume и live camera command в этом логе не показаны.
@@ -236,3 +236,13 @@ startup checks (122 PASS), штатный DLLShutdown и повторный за
 от LevelInit/activation. Полная игровая карта и игрок ещё не запущены.
 CI 37603005915 прошёл: Linux 6/6, ARM64 IPA и simulator smoke (строго 264 PASS, GPU revision 10, pause/resume). Минимальное демо завершено на 100% по реализации: настоящий engine, тестовый BSP, адаптированные материалы/Metal и камера. Полный CS:S — отдельный этап; новый запуск 0.35 на физическом iPhone ещё не проверен.
 [Состав связки, проверки и оставшиеся зависимости](GAMEDLL-0.35.md).
+
+## 0.36: ресурсы ClientMod и оригинальный игровой уровень
+
+Архив из предоставленной ссылки скачан повторно; SHA256 совпал с проверенным Rec1.4. Исправлены MOD/MOD_WRITE/GAME_WRITE search paths, штатное завершение активного уровня и серверная обработка studio model flags без desktop shader variables. Ручная проверка `awp_lego_2` прошла LevelInit/ServerActivate: 49 сущностей, 36 team spawns, 300 кадров. Оригинальный fake client создаёт CCSPlayer и позволяет серверу продвигать simulation ticks. Это локальная проверка серверной части, а не запуск полноценного ClientMod на iPhone.
+
+[Пакет, воспроизведение, результаты и оставшиеся ограничения](CLIENTMOD-0.36.md).
+
+Финальная локальная проверка 0.36: 6/6 CTest PASS; два полных цикла карты с CCSPlayer, 303/302 simulation ticks. Дополнительно устранены устаревшие material references статического particle manager между перезапусками. Изменения: [PR #4](https://github.com/sh1zoooo/Source1-iOS/pull/4), поверх #3.
+
+CI 37611935182 для 0.36 прошёл: Linux 6/6, ARM64 IPA, simulator smoke (264 PASS, GPU revision 10, pause/resume). Скачанная IPA 0.36.0/build 40 и 571 ARM64 объект проверены независимо, screenshot просмотрен. Штатный уровень/игрок на ресурсах ClientMod проверены локально; на iOS остаётся preview, без клиентского управления. Физический запуск 0.36 не проверен.

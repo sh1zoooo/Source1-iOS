@@ -1,5 +1,8 @@
 #include "Runtime.hpp"
 #include "BspLzmaFixture.hpp"
+#include "tier0/platform.h"
+#include "filesystem.h"
+#include "tier2/tier2.h"
 #include <cstdint>
 #include <algorithm>
 #include <cstring>
@@ -211,12 +214,17 @@ int main() {
         check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content leaked into GAME search paths");
         check(host.executeSource("source_content_mount cm")&&host.executeSource("source_content_mount cm"),"Loose cache directory mount was not idempotent");
         check(host.executeSource("source_content_selftest")&&host.executeSource("source_content_probe fixture/hello.txt"),"Mounted nested VPK could not be read through Source filesystem");
+        check(g_pFullFileSystem->FileExists("fixture/hello.txt","MOD"),"GameDLL MOD path could not read imported VPK");
+        auto modWrite=g_pFullFileSystem->Open("mod_write_probe.txt","wb","MOD");
+        check(modWrite!=nullptr,"GameDLL MOD write path missing");g_pFullFileSystem->Close(modWrite);
+        check(std::filesystem::is_regular_file(directory/"Source1IOS/game/mod_write_probe.txt")&&!std::filesystem::exists(cm/"mod_write_probe.txt"),"MOD write escaped app-owned game directory");
         check(!host.executeSource("source_content_probe ../game/roundtrip.txt")&&!host.executeSource("source_content_probe /etc/passwd"),"Unsafe content probe accepted");
         check(host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Mounted cache BSP could not be read through Source filesystem");
         check(host.executeSource("source_model_load models/cache_probe.mdl")&&host.modelTexture().width==64&&host.modelTexture().pixels[0]==90&&host.modelTexture().pixels[1]==150&&host.modelTexture().pixels[2]==210,"Mounted cache MDL companions or VMT/VTF material did not resolve");
         check(!host.executeSource("source_content_mount ../game")&&!host.executeSource("source_content_mount /tmp")&&!host.executeSource("source_content_mount missing")&&!host.executeSource("source_content_mount cm/archive.vpk"),"Invalid content path accepted");
         check(host.executeSource("source_content_unmount cm")&&!host.executeSource("source_content_unmount cm"),"Content unmount did not remove its search path");
         check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content remained visible");
+        check(!g_pFullFileSystem->FileExists("fixture/hello.txt","MOD"),"Unmounted content remained visible through MOD");
         check(!host.executeSource("source_model_load models/cache_probe.mdl"),"Unmounted model remained visible in search paths");
         check(host.executeSource("source_model_reset"),"Built-in model restore after content import failed");
         const auto cacheVpk=cm/"packed/cache_dir.vpk";auto cacheVpkBytes=readBytes(cacheVpk);auto invalidVpk=cacheVpkBytes;invalidVpk[0]^=0xff;
