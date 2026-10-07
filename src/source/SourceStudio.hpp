@@ -50,6 +50,7 @@ bool selectStudioSkin(StudioMesh& model,unsigned family);
 // Local rotations are explicit pose overrides, not decoded MDL sequences.
 bool skinStudioModel(const StudioMesh& model, const std::vector<Quaternion>& rotations,
     std::vector<StudioVertex>& output, const std::vector<Vector>& positions={});
+bool skinStudioMatrices(const StudioMesh& model,const float (*bones)[12],size_t count,std::vector<StudioVertex>& output);
 bool sampleStudioAnimation(const StudioMesh& model,unsigned animation,double seconds,StudioPose& pose);
 bool parseStudioModel(const std::vector<std::uint8_t>& mdl,
     const std::vector<std::uint8_t>& vvd,

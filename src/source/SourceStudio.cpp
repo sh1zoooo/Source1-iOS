@@ -332,6 +332,21 @@ bool skinStudioModel(const StudioMesh& model,const std::vector<Quaternion>& rota
         if(!position.IsValid()||!normal.IsValid()||normal.LengthSqr()<1e-8f)return false;VectorNormalize(normal);vertex.position=position;vertex.normal=normal;}
     output=std::move(staged);return true;
 }
+bool skinStudioMatrices(const StudioMesh& model,const float (*bones)[12],size_t count,std::vector<StudioVertex>& output){
+    if(!bones||count!=model.bones.size()||!count||count>128)return false;
+    std::vector<matrix3x4_t> skin(count);
+    for(size_t i=0;i<count;++i){matrix3x4_t transform;
+        for(int row=0;row<3;++row)for(int col=0;col<4;++col){const float v=bones[i][row*4+col];if(!std::isfinite(v))return false;transform[row][col]=v;}
+        ConcatTransforms(transform,model.bones[i].poseToBone,skin[i]);
+    }
+    auto staged=model.triangles;
+    for(auto& vertex:staged){if(!vertex.influences)continue;if(vertex.influences>3)return false;Vector position(0,0,0),normal(0,0,0);
+        for(unsigned b=0;b<vertex.influences;++b){if(vertex.bones[b]>=count||!std::isfinite(vertex.weights[b]))return false;Vector p,n;
+            VectorTransform(vertex.position,skin[vertex.bones[b]],p);VectorRotate(vertex.normal,skin[vertex.bones[b]],n);position+=p*vertex.weights[b];normal+=n*vertex.weights[b];}
+        if(!position.IsValid()||!normal.IsValid()||normal.LengthSqr()<1e-8f)return false;VectorNormalize(normal);vertex.position=position;vertex.normal=normal;
+    }
+    output=std::move(staged);return true;
+}
 bool sampleStudioAnimation(const StudioMesh& model,unsigned animation,double seconds,StudioPose& pose){
     if(animation>=model.animations.size()||!std::isfinite(seconds)||seconds<0)return false;const auto& clip=model.animations[animation];if(clip.frames.empty())return false;
     const size_t last=clip.frames.size()-1;double frame=0;if(last){const double duration=double(last)/clip.fps;frame=clip.looping?std::fmod(seconds,duration)*clip.fps:std::min(seconds,duration)*clip.fps;frame=std::min(frame,double(last));}

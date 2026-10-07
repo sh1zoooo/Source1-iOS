@@ -6,6 +6,7 @@
 #include "SourceHost.hpp"
 #include "SourceMap.hpp"
 #include "RenderTypes.hpp"
+#include "SourcePlayer.hpp"
 
 namespace source1ios {
 class SourceBridge final {
@@ -22,8 +23,15 @@ public:
     const SourceTexture& lightmapTexture() const { return map_.lightmapTexture(); }
     const SourceTexture& modelTexture() const { return map_.modelTexture(); }
     std::uint64_t modelTextureRevision() const { return map_.modelTextureRevision(); }
-    void cameraLook(float yaw, float pitch) { map_.look(yaw, pitch); }
-    void cameraMove(float forward, float right, float seconds) { map_.move(forward, right, seconds); }
+    void cameraLook(float yaw, float pitch) { if(player_.active())player_.look(yaw,pitch);else map_.look(yaw,pitch); }
+    void cameraMove(float forward, float right, float seconds) { if(player_.active())player_.move(forward,right);else map_.move(forward,right,seconds); }
+    bool startGame(const std::string& map);
+    void stopGame();
+    void clearInput() { player_.move(0,0);player_.button(15,false);accumulator_=0; }
+    void playerButton(unsigned button,bool pressed) { player_.button(button,pressed); }
+    void thirdPerson(bool enabled) { thirdPerson_=enabled;gameModel_.clear(); }
+    const PlayerState& playerState() const { return player_.state(); }
+    const std::string& gameError() const { return gameError_.empty()?player_.error():gameError_; }
     bool ready() const { return ready_; }
 private:
     bool ready_ = false;
@@ -32,6 +40,10 @@ private:
     SourceFiles files_;
     SourceHost host_;
     SourceMap map_;
+    SourcePlayer player_;
+    bool thirdPerson_=false,gameModelReady_=false;
+    double accumulator_=0;
+    std::string gameModel_,gameError_;
     double elapsed_ = 0;
 };
 }

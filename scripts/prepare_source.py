@@ -7,6 +7,7 @@ import re
 import shutil
 import subprocess
 import os
+import fcntl
 
 PIN = "ed8209cc35c61fbd8ddff8480962a01c981eef2f"
 parser = argparse.ArgumentParser()
@@ -14,6 +15,10 @@ parser.add_argument("upstream", type=Path)
 parser.add_argument("output", type=Path)
 parser.add_argument("--cstrike", action="store_true", help="Prepare the optional CS:S server compilation stage")
 args = parser.parse_args()
+# Reentrant CMake checks must not interleave copying and patching one output.
+args.output.mkdir(parents=True, exist_ok=True)
+prepare_lock = (args.output / ".prepare.lock").open("w")
+fcntl.flock(prepare_lock, fcntl.LOCK_EX)
 # Reconfiguration must not rebuild the whole SDK when audited patches are
 # unchanged. Remember previously prepared files before copying original input.
 patched_paths = set(re.findall(r'replace(?:_all)?\("([^"\n]+)"', Path(__file__).read_text()))
@@ -63,6 +68,22 @@ def replace_all(path, old, new, expected):
         raise RuntimeError(f"Patch count changed: {path}: expected {expected}")
     file.write_text(text.replace(old, new), errors="surrogateescape")
     patch_count += expected
+
+# Friction snapshots are queried by player stress damage after simulation.
+# IVP clears its temporary solver pointer at the end of impact processing;
+# retain the actual computed surface normal with the persistent contact point.
+replace("ivp/ivp_intern/ivp_friction.hxx",
+        "    IVP_U_Float_Point last_contact_point_ws;",
+        "    IVP_U_Float_Point last_contact_point_ws;\n    IVP_U_Float_Point last_surface_normal_ws;")
+replace("ivp/ivp_intern/ivp_friction.cxx",
+        "IVP_Contact_Point::IVP_Contact_Point( IVP_Mindist *md)\n{",
+        "IVP_Contact_Point::IVP_Contact_Point( IVP_Mindist *md)\n{\n    last_surface_normal_ws.set_to_zero();")
+replace("ivp/ivp_intern/ivp_mindist_friction.cxx",
+        "    this->last_contact_point_ws.set( &info->contact_point_ws );",
+        "    this->last_contact_point_ws.set( &info->contact_point_ws );\n    this->last_surface_normal_ws.set( &info->surf_normal );")
+replace("ivp/ivp_intern/ivp_friction.cxx",
+        "\t*normal = friction_handle->tmp_contact_info->surf_normal;",
+        "\t*normal = friction_handle->last_surface_normal_ws;")
 
 # The server uses studio metadata and collision, not desktop shader flags.
 # Empty shaderapi materials have no compiled shader variables to inspect.

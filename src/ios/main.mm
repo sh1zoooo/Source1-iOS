@@ -2,6 +2,7 @@
 #import <MetalKit/MetalKit.h>
 #include "Runtime.hpp"
 #include <chrono>
+#include <cmath>
 
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
@@ -33,15 +34,15 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 }
 )metal";
 
-@interface LabController : UIViewController <MTKViewDelegate, UITextFieldDelegate> {
+@interface LabController : UIViewController <MTKViewDelegate, UITextFieldDelegate, UIGestureRecognizerDelegate> {
     source1ios::Runtime _runtime;
     std::chrono::steady_clock::time_point _previous;
     BOOL _hasPrevious;
     BOOL _hostStarted;
     BOOL _submittedFirstFrame;
     CGPoint _movement;
-    BOOL _movingGesture;
     BOOL _smokeRequested;
+    BOOL _thirdPerson;
     std::uint64_t _mapTextureRevision;
     std::uint64_t _modelTextureRevision;
     std::uint64_t _submittedSceneRevision;
@@ -55,6 +56,9 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 @property(nonatomic, strong) id<MTLTexture> lightmapTexture;
 @property(nonatomic, strong) UILabel *status;
 @property(nonatomic, strong) UITextField *commandInput;
+@property(nonatomic, strong) UILabel *hud;
+@property(nonatomic, strong) UILabel *crosshair;
+@property(nonatomic, strong) UIButton *play;
 @end
 
 @implementation LabController
@@ -91,8 +95,39 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     run.translatesAutoresizingMaskIntoConstraints = NO;
     [run addTarget:self action:@selector(runCommand:) forControlEvents:UIControlEventTouchUpInside];
     [self.view addSubview:run];
+    UIStackView *controls=[[UIStackView alloc] init];
+    controls.axis=UILayoutConstraintAxisHorizontal;controls.distribution=UIStackViewDistributionFillEqually;controls.spacing=4;
+    controls.translatesAutoresizingMaskIntoConstraints=NO;
+    NSArray<NSString *> *titles=@[@"Play",@"Jump",@"Duck",@"Fire",@"Reload",@"3P"];
+    const unsigned flags[]={0,source1ios::PlayerJump,source1ios::PlayerDuck,source1ios::PlayerAttack,source1ios::PlayerReload,0};
+    for(NSUInteger i=0;i<titles.count;++i){UIButton *button=[UIButton buttonWithType:UIButtonTypeSystem];
+        [button setTitle:titles[i] forState:UIControlStateNormal];button.titleLabel.font=[UIFont systemFontOfSize:12 weight:UIFontWeightSemibold];
+        button.backgroundColor=[UIColor colorWithWhite:.1 alpha:.85];button.layer.cornerRadius=6;button.tag=flags[i];
+        button.accessibilityIdentifier=[@"practice_" stringByAppendingString:titles[i].lowercaseString];
+        if(i==0){self.play=button;[button addTarget:self action:@selector(togglePractice:) forControlEvents:UIControlEventTouchUpInside];}
+        else if(i==5)[button addTarget:self action:@selector(togglePerspective:) forControlEvents:UIControlEventTouchUpInside];
+        else{[button addTarget:self action:@selector(pressPlayer:) forControlEvents:UIControlEventTouchDown];
+            [button addTarget:self action:@selector(releasePlayer:) forControlEvents:UIControlEventTouchUpInside|UIControlEventTouchUpOutside|UIControlEventTouchCancel];}
+        [controls addArrangedSubview:button];
+    }
+    [self.view addSubview:controls];
+    self.hud=[[UILabel alloc] init];self.hud.textColor=UIColor.whiteColor;self.hud.numberOfLines=2;
+    self.hud.font=[UIFont monospacedSystemFontOfSize:12 weight:UIFontWeightSemibold];self.hud.translatesAutoresizingMaskIntoConstraints=NO;
+    self.hud.backgroundColor=[UIColor colorWithWhite:0 alpha:.65];[self.view addSubview:self.hud];
+    self.crosshair=[[UILabel alloc] init];self.crosshair.text=@"+";self.crosshair.textColor=UIColor.whiteColor;
+    self.crosshair.font=[UIFont monospacedSystemFontOfSize:20 weight:UIFontWeightRegular];self.crosshair.hidden=YES;
+    self.crosshair.translatesAutoresizingMaskIntoConstraints=NO;[self.view addSubview:self.crosshair];
     UILayoutGuide *safe = self.view.safeAreaLayoutGuide;
     [NSLayoutConstraint activateConstraints:@[
+        [controls.bottomAnchor constraintEqualToAnchor:self.commandInput.topAnchor constant:-8],
+        [controls.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:12],
+        [controls.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-12],
+        [controls.heightAnchor constraintEqualToConstant:42],
+        [self.hud.bottomAnchor constraintEqualToAnchor:controls.topAnchor constant:-8],
+        [self.hud.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:12],
+        [self.hud.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-12],
+        [self.crosshair.centerXAnchor constraintEqualToAnchor:safe.centerXAnchor],
+        [self.crosshair.centerYAnchor constraintEqualToAnchor:safe.centerYAnchor],
         [self.status.topAnchor constraintEqualToAnchor:safe.topAnchor constant:16],
         [self.status.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:16],
         [self.status.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-16],
@@ -155,12 +190,14 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.depthState = [device newDepthStencilStateWithDescriptor:depth];
     if (!self.depthState) { [self fail:@"Depth state creation failed"]; return; }
 #ifdef SOURCE_GAME_LINK
-    self.status.text = @"Source 1 iOS · CS:S GameDLL initialized\n196 server classes · BSP preview\nSource self-tests: 122 PASS\nLeft move / right look";
+    self.status.text = @"Source 1 iOS · CS:S offline practice\nImport cm / cstrike / hl2 in Files, then Play\nSource self-tests: 122 PASS\nLeft move / right look";
 #else
     self.status.text = @"Source 1 iOS · minimal milestone ~92%\nBSP bodygroups · ClientMod VPK\nSource self-tests: 118 PASS\nLeft move / right look";
 #endif
-    UIPanGestureRecognizer *cameraPan = [[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
-    [self.metalView addGestureRecognizer:cameraPan];
+    for(NSString *name in @[@"move",@"look"]){
+        UIPanGestureRecognizer *pan=[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(cameraPan:)];
+        pan.name=name;pan.delegate=self;pan.maximumNumberOfTouches=1;[self.metalView addGestureRecognizer:pan];
+    }
     self.metalView.delegate = self;
     self.metalView.paused = NO;
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(pauseHost)
@@ -168,6 +205,20 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [NSNotificationCenter.defaultCenter addObserver:self selector:@selector(resumeHost)
         name:UIApplicationDidBecomeActiveNotification object:nil];
 }
+- (void)togglePractice:(UIButton *)sender {
+    [self.commandInput resignFirstResponder];_movement=CGPointZero;
+    if(_runtime.playerState().active){_runtime.stopGame();self.hud.text=@"Practice stopped";}
+    else if(!_runtime.startGame())self.hud.text=[NSString stringWithUTF8String:_runtime.gameError().c_str()];
+    else self.status.text=@"CS:S offline practice · original player movement\nLeft move / right look · hold Jump / Duck / Fire";
+    [sender setTitle:_runtime.playerState().active?@"Stop":@"Play" forState:UIControlStateNormal];
+    _thirdPerson=NO;_hasPrevious=NO;
+}
+- (void)togglePerspective:(UIButton *)sender {
+    _thirdPerson=!_thirdPerson;_runtime.thirdPerson(_thirdPerson);
+    [sender setTitle:_thirdPerson?@"1P":@"3P" forState:UIControlStateNormal];
+}
+- (void)pressPlayer:(UIButton *)sender { _runtime.playerButton(unsigned(sender.tag),true); }
+- (void)releasePlayer:(UIButton *)sender { _runtime.playerButton(unsigned(sender.tag),false); }
 - (void)fail:(NSString *)reason {
     _runtime.log(std::string("Startup failed: ") + reason.UTF8String);
     self.status.text = [@"Startup failed\n" stringByAppendingString:reason];
@@ -195,6 +246,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     _hasPrevious = YES;
     _runtime.cameraMove(_movement.y, _movement.x, (float)dt);
     _runtime.frame(dt);
+    const auto& player=_runtime.playerState();self.crosshair.hidden=!player.active||_thirdPerson;
+    if(player.active){
+        NSString *weapon=[NSString stringWithUTF8String:player.weapon];
+        self.hud.text=[NSString stringWithFormat:@"HP %d   Armor %d   $%d   Ammo %d / %d\n%@ · %.0f u/s · %@",player.health,player.armor,player.money,player.clip,player.reserve,weapon,std::hypot(player.velocity[0],player.velocity[1]),player.crouched?@"duck":player.grounded?@"ground":@"air"];
+    }
     if (_smokeRequested && _runtime.frames() == 60) {
         if (!_runtime.executeSource("source_selftest") || !_runtime.executeSource("source_physics_reset")
             || !_runtime.executeSource("source_physics_impulse") || !_runtime.executeSource("source_bsp_terrain")
@@ -279,21 +335,19 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     }
     [command commit];
 }
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+    const BOOL left=[touch locationInView:self.metalView].x<self.metalView.bounds.size.width/2;
+    return [gesture.name isEqualToString:@"move"]?left:!left;
+}
+- (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldRecognizeSimultaneouslyWithGestureRecognizer:(UIGestureRecognizer *)other { return YES; }
 - (void)cameraPan:(UIPanGestureRecognizer *)gesture {
-    if (gesture.state == UIGestureRecognizerStateBegan) {
-        _movingGesture = [gesture locationInView:self.metalView].x < self.metalView.bounds.size.width / 2;
+    const BOOL movement=[gesture.name isEqualToString:@"move"];
+    if(gesture.state==UIGestureRecognizerStateEnded||gesture.state==UIGestureRecognizerStateCancelled||gesture.state==UIGestureRecognizerStateFailed){
+        if(movement)_movement=CGPointZero;return;
     }
-    if (gesture.state == UIGestureRecognizerStateEnded || gesture.state == UIGestureRecognizerStateCancelled) {
-        _movement = CGPointZero;
-        return;
-    }
-    CGPoint delta = [gesture translationInView:self.metalView];
-    if (_movingGesture) {
-        _movement = CGPointMake(MAX(-1, MIN(1, delta.x / 70)), MAX(-1, MIN(1, -delta.y / 70)));
-    } else {
-        _runtime.cameraLook((float)-delta.x * .18f, (float)delta.y * .18f);
-        [gesture setTranslation:CGPointZero inView:self.metalView];
-    }
+    CGPoint delta=[gesture translationInView:self.metalView];
+    if(movement)_movement=CGPointMake(MAX(-1,MIN(1,delta.x/70)),MAX(-1,MIN(1,-delta.y/70)));
+    else{_runtime.cameraLook((float)-delta.x*.18f,(float)delta.y*.18f);[gesture setTranslation:CGPointZero inView:self.metalView];}
 }
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     [self runCommand:nil];
@@ -303,7 +357,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     NSString *command = self.commandInput.text ?: @"";
     [self.commandInput resignFirstResponder];
     BOOL accepted = _runtime.executeSource(command.UTF8String);
-    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · minimal milestone ~92%%\nBSP bodygroups · ClientMod VPK\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
+    self.status.text = [NSString stringWithFormat:@"Source 1 iOS · CS:S offline practice\n%@: %@", accepted ? @"Executed" : @"Rejected", command];
 }
 - (void)shareLog:(UIButton *)sender {
     if (_runtime.logPath().empty()) return;

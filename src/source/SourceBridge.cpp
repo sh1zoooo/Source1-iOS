@@ -33,7 +33,7 @@ SpewRetval_t sourceSpew(SpewType_t type, const char* message) {
 void statusCommand(const CCommand&) {
     Msg("Source modules active: tier0, tier1, mathlib, vstdlib, filesystem_stdio, vpklib, appframework, tier2, tier3, bitmap, engine (dedicated), materialsystem/shaderapiempty, VTF, datacache, studiorender, vphysics/IVP.\n");
 #ifdef SOURCE_GAME_LINK
-    Msg("Original CS:S GameDLL DLLInit and 196 server classes active; dedicated host frames and Metal BSP preview. GameDLL LevelInit, player simulation and original graphical shaders remain pending.\n");
+    Msg("Original CS:S GameDLL DLLInit and 196 server classes active; dedicated host frames and Metal BSP preview. Offline CCSPlayer movement available with imported resources; original graphical shaders remain pending.\n");
 #else
     Msg("Original Host_Init and idle frames active; BSP polygon preview uses a Metal adapter. Built-in engine brush world loaded; original Source graphical shaders and game DLL remain pending.\n");
 #endif
@@ -82,6 +82,7 @@ bool SourceBridge::start(Logger output, void* context, const std::filesystem::pa
 }
 void SourceBridge::stop() {
     if (!ownsCore_) return;
+    player_.stop();
     map_.stop();
     host_.stop();
     files_.stop();
@@ -144,6 +145,9 @@ bool SourceBridge::execute(const std::string& input) {
     if (!ready_ || input.size() > 255) return false;
     CCommand args;
     if (!args.Tokenize(input.c_str()) || args.ArgC() < 1) return false;
+    if (!std::strcmp(args[0], "source_game_load") && args.ArgC()==2) return startGame(args[1]);
+    if (!std::strcmp(args[0], "source_game_stop") && args.ArgC()==1) { stopGame();return true; }
+    if (player_.active() && std::strcmp(args[0],"source_status")) { Msg("Stop practice before changing preview or content\n");return false; }
     if (!std::strcmp(args[0], "source_content_mount") && args.ArgC()==2) return files_.mountContent(args[1]);
     if (!std::strcmp(args[0], "source_content_unmount") && args.ArgC()==2) return files_.unmountContent(args[1]);
     if (!std::strcmp(args[0], "source_content_selftest") && args.ArgC()==1) return files_.contentSelfTest();
@@ -216,11 +220,34 @@ bool SourceBridge::execute(const std::string& input) {
     Msg("Unknown Source command: %s\n", args[0]);
     return false;
 }
+bool SourceBridge::startGame(const std::string& map) {
+    if(!ready_)return false;
+    gameError_.clear();
+    if(map!="awp_lego_2"){gameError_="This practice build supports awp_lego_2";return false;}
+    stopGame();
+    for(const auto* folder:{"hl2","platform","cstrike","cm"})files_.mountContent(folder);
+    if(!player_.start(map)) { Msg("Practice unavailable: %s\n",player_.error().c_str());return false; }
+    if(!map_.load(("maps/"+map+".bsp").c_str())) { player_.stop();gameError_="BSP render adapter rejected this map";return false; }
+    gameModel_.clear();gameModelReady_=false;accumulator_=0;thirdPerson_=false;
+    map_.setGameView(player_.state(),false,false);return true;
+}
+void SourceBridge::stopGame() {
+    const bool active=player_.active();player_.stop();accumulator_=0;gameModel_.clear();
+    if(active){map_.clearGameView();map_.resetMap();map_.resetModel();}
+}
 void SourceBridge::frame(double seconds) {
     if (!ready_ || !std::isfinite(seconds) || seconds < 0) return;
     elapsed_ += std::min(seconds, 0.1);
-    host_.frame(float(std::min(seconds, 0.1)));
+    if(player_.active()){
+        accumulator_+=std::min(seconds,.1);const double tick=player_.tickInterval();
+        while(accumulator_+1e-9>=tick){host_.frame(float(tick));player_.step();accumulator_-=tick;}
+    }else host_.frame(float(std::min(seconds, 0.1)));
     map_.frame(float(std::min(seconds, 0.1)));
+    if(player_.active()){
+        const auto& state=player_.state();const std::string model=thirdPerson_?state.model:state.viewModel;
+        if(model!=gameModel_){gameModel_=model;gameModelReady_=map_.loadModel(model.c_str());}
+        map_.setGameView(state,thirdPerson_,gameModelReady_);
+    }
     console->ProcessQueuedMaterialThreadConVarSets();
 }
 std::vector<SourceVertex> SourceBridge::vertices(float aspect) const {

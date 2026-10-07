@@ -512,6 +512,7 @@ std::vector<std::uint8_t> entityPropsFixture(){
 }
 namespace source1ios {
 struct SourceMap::Impl {
+    bool gameView=false,viewModel=false,gameModelReady=false;int gamePoseTick=-1;
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,entityModelInstances=0,entityModelCandidates=0;
@@ -700,8 +701,9 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     std::vector<std::uint8_t> mdl,vvd,vtx;if(!read(mdlPath,mdl)||!read(base+".vvd",vvd)||!read(base+".dx90.vtx",vtx)){Warning("Source studio: missing MDL/VVD/DX90.VTX companion for %s\n",filename);return false;}
     StudioMesh parsed;std::string error;if(!parseStudioModel(mdl,vvd,vtx,parsed,error)){Warning("Source studio rejected %s: %s\n",filename,error.c_str());return false;}
     if(!parsed.animationPath.empty()){
-        const auto& name=parsed.animationPath;
-        if(!materialPath(name)||name.size()<5||name.substr(name.size()-4)!=".ani"){Warning("Source studio rejected %s: unsafe ANI path\n",filename);return false;}
+        auto name=parsed.animationPath;
+        std::replace(name.begin(),name.end(),char(92),'/');
+        if(!materialPath(name)||name.size()<5||name.substr(name.size()-4)!=".ani"){Warning("Source studio rejected %s: unsafe ANI path (%s)\n",filename,name.c_str());return false;}
         const size_t slash=mdlPath.find_last_of('/');const std::string aniPath=name.find('/')==std::string::npos?(slash==std::string::npos?std::string():mdlPath.substr(0,slash+1))+name:name;
         std::vector<std::uint8_t> ani;
         if(g_pFullFileSystem->FileExists(aniPath.c_str(),pathID)){
@@ -714,7 +716,7 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
     for(const auto& v:parsed.triangles){const float light=.35f+.65f*std::abs(v.normal.z*.8f+v.normal.x*.3f+v.normal.y*.2f);staged.push_back({v.position+origin,{light,light,light},{v.uv.x,v.uv.y},v.material});}
     impl_->modelTexture=std::move(modelTexture);impl_->modelMaterialCount=modelMaterials;++impl_->modelTextureRevision;
     Msg("Source studio material atlas ready: %u slots, %ux%u RGBA\n",modelMaterials,impl_->modelTexture.width,impl_->modelTexture.height);
-    impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
+    impl_->gamePoseTick=-1;impl_->modelMesh=std::move(staged);impl_->studio=std::move(parsed);impl_->poseTime=0;impl_->animation=0;impl_->animationPlaying=!impl_->studio.animations.empty();
     impl_->builtinModelActive=mdlPath==impl_->builtinModel;
     Msg("Source studio model loaded: %u source vertices, %zu triangles, %u meshes from %s\n",impl_->studio.sourceVertices,impl_->studio.triangles.size()/3,impl_->studio.meshes,filename);
     int loadedVersion=0;std::memcpy(&loadedVersion,mdl.data()+4,4);Msg("Source studio MDL version: %d\n",loadedVersion);
@@ -876,6 +878,40 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->angles=impl_->spawnAngles;}}
+void SourceMap::clearGameView(){if(impl_){impl_->gameView=impl_->viewModel=false;resetCamera();}}
+void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool modelReady){
+    if(!impl_||!player.active)return;
+    impl_->gameView=true;impl_->viewModel=!thirdPerson;impl_->gameModelReady=modelReady;impl_->animationPlaying=false;
+    impl_->camera=Vector(player.eye[0],player.eye[1],player.eye[2]);
+    impl_->angles=QAngle(player.angles[0],player.angles[1],0);
+    if(thirdPerson){Vector forward;AngleVectors(impl_->angles,&forward);
+        const Vector end=impl_->camera-forward*120+Vector(0,0,20);trace_t trace{};
+        g_pPhysicsCollision->TraceBox(impl_->camera,end,Vector(-4,-4,-4),Vector(4,4,4),impl_->collision.get(),vec3_origin,vec3_angle,&trace);
+        if(!trace.startsolid)impl_->camera+=(end-impl_->camera)*std::max(0.f,trace.fraction-.02f);
+    }
+    if(!modelReady||impl_->gamePoseTick==player.tick)return;
+    impl_->gamePoseTick=player.tick;
+    auto& studio=impl_->studio;
+    const int skin=thirdPerson?player.modelSkin:player.viewSkin;
+    if(skin>=0&&unsigned(skin)!=studio.activeSkin)selectStudioSkin(studio,unsigned(skin));
+    std::vector<StudioVertex> posed;StudioPose pose;
+    const bool originalPose=skinStudioMatrices(studio,thirdPerson?player.modelBones:player.viewBones,size_t(thirdPerson?player.modelBoneCount:player.viewBoneCount),posed);
+    if(!originalPose)posed=studio.triangles;
+    const char* animation=thirdPerson?player.modelAnimation:player.viewAnimation;
+    const float cycle=std::clamp(thirdPerson?player.modelCycle:player.viewCycle,0.f,1.f);
+    for(size_t i=0;!originalPose&&i<studio.animations.size();++i){const auto& clip=studio.animations[i];
+        if(clip.name==animation&&clip.fps>0){
+            const double time=cycle*(clip.frames.empty()?0:clip.frames.size()-1)/clip.fps;
+            if(sampleStudioAnimation(studio,i,time,pose))skinStudioModel(studio,pose.rotations,posed,pose.positions);break;
+        }
+    }
+    matrix3x4_t transform;AngleMatrix(QAngle(0,player.angles[1],0),Vector(player.origin[0],player.origin[1],player.origin[2]),transform);
+    if(posed.size()!=impl_->modelMesh.size())return;
+    for(size_t i=0;i<posed.size();++i){auto& v=impl_->modelMesh[i];
+        if(thirdPerson&&!originalPose)VectorTransform(posed[i].position,transform,v.position);else v.position=posed[i].position;
+        v.material=posed[i].material;
+    }
+}
 bool SourceMap::resetPhysics(){
     if(!impl_)return false;auto scene=physicsScene(impl_->collision,impl_->propCollisions);if(!scene)return false;
     impl_->scene=std::move(scene);Msg("Source live physics scene reset: two bodies and original ragdoll joint\n");return true;
@@ -902,7 +938,7 @@ void SourceMap::move(float forward,float right,float seconds){
     if(!trace.startsolid)impl_->camera+=delta*std::max(0.f,trace.fraction-.001f);
 }
 void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(seconds))return;seconds=std::min(seconds,.05f);
-    if(impl_->scene)impl_->scene->environment->Simulate(seconds);
+    if(impl_->scene&&!impl_->gameView)impl_->scene->environment->Simulate(seconds);
     if(impl_->animationPlaying){impl_->poseTime+=seconds;StudioPose pose;std::vector<StudioVertex> posed;
         if(sampleStudioAnimation(impl_->studio,impl_->animation,impl_->poseTime,pose)&&skinStudioModel(impl_->studio,pose.rotations,posed,pose.positions)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);for(float& channel:impl_->modelMesh[i].color)channel=light;}}}
 }
@@ -910,11 +946,14 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
-        out.push_back({{DotProduct(relative,r)*scale/a,DotProduct(relative,u)*scale,depth*far/(far-near)-near*far/(far-near),depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
+        const bool weapon=model&&impl_->viewModel;
+        float x=DotProduct(relative,r)*scale/a,y=DotProduct(relative,u)*scale,z=depth*far/(far-near)-near*far/(far-near);
+        if(weapon){depth=v.position.x;x=-v.position.y*1.96f/a;y=v.position.z*1.96f;z=.001f*depth-.0005f;}
+        out.push_back({{x,y,z,depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
     for(const auto& v:impl_->mesh)append(v);
     for(const auto& v:impl_->propsMesh)append(v);
-    for(const auto& v:impl_->modelMesh)append(v,true);
-    if(impl_->scene){
+    if(!impl_->gameView||impl_->gameModelReady)for(const auto& v:impl_->modelMesh)append(v,true);
+    if(impl_->scene&&!impl_->gameView){
         constexpr int rings=6,slices=12;
         constexpr float pi=3.14159265358979323846f;
         auto point=[&](int ring,int slice){float latitude=pi*ring/rings,longitude=2*pi*slice/slices;
