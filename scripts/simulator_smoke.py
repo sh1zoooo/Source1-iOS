@@ -29,7 +29,17 @@ try:
     log = container / "Documents" / "Source1IOS" / "runtime.log"
     # Resolve diagnostics before launch: simctl can time out even when the
     # process started, and the finally block must still preserve its log.
-    simctl("launch", udid, bundle, "--port-smoke")
+    try:
+        simctl("launch", udid, bundle, "--port-smoke")
+    except subprocess.TimeoutExpired:
+        # A cold CoreSimulator can time out while launching a healthy app.
+        # Keep an already-started process; otherwise allow one bounded retry.
+        started = log.exists() and "Host started;" in log.read_text()
+        if started:
+            print("Launch timed out; startup log exists, checking runtime/GPU evidence", flush=True)
+        else:
+            print("Launch timed out without startup evidence; retrying once", flush=True)
+            simctl("launch", udid, bundle, "--port-smoke")
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         text = log.read_text() if log.exists() else ""

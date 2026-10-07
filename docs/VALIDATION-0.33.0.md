@@ -18,3 +18,9 @@ CI ожидается: Linux 5/5; ARM64 IPA; simulator 2×114 startup +18 ста
 checks +2 entity checks =248 PASS, GPU revision 10. Fixture entity-сцена
 проверяется до возврата к skin/HDR/PHY demo; финальный screenshot не показывает
 entity fixture. Совместимость реальных dynamic props из кеша пока не проверена.
+
+0.33.0 CI выявил ошибку ожидаемых material slots в новом live entity test:
+fixture family 0 задаёт {1,0}, но тест ожидал {0,1}. 0.33.1/build 37 исправляет
+ожидания, сохраняя renderer/skin remap. Для simctl launch timeout добавлена
+одна bounded retry при отсутствии startup log; успешность по-прежнему требует
+все 248 PASS, завершённый GPU кадр и lifecycle evidence. Повторный CI ожидается.

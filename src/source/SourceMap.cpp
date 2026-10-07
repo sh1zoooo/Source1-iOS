@@ -622,7 +622,9 @@ bool SourceMap::demoEntities(){return impl_ && load("__source1ios_entities.bsp",
 bool SourceMap::entitiesSelfTest(){
     if(!impl_)return false;
     bool all=report("live BSP entity models staged",impl_->entityModelCandidates==2&&impl_->entityModelInstances==2&&impl_->propsMesh.size()==72&&impl_->mapMaterialCount==4);
-    bool slots=impl_->propsMesh.size()==72;if(slots)for(size_t i=0;i<72;++i)slots&=impl_->propsMesh[i].material==(i<36?(i<18?2u:3u):(i<54?3u:2u));
+    // The fixture's skin table is {1,0} for family 0 and {0,1} for family 1.
+    // Atlas slots 0/1 belong to the world; model textures occupy slots 2/3.
+    bool slots=impl_->propsMesh.size()==72;if(slots)for(size_t i=0;i<72;++i)slots&=impl_->propsMesh[i].material==(i<36?(i<18?3u:2u):(i<54?2u:3u));
     all&=report("live BSP entity skins and visual-only physics",slots&&impl_->propCollisions.empty()&&impl_->scene&&impl_->scene->props.empty());return all;
 }
 bool SourceMap::setSkin(unsigned family){
