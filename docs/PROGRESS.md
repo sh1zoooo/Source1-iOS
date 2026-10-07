@@ -198,3 +198,16 @@ model cache и material atlas. Nonzero bodygroups пропускаются; ан
 entity outputs, physical entities и game DLL этим не реализуются.
 30 000 ASan/UBSan spawn/model entity mutations прошли локально. CI ожидается.
 [Отчёт 0.33](VALIDATION-0.33.0.md).
+
+0.33.1/build 37 исправил ожидания skin remap в entity test и диагностику launch
+timeout. CI 37575059340 прошёл Linux 5/5, iPhone ARM64 и simulator
+startup/GPU/lifecycle. Оценка ~92% относится только к минимальному прототипу.
+
+Этап 0.34/build 38 выбирает MDL bodygroups по base/modulo, включая пустые
+варианты, вместо объединения всей геометрии. BSP model entities учитывают body;
+skins и общий atlas сохраняются. Linux Debug: 5/5 CTest прошли, включая 72 000 studio и 30 000 entity
+mutations. CI 37576240688: Linux 5/5, ARM64 iPhone и simulator прошли.
+Скачанный IPA 0.34.0/build 38, SHA256 manifest, 256 PASS, GPU revision 10,
+pause/resume и screenshot проверены отдельно. На физическом iPhone и настоящих
+ClientMod bodygroups новый этап пока не проверен.
+[Отчёт 0.34](VALIDATION-0.34.0.md).

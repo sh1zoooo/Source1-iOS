@@ -15,8 +15,13 @@ static void check(bool condition, const char* message) {
     if (!condition) throw std::runtime_error(message);
 }
 int main() {
-    const auto directory = std::filesystem::temp_directory_path() /
-        ("MixedCase-IOS-Container-" + std::string(90, 'A')) /
+    const auto temporaryRoot=std::filesystem::temp_directory_path();
+    // Preserve the original /tmp fixture's total path length when a sandbox
+    // provides a longer TMPDIR. Source has legacy MAX_PATH-sized buffers.
+    const size_t prefixLength=temporaryRoot.string().size();
+    const size_t padding=prefixLength>4?90-std::min(size_t(90),prefixLength-4):90;
+    const auto directory = temporaryRoot /
+        ("MixedCase-IOS-Container-" + std::string(padding, 'A')) /
         ("source1ios-test-" + std::to_string(
             std::filesystem::file_time_type::clock::now().time_since_epoch().count()));
     try {

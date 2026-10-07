@@ -12,7 +12,7 @@ int main(){
     MathLib_Init(2.2f,2.2f,0,2);
     unsigned accepted=0,rejected=0;std::uint32_t state=0x510519;
     auto random=[&](){state^=state<<13;state^=state>>17;state^=state<<5;return state;};
-    for(unsigned multiple=0;multiple<2;++multiple)for(int version:{49,48,44})for(unsigned external=0;external<2;++external){auto fixture=source1ios::makeStudioFixture(external,multiple);std::memcpy(fixture.mdl.data()+4,&version,4);
+    for(unsigned bodies=0;bodies<2;++bodies)for(unsigned multiple=0;multiple<2;++multiple)for(int version:{49,48,44})for(unsigned external=0;external<2;++external){auto fixture=source1ios::makeStudioFixture(external,multiple,bodies);std::memcpy(fixture.mdl.data()+4,&version,4);
         source1ios::StudioMesh golden;std::string goldenError;
         if(!source1ios::parseStudioModel(fixture.mdl,fixture.vvd,fixture.vtx,golden,goldenError,fixture.ani))throw std::runtime_error("Golden fixture rejected: "+goldenError);
         for(unsigned i=0;i<3000;++i){auto changed=fixture;const unsigned slot=i%(external?4:3);
@@ -25,10 +25,13 @@ int main(){
             const unsigned family=mesh.skinFamilies.empty()?0:random()%mesh.skinFamilies.size();
             if(!source1ios::selectStudioSkin(mesh,family))throw std::runtime_error("valid skin selection rejected");
             if(source1ios::selectStudioSkin(mesh,mesh.skinFamilies.empty()?1:mesh.skinFamilies.size())||mesh.activeSkin!=family)throw std::runtime_error("invalid skin changed selection");
+            const unsigned body=random()%65536;
+            if(!source1ios::selectStudioBody(mesh,body)||mesh.activeBody!=body||mesh.activeSkin!=family)throw std::runtime_error("valid body selection rejected or lost skin");
+            if(source1ios::selectStudioBody(mesh,65536)||mesh.activeBody!=body)throw std::runtime_error("invalid body changed selection");
             if(!mesh.animations.empty()&&!source1ios::sampleStudioAnimation(mesh,0,.375,pose))throw std::runtime_error("sample rejected accepted clip");
             if(!source1ios::skinStudioModel(mesh,pose.rotations,output,pose.positions))throw std::runtime_error("skin rejected accepted model");
             for(const auto& vertex:output)if(!vertex.position.IsValid()||!vertex.normal.IsValid()||vertex.material>=std::max(size_t(1),mesh.materials.size()))throw std::runtime_error("nonfinite output or invalid material slot");
         }
     }
-    std::cout<<"Studio mutation checks passed: 36000 cases (MDL44/48/49, single/multiple materials), "<<accepted<<" accepted, "<<rejected<<" rejected\n";
+    std::cout<<"Studio mutation checks passed: 72000 cases (MDL44/48/49, single/multiple materials and body variants), "<<accepted<<" accepted, "<<rejected<<" rejected\n";
 }

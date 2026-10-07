@@ -170,6 +170,11 @@ MDL/VVD/VTX и VMT/VTF atlas. `source_bsp_entities` открывает fixture �
 моделей с разными skins; `source_entities_selftest` проверяет staging.
 Это bind-pose preview без entity animation, outputs или collision; nonzero
 bodygroups пока пропускаются. [Проверки entities](docs/VALIDATION-0.33.0.md).
+Этап 0.34/build 38 выбирает варианты частей MDL по Source `body/base`,
+включая пустые варианты. По умолчанию отображается один вариант каждой части,
+а не их объединение. BSP entity preview учитывает `body`, сохраняет skins и
+общий материал-кэш; анимации сущностей/игровая DLL остаются впереди.
+[Проверки bodygroups](docs/VALIDATION-0.34.0.md).
 [Результаты проверок движка](docs/VALIDATION-0.9.1.md).
 
 Откройте [Actions](https://github.com/sh1zoooo/Source1-iOS/actions), выберите успешный

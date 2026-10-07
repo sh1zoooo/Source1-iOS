@@ -66,9 +66,7 @@ inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& outpu
             std::array<float,3> scalar{};
             if(!skin.empty()){if(!numbers(skin,scalar,1,255)||scalar[0]<0||std::floor(scalar[0])!=scalar[0])return false;prop.skin=int(scalar[0]);}
             if(!scale.empty()){if(!numbers(scale,scalar,1,16)||scalar[0]<=0)return false;prop.scale=scalar[0];}
-            // This stage is a data-only bind-pose preview. Nonzero bodygroups
-            // cannot be selected by the current studio path; leave them out.
-            if(!body.empty()){if(!numbers(body,scalar,1,65535)||scalar[0]<0||std::floor(scalar[0])!=scalar[0])return false;if(scalar[0]!=0)continue;}
+            if(!body.empty()){if(!numbers(body,scalar,1,65535)||scalar[0]<0||std::floor(scalar[0])!=scalar[0])return false;prop.body=unsigned(scalar[0]);}
             if(models.size()>=512)return false;models.push_back(std::move(prop));continue;
         }
         if(classname!="info_player_start"&&classname!="info_player_counterterrorist"&&

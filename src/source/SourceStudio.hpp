@@ -21,6 +21,10 @@ struct StudioVertex {
 struct StudioBone { int parent=-1; Vector position; Quaternion rotation; matrix3x4_t poseToBone; };
 struct StudioPose { std::vector<Quaternion> rotations; std::vector<Vector> positions; };
 struct StudioAnimation { std::string name; float fps=0; bool looping=false; std::vector<StudioPose> frames; };
+struct StudioBodyPart {
+    unsigned base=0;
+    std::vector<std::array<size_t,3>> ranges;
+};
 struct StudioMesh {
     std::int32_t checksum=0;
     Vector hullMins{0,0,0},hullMaxs{0,0,0},renderMins{0,0,0},renderMaxs{0,0,0};
@@ -30,7 +34,9 @@ struct StudioMesh {
     std::vector<std::string> materialPaths;
     std::vector<std::vector<std::string>> materials;
     std::vector<std::vector<unsigned>> skinFamilies;
-    unsigned activeSkin=0;
+    unsigned activeSkin=0,activeBody=0;
+    std::vector<StudioVertex> bodyTriangles;
+    std::vector<StudioBodyPart> bodyParts;
     std::string animationPath;
     unsigned sourceVertices=0;
     unsigned meshes=0;
@@ -38,7 +44,8 @@ struct StudioMesh {
 struct StudioFixture {
     std::vector<std::uint8_t> mdl, vvd, vtx, ani;
 };
-StudioFixture makeStudioFixture(bool external=false,bool multipleMaterials=false);
+StudioFixture makeStudioFixture(bool external=false,bool multipleMaterials=false,bool multipleBodies=false);
+bool selectStudioBody(StudioMesh& model,unsigned body);
 bool selectStudioSkin(StudioMesh& model,unsigned family);
 // Local rotations are explicit pose overrides, not decoded MDL sequences.
 bool skinStudioModel(const StudioMesh& model, const std::vector<Quaternion>& rotations,

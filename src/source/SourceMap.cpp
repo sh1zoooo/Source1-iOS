@@ -503,8 +503,9 @@ std::vector<std::uint8_t> skinPropsFixture(){
 std::vector<std::uint8_t> entityPropsFixture(){
     auto bytes=fixture();dheader_t header;std::memcpy(&header,bytes.data(),sizeof(header));
     const std::string text="{ classname worldspawn } { classname info_player_start origin \"-190 -160 16\" angles \"8 45 0\" } "
-        "{ classname prop_dynamic model models/__source1ios_multimat_probe.mdl origin \"-100 -100 0\" angles \"0 30 0\" skin 0 } "
-        "{ classname prop_dynamic_override model models/__source1ios_multimat_probe.mdl origin \"-140 -90 0\" angle 90 skin 1 modelscale 0.5 }";
+        "{ classname prop_dynamic model models/__source1ios_body_probe.mdl origin \"-100 -100 0\" angles \"0 30 0\" skin 0 } "
+        "{ classname prop_dynamic_override model models/__source1ios_body_probe.mdl origin \"-140 -90 0\" angle 90 skin 1 body 2 modelscale 0.5 } "
+        "{ classname prop_dynamic model models/__source1ios_body_probe.mdl body 1 }";
     header.lumps[LUMP_ENTITIES].fileofs=bytes.size();header.lumps[LUMP_ENTITIES].filelen=text.size()+1;
     bytes.insert(bytes.end(),text.begin(),text.end());bytes.push_back(0);std::memcpy(bytes.data(),&header,sizeof(header));return bytes;
 }
@@ -564,6 +565,8 @@ bool SourceMap::start(const std::filesystem::path& root) {
     std::filesystem::create_directories(root/"game/materials/models/source1ios");
     auto writeModel=[&](const char* path,const std::vector<std::uint8_t>& data){auto out=g_pFullFileSystem->Open(path,"wb","DEFAULT_WRITE_PATH");const bool written=out&&g_pFullFileSystem->Write(data.data(),data.size(),out)==int(data.size());if(out)g_pFullFileSystem->Close(out);return written;};
     auto multiple=makeStudioFixture(false,true);const int multiVersion=48;std::memcpy(multiple.mdl.data()+4,&multiVersion,4);
+    const auto bodies=makeStudioFixture(false,true,true);
+    ok=ok&&writeModel("models/__source1ios_body_probe.mdl",bodies.mdl)&&writeModel("models/__source1ios_body_probe.vvd",bodies.vvd)&&writeModel("models/__source1ios_body_probe.dx90.vtx",bodies.vtx);
     ok=ok&&writeModel("models/__source1ios_multimat_probe.mdl",multiple.mdl)&&writeModel("models/__source1ios_multimat_probe.vvd",multiple.vvd)&&writeModel("models/__source1ios_multimat_probe.dx90.vtx",multiple.vtx);
     ok=ok&&writeModel(impl_->builtinModel.c_str(),studio.mdl)&&writeModel("models/__source1ios_static_probe.vvd",studio.vvd)&&writeModel("models/__source1ios_static_probe.dx90.vtx",studio.vtx);
     StudioMesh phyModel;std::string phyError;PhyGeometry fixtureGeometry;
@@ -621,10 +624,11 @@ bool SourceMap::demoSkins(){return impl_ && load("__source1ios_skins.bsp",nullpt
 bool SourceMap::demoEntities(){return impl_ && load("__source1ios_entities.bsp",nullptr);}
 bool SourceMap::entitiesSelfTest(){
     if(!impl_)return false;
-    bool all=report("live BSP entity models staged",impl_->entityModelCandidates==2&&impl_->entityModelInstances==2&&impl_->propsMesh.size()==72&&impl_->mapMaterialCount==4);
+    bool all=report("live BSP entity models staged",impl_->entityModelCandidates==3&&impl_->entityModelInstances==3&&impl_->propsMesh.size()==72&&impl_->mapMaterialCount==4);
     // The fixture's skin table is {1,0} for family 0 and {0,1} for family 1.
+    // Body 2 swaps mesh references; skin 1 reverses them again. Body 1 is blank.
     // Atlas slots 0/1 belong to the world; model textures occupy slots 2/3.
-    bool slots=impl_->propsMesh.size()==72;if(slots)for(size_t i=0;i<72;++i)slots&=impl_->propsMesh[i].material==(i<36?(i<18?3u:2u):(i<54?2u:3u));
+    bool slots=impl_->propsMesh.size()==72;if(slots)for(size_t i=0;i<72;++i)slots&=impl_->propsMesh[i].material==(i%36<18?3u:2u);
     all&=report("live BSP entity skins and visual-only physics",slots&&impl_->propCollisions.empty()&&impl_->scene&&impl_->scene->props.empty());return all;
 }
 bool SourceMap::setSkin(unsigned family){
@@ -815,8 +819,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             auto readModel=[&](const std::string& name,std::vector<std::uint8_t>& data){if(!readBounded(name.c_str(),"GAME",32*1024*1024,data)||data.size()>64*1024*1024-modelBytes)return false;modelBytes+=data.size();return true;};
             if(readModel(prop.model,mdl)&&readModel(base+".vvd",vvd)&&readModel(base+".dx90.vtx",vtx)&&parseStudioModel(mdl,vvd,vtx,candidate.mesh,reason)){
                 candidate.mesh.animations.clear();candidate.mesh.bones.clear();
-                if(candidate.mesh.triangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512)return false;
-                cachedVertices+=candidate.mesh.triangles.size();
+                if(candidate.mesh.bodyTriangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512)return false;
+                cachedVertices+=candidate.mesh.bodyTriangles.size();
                 const size_t slots=std::max(size_t(1),candidate.mesh.materials.size());if(slots>512-stagedMaterialCount)return false;
                 for(size_t slot=0;slot<slots;++slot){SourceTexture texture;if(slot>=candidate.mesh.materials.size()||!decodeMaterial(candidate.mesh.materials[slot],texture,"static prop"))texture=impl_->checkerTexture;
                     candidate.slots.push_back(appendAtlasTile(stagedMapTexture,stagedMaterialCount,texture));}candidate.valid=true;
@@ -824,6 +828,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             cached.push_back(std::move(candidate));found=cached.end()-1;
         }
         if(!found->valid){++skipped;continue;}
+        if(!selectStudioBody(found->mesh,prop.body)){Warning("Source BSP prop body selection rejected: %s\n",prop.model.c_str());return false;}
         if(!selectStudioSkin(found->mesh,unsigned(prop.skin))){Warning("Source BSP static prop skin rejected: %s; skin=%d\n",prop.model.c_str(),prop.skin);return false;}
         if(found->mesh.triangles.size()>maximumVertices-mesh.size()-propsMesh.size())return false;
         matrix3x4_t transform;AngleMatrix(QAngle(prop.angles[0],prop.angles[1],prop.angles[2]),Vector(prop.origin[0],prop.origin[1],prop.origin[2]),transform);
@@ -1002,6 +1007,22 @@ bool SourceMap::selfTest(){
     all&=report("malformed LZMA sizes/properties/stream rejected",rejects);
     const auto studio=makeStudioFixture();StudioMesh model;std::string modelError;
     all&=report("MDL/VVD/VTX static mesh",parseStudioModel(studio.mdl,studio.vvd,studio.vtx,model,modelError)&&model.sourceVertices==8&&model.triangles.size()==36&&model.meshes==1);
+    const auto bodyFixture=makeStudioFixture(false,true,true);StudioMesh bodyModel;
+    bool bodyParsed=parseStudioModel(bodyFixture.mdl,bodyFixture.vvd,bodyFixture.vtx,bodyModel,modelError);
+    all&=report("studio body zero selects one variant instead of union",bodyParsed&&bodyModel.triangles.size()==36&&bodyModel.bodyTriangles.size()==72&&bodyModel.triangles[0].material==1);
+    bool bodyVariants=bodyParsed&&selectStudioBody(bodyModel,1)&&bodyModel.triangles.empty()&&selectStudioBody(bodyModel,2)&&bodyModel.triangles.size()==36&&bodyModel.triangles[0].material==0;
+    bodyVariants=bodyVariants&&selectStudioSkin(bodyModel,1)&&selectStudioBody(bodyModel,0)&&bodyModel.triangles[0].material==0&&selectStudioBody(bodyModel,2)&&bodyModel.triangles[0].material==1;
+    StudioPose bodyPose;std::vector<StudioVertex> bodySkinned;
+    bodyVariants=bodyVariants&&sampleStudioAnimation(bodyModel,0,.375,bodyPose)&&skinStudioModel(bodyModel,bodyPose.rotations,bodySkinned,bodyPose.positions)&&bodySkinned.size()==36&&bodySkinned[0].material==1;
+    all&=report("studio blank alternate body preserves skins and bone animation",bodyVariants);
+    const auto savedBody=bodyModel.triangles;bool bodyReject=!selectStudioBody(bodyModel,65536)&&bodyModel.activeBody==2&&bodyModel.triangles.size()==savedBody.size();
+    auto badBody=bodyFixture.mdl;studiohdr_t bodyHeader;std::memcpy(&bodyHeader,badBody.data(),sizeof(bodyHeader));const int invalidBase=0;
+    std::memcpy(badBody.data()+bodyHeader.bodypartindex+offsetof(mstudiobodyparts_t,base),&invalidBase,4);
+    bodyReject=bodyReject&&!parseStudioModel(badBody,bodyFixture.vvd,bodyFixture.vtx,bodyModel,modelError)&&bodyModel.activeBody==2&&bodyModel.triangles[0].material==1;
+    all&=report("studio invalid body base and selection preserve model",bodyReject);
+    if(bodyParsed){bodyModel.bodyParts[0].base=3;}
+    bool packedBody=bodyParsed&&selectStudioBody(bodyModel,3)&&bodyModel.triangles.empty()&&selectStudioBody(bodyModel,6)&&bodyModel.triangles.size()==36&&selectStudioBody(bodyModel,9)&&bodyModel.triangles[0].material==0;
+    all&=report("studio packed body uses Source base division and modulo",packedBody);
     const auto multi=makeStudioFixture(false,true);StudioMesh multiModel;
     bool multiParsed=parseStudioModel(multi.mdl,multi.vvd,multi.vtx,multiModel,modelError);
     bool multiSlots=multiParsed&&multiModel.materials.size()==2&&multiModel.meshes==2&&multiModel.triangles.size()==36;
@@ -1173,7 +1194,7 @@ bool SourceMap::selfTest(){
     const auto savedSpawns=parsedSpawns;
     all&=report("BSP malformed spawn and entity bounds rejected",!parsePreviewSpawns("{ classname info_player_start origin \"nan 0 0\" }",parsedSpawns)&&!parsePreviewSpawns("{ classname worldspawn",parsedSpawns)&&!parsePreviewSpawns(std::string(1024*1024+1,' '),parsedSpawns)&&parsedSpawns.size()==savedSpawns.size());
     std::vector<PreviewProp> entityModels;const bool entityOK=parsePreviewSpawns("{ classname prop_dynamic model models/test.mdl origin \"1 2 3\" angle 90 skin 1 modelscale 2 } { classname prop_dynamic_override model models/test.mdl body 1 }",parsedSpawns,&entityModels);
-    all&=report("BSP entity model transform skin scale and bodygroup bounds",entityOK&&entityModels.size()==1&&entityModels[0].origin[2]==3&&entityModels[0].angles[1]==90&&entityModels[0].skin==1&&entityModels[0].scale==2&&entityModels[0].solid==0);
+    all&=report("BSP entity model transform skin scale and bodygroup bounds",entityOK&&entityModels.size()==2&&entityModels[1].body==1&&entityModels[0].origin[2]==3&&entityModels[0].angles[1]==90&&entityModels[0].skin==1&&entityModels[0].scale==2&&entityModels[0].solid==0);
     const auto savedModels=entityModels;
     all&=report("BSP malformed entity model preserves staged output",!parsePreviewSpawns("{ classname prop_dynamic model models/../bad.mdl }",parsedSpawns,&entityModels)&&!parsePreviewSpawns("{ classname prop_dynamic model models/test.mdl skin 1.5 }",parsedSpawns,&entityModels)&&!parsePreviewSpawns("{ classname prop_dynamic model models/test.mdl modelscale nan }",parsedSpawns,&entityModels)&&entityModels.size()==savedModels.size()&&entityModels[0].model==savedModels[0].model);
     all&=report("engine worldspawn entities",CM_EntityString() && std::strstr(CM_EntityString(),"worldspawn"));

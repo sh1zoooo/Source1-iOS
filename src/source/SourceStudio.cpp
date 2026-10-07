@@ -98,7 +98,7 @@ bool readAnimations(const std::vector<std::uint8_t>& bytes,const studiohdr_t& he
 }
 
 namespace source1ios {
-StudioFixture makeStudioFixture(bool external,bool multipleMaterials){
+StudioFixture makeStudioFixture(bool external,bool multipleMaterials,bool multipleBodies){
     StudioFixture f;constexpr int checksum=0x510510;
     studiohdr_t mdl{};mdl.id=idStudioHeader;mdl.version=STUDIO_VERSION;mdl.checksum=checksum;
     mdl.hull_min=mdl.view_bbmin=Vector(-12,-8,0);mdl.hull_max=mdl.view_bbmax=Vector(12,8,64);
@@ -106,7 +106,7 @@ StudioFixture makeStudioFixture(bool external,bool multipleMaterials){
     const size_t mdlHeader=append(f.mdl,mdl),boneOffset=f.mdl.size();
     mstudiobone_t bones[2]{};for(auto& bone:bones){bone.quat=Quaternion(0,0,0,1);SetIdentityMatrix(bone.poseToBone);for(auto& controller:bone.bonecontroller)controller=-1;}
     bones[0].parent=-1;bones[1].parent=0;bones[1].pos=Vector(0,0,32);bones[1].poseToBone[2][3]=-32;bones[1].rotscale=Vector(.0001f,.0001f,.0001f);appendMany(f.mdl,bones,2);
-    const size_t bodyOffset=f.mdl.size();mstudiobodyparts_t body{};body.nummodels=1;append(f.mdl,body);
+    const size_t bodyOffset=f.mdl.size();mstudiobodyparts_t body{};body.nummodels=1;body.base=1;append(f.mdl,body);
     const size_t modelOffset=f.mdl.size();mstudiomodel_t model{};std::strncpy(model.name,"static_probe",sizeof(model.name)-1);model.nummeshes=1;model.numvertices=8;model.vertexindex=0;append(f.mdl,model);
     const size_t meshOffset=f.mdl.size();mstudiomesh_t mesh{};mesh.numvertices=8;mesh.vertexoffset=0;mesh.modelindex=int(modelOffset-meshOffset);append(f.mdl,mesh);
     const size_t animationOffset=f.mdl.size();mstudioanimdesc_t animation{};animation.fps=4;animation.flags=STUDIO_LOOPING;animation.numframes=9;append(f.mdl,animation);
@@ -163,6 +163,29 @@ StudioFixture makeStudioFixture(bool external,bool multipleMaterials){
             auto* group=at<StripGroupHeader_t>(f.vtx,gb);group->vertOffset=mb-gb;group->indexOffset=ib-gb;group->stripOffset=sb-gb;
             auto* vm=at<MeshHeader_t>(f.vtx,meshesVtx+i*sizeof(MeshHeader_t));vm->numStripGroups=1;vm->stripGroupHeaderOffset=gb-(meshesVtx+i*sizeof(MeshHeader_t));}
         auto* lod=at<ModelLODHeader_t>(f.vtx,lodOffset);lod->numMeshes=2;lod->meshOffset=meshesVtx-lodOffset;
+    }
+    if(multipleBodies){
+        const auto oldBody=*at<mstudiobodyparts_t>(f.mdl,bodyOffset);
+        const auto oldModel=*at<mstudiomodel_t>(f.mdl,modelOffset);
+        const auto oldVBody=*at<OptimizedModel::BodyPartHeader_t>(f.vtx,vbpOffset);
+        const auto oldVModel=*at<OptimizedModel::ModelHeader_t>(f.vtx,vmOffset);
+        const std::vector<std::uint8_t> mdlTail(f.mdl.begin()+modelOffset+sizeof(oldModel),f.mdl.end());
+        const std::vector<std::uint8_t> vtxTail(f.vtx.begin()+vmOffset+sizeof(oldVModel),f.vtx.end());
+        const size_t models=f.mdl.size();mstudiomodel_t variants[3]={oldModel,{},oldModel};
+        appendMany(f.mdl,variants,3);
+        for(unsigned i:{0u,2u}){const size_t tail=f.mdl.size();appendMany(f.mdl,mdlTail.data(),mdlTail.size());
+            auto* model=at<mstudiomodel_t>(f.mdl,models+i*sizeof(oldModel));
+            model->meshindex=tail+oldModel.meshindex-sizeof(oldModel)-(models+i*sizeof(oldModel));
+            if(i==2&&multipleMaterials){auto* meshes=at<mstudiomesh_t>(f.mdl,models+i*sizeof(oldModel)+model->meshindex);for(int j=0;j<model->nummeshes;++j)meshes[j].material=1-meshes[j].material;}}
+        auto* body=at<mstudiobodyparts_t>(f.mdl,bodyOffset);*body=oldBody;body->nummodels=3;body->modelindex=models-bodyOffset;
+        at<studiohdr_t>(f.mdl,0)->length=f.mdl.size();
+        const size_t vModels=f.vtx.size();OptimizedModel::ModelHeader_t vVariants[3]={oldVModel,{},oldVModel};vVariants[1].numLODs=1;
+        appendMany(f.vtx,vVariants,3);
+        for(unsigned i=0;i<3;++i){const size_t tail=f.vtx.size();
+            if(i==1){OptimizedModel::ModelLODHeader_t blank{};append(f.vtx,blank);}
+            else appendMany(f.vtx,vtxTail.data(),vtxTail.size());
+            at<OptimizedModel::ModelHeader_t>(f.vtx,vModels+i*sizeof(oldVModel))->lodOffset=(i==1?tail:tail+oldVModel.lodOffset-sizeof(oldVModel))-(vModels+i*sizeof(oldVModel));}
+        auto* bodyV=at<OptimizedModel::BodyPartHeader_t>(f.vtx,vbpOffset);*bodyV=oldVBody;bodyV->numModels=3;bodyV->modelOffset=vModels-vbpOffset;
     }
     return f;
 }
@@ -227,8 +250,11 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     const auto* bodies=at<mstudiobodyparts_t>(mdl,mh->bodypartindex,mh->numbodyparts);const auto* vBodies=at<OptimizedModel::BodyPartHeader_t>(vtx,fh->bodyPartOffset,fh->numBodyParts);if(!bodies||!vBodies)return fail("bodyparts outside file");
     for(int bi=0;bi<mh->numbodyparts;++bi){size_t modelBase=0,vModelBase=0;if(bodies[bi].nummodels<=0||bodies[bi].nummodels>64||vBodies[bi].numModels!=bodies[bi].nummodels||!addRelative(mh->bodypartindex+bi*sizeof(*bodies),bodies[bi].modelindex,modelBase)||!addRelative(fh->bodyPartOffset+bi*sizeof(*vBodies),vBodies[bi].modelOffset,vModelBase))return fail("model hierarchy mismatch");
         const auto* models=at<mstudiomodel_t>(mdl,modelBase,bodies[bi].nummodels);const auto* vModels=at<OptimizedModel::ModelHeader_t>(vtx,vModelBase,vBodies[bi].numModels);if(!models||!vModels)return fail("models outside file");
-        for(int mi=0;mi<bodies[bi].nummodels;++mi){const auto& model=models[mi];const auto& vModel=vModels[mi];if(model.nummeshes<=0||model.nummeshes>256||model.numvertices<0||model.vertexindex<0
-                ||model.vertexindex%int(sizeof(mstudiovertex_t))||vModel.numLODs<1)return fail("invalid model counts");
+        if(bodies[bi].base<0||(bodies[bi].nummodels>1&&bodies[bi].base==0))return fail("invalid bodypart selection base");
+        StudioBodyPart part;part.base=unsigned(bodies[bi].base);
+        for(int mi=0;mi<bodies[bi].nummodels;++mi){const size_t begin=result.triangles.size();const unsigned firstMesh=result.meshes;const auto& model=models[mi];const auto& vModel=vModels[mi];if(model.nummeshes<0||model.nummeshes>256||model.numvertices<0||model.vertexindex<0
+                ||model.vertexindex%int(sizeof(mstudiovertex_t))||vModel.numLODs<1||vModel.numLODs>MAX_NUM_LODS)return fail("invalid model counts");
+            if(!model.nummeshes&&model.numvertices)return fail("blank model contains vertices");
             size_t meshBase=0,lodBase=0;if(!addRelative(modelBase+mi*sizeof(*models),model.meshindex,meshBase)||!addRelative(vModelBase+mi*sizeof(*vModels),vModel.lodOffset,lodBase))return fail("mesh/LOD offset overflow");
             const auto* meshes=at<mstudiomesh_t>(mdl,meshBase,model.nummeshes);const auto* lod=at<OptimizedModel::ModelLODHeader_t>(vtx,lodBase);if(!meshes||!lod||lod->numMeshes!=model.nummeshes)return fail("mesh hierarchy mismatch");
             size_t vMeshBase=0;if(!addRelative(lodBase,lod->meshOffset,vMeshBase))return fail("VTX mesh offset overflow");const auto* vMeshes=at<OptimizedModel::MeshHeader_t>(vtx,vMeshBase,lod->numMeshes);if(!vMeshes)return fail("VTX meshes outside file");
@@ -262,9 +288,27 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
                     }
                 }++result.meshes;
             }
+            part.ranges.push_back({begin,result.triangles.size()-begin,result.meshes-firstMesh});
         }
+        result.bodyParts.push_back(std::move(part));
     }
-    if(result.triangles.empty())return fail("model contains no triangles");result.sourceVertices=totalVertices;output=std::move(result);error.clear();return true;
+    if(result.triangles.empty())return fail("model contains no triangles");result.bodyTriangles=std::move(result.triangles);if(!selectStudioBody(result,0))return fail("invalid default body selection");result.sourceVertices=totalVertices;output=std::move(result);error.clear();return true;
+}
+bool selectStudioBody(StudioMesh& model,unsigned body){
+    if(body>65535||model.bodyParts.empty())return false;
+    std::vector<StudioVertex> staged;unsigned meshes=0;
+    for(const auto& part:model.bodyParts){
+        if(part.ranges.empty()||(part.ranges.size()>1&&!part.base))return false;
+        const auto& range=part.ranges[part.ranges.size()==1?0:(body/part.base)%part.ranges.size()];
+        if(range[0]>model.bodyTriangles.size()||range[1]>model.bodyTriangles.size()-range[0])return false;
+        staged.insert(staged.end(),model.bodyTriangles.begin()+range[0],model.bodyTriangles.begin()+range[0]+range[1]);meshes+=unsigned(range[2]);
+    }
+    if(!model.skinFamilies.empty()){
+        if(model.activeSkin>=model.skinFamilies.size())return false;
+        const auto& refs=model.skinFamilies[model.activeSkin];
+        for(auto& vertex:staged){if(vertex.materialReference>=refs.size())return false;vertex.material=refs[vertex.materialReference];}
+    }
+    model.triangles=std::move(staged);model.activeBody=body;model.meshes=meshes;return true;
 }
 bool selectStudioSkin(StudioMesh& model,unsigned family){
     if(model.skinFamilies.empty()){if(family!=0)return false;}
