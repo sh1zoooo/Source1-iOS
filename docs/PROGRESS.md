@@ -1,8 +1,8 @@
 # Прогресс Source 1 → iOS
 
 **Этап 0.37 в проверке:** original CCSPlayer movement, HUD, 1P/3P models на
-`awp_lego_2`. Два полных native gameplay цикла прошли; финальная проверка
-оригинальных bone poses и iOS CI выполняются. [Подробности](GAMEPLAY-0.37.md).
+`awp_lego_2`. Два полных native gameplay цикла, оригинальные bone poses, видимость моделей
+1P/3P и 7/7 CTest прошли; финальная iOS CI проверка выполняется. [Подробности](GAMEPLAY-0.37.md).
 
 **100% этапа разработки минимального демо** по ранее заданному критерию: BSP-сцена, камера, столкновения, VTF, живая физика и
 геометрия Source studio model, weighted skinning, встроенные animation tracks и

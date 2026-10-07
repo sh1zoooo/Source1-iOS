@@ -29,6 +29,10 @@ int main(int argc,char** argv){
             require(std::hypot(runtime.playerState().origin[0]-wall.origin[0],runtime.playerState().origin[1]-wall.origin[1])<2,"Player passed the awp_lego_2 wall");
             const auto stand=runtime.playerState();runtime.playerButton(PlayerDuck,true);advance(runtime,.6);
             require(runtime.playerState().crouched&&runtime.playerState().eye[2]<stand.eye[2]-10,"Original crouch/eye height failed");
+            bool bent=false;const auto duck=runtime.playerState();
+            for(int bone=0;bone<std::min(stand.modelBoneCount,duck.modelBoneCount);++bone)
+                for(int row=0;row<3;++row)for(int col=0;col<3;++col)bent|=std::abs(stand.modelBones[bone][row*4+col]-duck.modelBones[bone][row*4+col])>.01f;
+            require(bent,"Original crouch animation did not change the player bone pose");
             runtime.playerButton(PlayerDuck,false);advance(runtime,.6);
             const float ground=runtime.playerState().origin[2];float peak=ground;
             runtime.playerButton(PlayerJump,true);
@@ -39,17 +43,21 @@ int main(int argc,char** argv){
             auto clip=runtime.playerState().clip;
             runtime.playerButton(PlayerAttack,true);advance(runtime,2);runtime.playerButton(PlayerAttack,false);
             require(runtime.playerState().clip<clip,"Original weapon did not consume ammunition");
+            const auto fired=runtime.playerState();
             runtime.playerButton(PlayerReload,true);advance(runtime,5);runtime.playerButton(PlayerReload,false);
-            require(runtime.playerState().clip>0,"Original weapon reload failed");
+            require(runtime.playerState().clip>fired.clip&&runtime.playerState().reserve<fired.reserve,"Original reload did not transfer reserve ammunition to the magazine");
+            std::cout<<"Ammo transition: "<<clip<<" -> "<<fired.clip<<" -> "<<runtime.playerState().clip<<"; reserve "<<fired.reserve<<" -> "<<runtime.playerState().reserve<<'\n';
             runtime.thirdPerson(true);advance(runtime,.1);auto vertices=runtime.vertices(1.5f);require(!vertices.empty(),"Third person geometry empty");
             for(const auto& vertex:vertices)for(float value:vertex.position)require(std::isfinite(value),"Nonfinite gameplay projection");
             auto visible=[](const std::vector<SourceVertex>& mesh){size_t count=0;for(const auto& v:mesh){const auto* p=v.position;
                 if(v.material[0]<0&&p[3]>0&&std::abs(p[0])<p[3]&&std::abs(p[1])<p[3]&&p[2]>=0&&p[2]<p[3])++count;}return count;};
             require(visible(vertices)>100,"Third person player model outside the camera frustum");
             runtime.thirdPerson(false);advance(runtime,.1);require(visible(runtime.vertices(1.5f))>100,"First person weapon outside the camera frustum");
-            runtime.cameraMove(-1,0,0);runtime.playerButton(PlayerDuck,true);runtime.setActive(false);
+            const auto paused=runtime.playerState();
+            runtime.cameraMove(-1,0,0);runtime.playerButton(PlayerDuck,true);runtime.playerButton(PlayerAttack,true);runtime.setActive(false);
             const int tick=runtime.playerState().tick;advance(runtime,1);require(runtime.playerState().tick==tick,"Paused gameplay advanced");
-            runtime.setActive(true);advance(runtime,1);require(!runtime.playerState().crouched,"Input remained held after pause");
+            runtime.setActive(true);advance(runtime,1);require(!runtime.playerState().crouched&&runtime.playerState().clip==paused.clip
+                &&std::hypot(runtime.playerState().origin[0]-paused.origin[0],runtime.playerState().origin[1]-paused.origin[1])<2,"Movement/fire/duck input remained held after pause");
             std::cout<<"Gameplay cycle "<<cycle<<": PASS; walking/wall/duck/jump/fire/reload/1P/3P/pause; jump="<<peak-ground<<'\n';
             runtime.stopGame();require(!runtime.playerState().active,"Practice did not stop");
         }

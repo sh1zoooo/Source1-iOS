@@ -47,7 +47,11 @@ Native baseline: 7/7 CTest contracts passed. The real-cache gameplay probe
 completed two practice cycles, including walking, wall collision, crouch eye
 height, jump/landing, ammunition consumption, reload, 1P/3P geometry and pause.
 Walking matched at 60 and 120 display calls; jump height was 65.4975 units.
-Final original-bone-pose and iOS CI verification are in progress.
+Final native verification also passed both original bone-pose and projected
+model-frustum checks: 50 player bones and 57 AWP viewmodel bones. Crouching
+changes bone rotations; firing/reloading changed the actual cache-defined AWP
+magazine 5 → 4 → 5 and reserve 30 → 29. Pause cleared movement, crouch and fire. iOS CI
+verification is in progress.
 
 Reproduce with user-supplied resources:
 

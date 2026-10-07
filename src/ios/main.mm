@@ -157,6 +157,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     if (!device) { [self fail:@"Metal device unavailable"]; return; }
     self.metalView = [[MTKView alloc] initWithFrame:CGRectZero device:device];
     self.metalView.translatesAutoresizingMaskIntoConstraints = NO;
+    self.metalView.multipleTouchEnabled = YES;
     self.metalView.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     self.metalView.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
     self.metalView.clearDepth = 1;
