@@ -37,5 +37,24 @@ The native runtime fixture retains its original total path length when TMPDIR is
 longer than `/tmp`; this avoids exceeding upstream legacy MAX_PATH buffers merely
 because the sandbox supplies a longer writable temporary directory.
 
-New iOS build/simulator evidence is pending. No new physical iPhone run or real
-ClientMod model with body alternatives has been verified in this stage.
+## Verified CI and artifact
+
+Implementation commit: `0864f9e21584619d1c48d8e8cc193924cf9ab7eb`.
+[Workflow 37576240688](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37576240688)
+passed Linux 5/5, iPhone ARM64 and simulator builds plus simulator startup.
+The PR workflow builds merge ref `0d96ea13b2291b6e2f18051bc96c118865154e71`;
+artifact ID is `11462528197` (3,211,833 bytes).
+
+The downloaded archive passed `scripts/verify_artifact.py`: version 0.34.0,
+build 38, bundle ID, 256 PASS, GPU map revision 10, pause/resume, all existing
+PHY/HDR/MDL44/48/material/skin/VPK/entity markers and PNG dimensions 1170×2532.
+IPA SHA256 matches the included manifest:
+`55aa0f0d15e02a54da6ef79464a908f4097d14a1e19636d194ae20470d61045e`.
+All four bodygroup contracts pass in both startup/selftest sets; three entity
+instances stage from three candidates, including the blank body.
+
+The screenshot was inspected: textured room, physics spheres and studio/static
+models are visible; the status shows bodygroups and 118 startup PASS. The final
+screenshot shows the existing skin/HDR/PHY scene, not the temporary body fixture.
+No new physical iPhone run or real ClientMod model with body alternatives has
+been verified in this stage.

@@ -206,5 +206,8 @@ startup/GPU/lifecycle. Оценка ~92% относится только к ми
 Этап 0.34/build 38 выбирает MDL bodygroups по base/modulo, включая пустые
 варианты, вместо объединения всей геометрии. BSP model entities учитывают body;
 skins и общий atlas сохраняются. Linux Debug: 5/5 CTest прошли, включая 72 000 studio и 30 000 entity
-mutations. iOS-проверки нового этапа ожидаются.
+mutations. CI 37576240688: Linux 5/5, ARM64 iPhone и simulator прошли.
+Скачанный IPA 0.34.0/build 38, SHA256 manifest, 256 PASS, GPU revision 10,
+pause/resume и screenshot проверены отдельно. На физическом iPhone и настоящих
+ClientMod bodygroups новый этап пока не проверен.
 [Отчёт 0.34](VALIDATION-0.34.0.md).
