@@ -53,7 +53,7 @@ jobs:
       - name: Upload iPhone ARM64 game compilation archives
         uses: actions/upload-artifact@v4
         with:
-          name: CStrike-ARM64-compile-${{ github.sha }}
+          name: CStrike-ARM64-compile-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: |
             build-ios/Release-iphoneos/libsource_cstrike_server.a
             build-ios/Release-iphoneos/libsource_particles.a
@@ -86,7 +86,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: Source1IOS-${{ github.sha }}
+          name: Source1IOS-${{ github.sha }}-attempt${{ github.run_attempt }}
           path: artifacts/
           if-no-files-found: warn
           retention-days: 14
