@@ -241,7 +241,7 @@ For the previous APK inventory see ANDROID-CLIENTMOD-1.4.md. The APK attachment 
 
 ## Changes and limits
 
-Native build and 8/8 CTest checks pass, including new alpha-mask/Patch and custom loose mount regression checks. A full Mirage load/reload probe is running; iPhone visual/performance acceptance is pending.
+Native build and 8/8 CTest checks pass, including new alpha-mask/Patch and custom loose mount regression checks. The full-cache Mirage probe passes movement (339 units), shutdown and a second map load. iPhone visual/performance acceptance is pending.
 
 The mount implementation now includes bounded self-contained VPKs and custom loose directories, with custom then extras then clientmod_base priority from the supplied gameinfo.txt. Opaque VMTs no longer treat texture alpha/specular masks as transparency. Explicit alphatest/translucent flags retain coverage. Tool trigger/clip/invisible surfaces are excluded from the visible BSP while remaining in engine collision. Live render transforms consult the original VPhysics object.
 
