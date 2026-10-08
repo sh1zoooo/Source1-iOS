@@ -116,6 +116,26 @@ try:
             Path("artifacts/simulator-runtime.log").write_text(text)
             simctl("io", udid, "screenshot", "artifacts/simulator.png")
             print(text)
+            # Verify the normal diagnostics/menu flow independently of the GPU fixture smoke.
+            simctl("terminate", udid, bundle)
+            log.unlink(missing_ok=True)
+            simctl("launch", udid, bundle, "--port-menu-smoke")
+            ui_deadline=time.monotonic()+45
+            diagnostic_saved=False
+            while time.monotonic()<ui_deadline:
+                ui_text=log.read_text() if log.exists() else ""
+                if "FAIL" in ui_text:
+                    raise RuntimeError("Diagnostics/menu UI checks failed")
+                if "iOS diagnostic UI checks: PASS" in ui_text and not diagnostic_saved:
+                    simctl("io", udid, "screenshot", "artifacts/diagnostics.png")
+                    diagnostic_saved=True
+                if "iOS menu UI checks: PASS" in ui_text:
+                    simctl("io", udid, "screenshot", "artifacts/local-server-menu.png")
+                    Path("artifacts/menu-runtime.log").write_text(ui_text)
+                    break
+                time.sleep(.2)
+            else:
+                raise RuntimeError("Diagnostics/menu UI startup timed out")
             break
         time.sleep(1)
     else:
@@ -123,7 +143,8 @@ try:
 finally:
     Path("artifacts").mkdir(exist_ok=True)
     if "log" in globals() and log.exists():
-        Path("artifacts/simulator-runtime.log").write_text(log.read_text())
+        name="menu-runtime.log" if "ui_deadline" in globals() else "simulator-runtime.log"
+        Path("artifacts",name).write_text(log.read_text())
     crash_directory=Path.home()/"Library/Logs/DiagnosticReports"
     if crash_directory.exists():
         for crash in crash_directory.glob("Source1IOS*.ips"):

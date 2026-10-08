@@ -25,6 +25,7 @@ public:
     std::uint64_t modelTextureRevision() const { return map_.modelTextureRevision(); }
     void cameraLook(float yaw, float pitch) { if(player_.active())player_.look(yaw,pitch);else map_.look(yaw,pitch); }
     void cameraMove(float forward, float right, float seconds) { if(player_.active())player_.move(forward,right);else map_.move(forward,right,seconds); }
+    std::vector<std::string> maps() { return files_.maps(); }
     bool startGame(const std::string& map);
     void stopGame();
     void clearInput() { player_.move(0,0);player_.button(15,false);accumulator_=0; }

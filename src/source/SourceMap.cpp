@@ -513,6 +513,7 @@ std::vector<std::uint8_t> entityPropsFixture(){
 namespace source1ios {
 struct SourceMap::Impl {
     bool gameView=false,viewModel=false,gameModelReady=false;int gamePoseTick=-1;
+    Vector lastFacing=Vector(1,0,0);bool facingReady=false;float bobTime=0,lastBobTime=0,bobSpeed=0;
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,entityModelInstances=0,entityModelCandidates=0;
@@ -878,12 +879,14 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->angles=impl_->spawnAngles;}}
-void SourceMap::clearGameView(){if(impl_){impl_->gameView=impl_->viewModel=false;resetCamera();}}
+void SourceMap::clearGameView(){if(impl_){impl_->gameView=impl_->viewModel=false;impl_->facingReady=false;impl_->bobTime=impl_->lastBobTime=impl_->bobSpeed=0;impl_->gamePoseTick=-1;resetCamera();}}
 void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool modelReady){
     if(!impl_||!player.active)return;
     impl_->gameView=true;impl_->viewModel=!thirdPerson;impl_->gameModelReady=modelReady;impl_->animationPlaying=false;
     impl_->camera=Vector(player.eye[0],player.eye[1],player.eye[2]);
-    impl_->angles=QAngle(player.angles[0],player.angles[1],0);
+    // Original CBasePlayer::CalcPlayerView adds the server punch angle once. Never feed this
+    // visual offset back into usercmd: the GameDLL owns ballistic recoil.
+    impl_->angles=QAngle(player.angles[0]+(thirdPerson?0:player.punch[0]),player.angles[1]+(thirdPerson?0:player.punch[1]),thirdPerson?0:player.punch[2]);
     if(thirdPerson){Vector forward;AngleVectors(impl_->angles,&forward);
         const Vector end=impl_->camera-forward*120+Vector(0,0,20);trace_t trace{};
         g_pPhysicsCollision->TraceBox(impl_->camera,end,Vector(-4,-4,-4),Vector(4,4,4),impl_->collision.get(),vec3_origin,vec3_angle,&trace);
@@ -905,10 +908,30 @@ void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool mode
             if(sampleStudioAnimation(studio,i,time,pose))skinStudioModel(studio,pose.rotations,posed,pose.positions);break;
         }
     }
+    // Adapt CS:S CWeaponCSBase bob and CBaseViewModel facing lag to the
+    // local bone renderer. Integrate on simulation time, independent of display FPS.
+    matrix3x4_t weaponTransform;SetIdentityMatrix(weaponTransform);
+    if(!thirdPerson){
+        Vector forward,right,up;AngleVectors(impl_->angles,&forward,&right,&up);
+        if(!impl_->facingReady){impl_->lastFacing=forward;impl_->lastBobTime=player.simulationTime;impl_->facingReady=true;}
+        const float dt=std::clamp(player.simulationTime-impl_->lastBobTime,0.f,.1f);
+        const float speed=std::clamp(std::hypot(player.velocity[0],player.velocity[1]),std::max(0.f,impl_->bobSpeed-dt*320),std::min(320.f,impl_->bobSpeed+dt*320));
+        impl_->bobSpeed=speed;impl_->bobTime+=dt*(speed/320);impl_->lastBobTime=player.simulationTime;
+        constexpr float pi=3.14159265358979323846f;
+        const float vertical=std::clamp(speed*.005f*(.3f+.7f*std::sin(impl_->bobTime/.8f*2*pi)),-7.f,4.f);
+        const float lateral=std::clamp(speed*.005f*(.3f+.7f*std::sin(impl_->bobTime/1.6f*2*pi)),-7.f,4.f);
+        const Vector difference=forward-impl_->lastFacing;
+        const float catchup=5*std::max(1.f,difference.Length()/1.5f);
+        impl_->lastFacing+=difference*std::min(1.f,dt*catchup);VectorNormalize(impl_->lastFacing);
+        const Vector lag=difference*-5;
+        Vector offset(DotProduct(lag,forward)+vertical*.4f,-DotProduct(lag,right),DotProduct(lag,up)+vertical*.1f);
+        // Preserve original model animation; apply a visual transform afterwards.
+        AngleMatrix(QAngle(-vertical*.4f,-lateral*.3f,vertical*.5f),offset,weaponTransform);
+    }
     matrix3x4_t transform;AngleMatrix(QAngle(0,player.angles[1],0),Vector(player.origin[0],player.origin[1],player.origin[2]),transform);
     if(posed.size()!=impl_->modelMesh.size())return;
     for(size_t i=0;i<posed.size();++i){auto& v=impl_->modelMesh[i];
-        if(thirdPerson&&!originalPose)VectorTransform(posed[i].position,transform,v.position);else v.position=posed[i].position;
+        if(thirdPerson&&!originalPose)VectorTransform(posed[i].position,transform,v.position);else if(!thirdPerson)VectorTransform(posed[i].position,weaponTransform,v.position);else v.position=posed[i].position;
         v.material=posed[i].material;
     }
 }

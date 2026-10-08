@@ -153,6 +153,20 @@ bool SourceFiles::mountContent(const std::string& name){
     }
     content_.push_back({name,path,archives});Msg("Source content mounted: %s; GAME search path: %s; %zu bounded VPK archives, %zu chunks, %llu bytes\n",name.c_str(),path.c_str(),archives.size(),chunks.size(),static_cast<unsigned long long>(packedBytes));return true;
 }
+std::vector<std::string> SourceFiles::maps(){
+    std::vector<std::string> result;if(!initialized_)return result;
+    // Refresh mounts when resources were copied in Files while the app was open.
+    for(const auto* folder:{"hl2","platform","cstrike","cm"})mountContent(folder);
+    auto* fs=static_cast<IFileSystem*>(interface_);FileFindHandle_t handle=FILESYSTEM_INVALID_FIND_HANDLE;
+    const char* name=fs->FindFirstEx("maps/*.bsp","GAME",&handle);
+    for(unsigned count=0;name&&count<512;++count,name=fs->FindNext(handle)){
+        const std::string file(name);if(fs->FindIsDirectory(handle)||file.size()<5)continue;
+        const auto stem=file.substr(0,file.size()-4);
+        if(stem.rfind("__source1ios",0)!=0&&file.substr(file.size()-4)==".bsp"&&stem.size()<=64&&stem.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")==std::string::npos)result.push_back(stem);
+    }
+    if(handle!=FILESYSTEM_INVALID_FIND_HANDLE)fs->FindClose(handle);
+    std::sort(result.begin(),result.end());result.erase(std::unique(result.begin(),result.end()),result.end());return result;
+}
 bool SourceFiles::unmountContent(const std::string& name){
     if(!initialized_)return false;const auto found=std::find_if(content_.begin(),content_.end(),[&](const auto& entry){return entry.name==name;});if(found==content_.end())return false;
     auto* fs=static_cast<IFileSystem*>(interface_);fs->AsyncFinishAll();bool removed=fs->RemoveSearchPath(found->path.c_str(),"GAME");for(auto archive=found->archives.rbegin();archive!=found->archives.rend();++archive)removed=fs->RemoveSearchPath(archive->c_str(),"GAME")&&removed;if(!removed)return false;
