@@ -42,6 +42,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     BOOL _submittedFirstFrame;
     CGPoint _movement;
     BOOL _smokeRequested;
+    BOOL _menuSmokeRequested;
     BOOL _thirdPerson;
     std::uint64_t _mapTextureRevision;
     std::uint64_t _modelTextureRevision;
@@ -74,6 +75,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 - (void)viewDidLoad {
     [super viewDidLoad];
     _smokeRequested = [NSProcessInfo.processInfo.arguments containsObject:@"--port-smoke"];
+    _menuSmokeRequested=[NSProcessInfo.processInfo.arguments containsObject:@"--port-menu-smoke"];
     self.view.backgroundColor = [UIColor colorWithRed:0.035 green:0.045 blue:0.065 alpha:1];
     self.status = [[UILabel alloc] init];
     self.status.textColor = UIColor.whiteColor;
@@ -175,12 +177,13 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.diagnostics.backgroundColor=self.view.backgroundColor;self.diagnostics.textColor=[UIColor colorWithWhite:.8 alpha:1];
     self.diagnostics.font=[UIFont monospacedSystemFontOfSize:11 weight:UIFontWeightRegular];self.diagnostics.translatesAutoresizingMaskIntoConstraints=NO;
     [self.view addSubview:self.diagnostics];
-    [NSLayoutConstraint activateConstraints:@[
+    self.diagnosticLayout=[self.diagnosticLayout arrayByAddingObjectsFromArray:@[
         [self.diagnostics.topAnchor constraintEqualToAnchor:self.status.bottomAnchor constant:8],
         [self.diagnostics.bottomAnchor constraintEqualToAnchor:controls.topAnchor constant:-8],
         [self.diagnostics.leadingAnchor constraintEqualToAnchor:safe.leadingAnchor constant:12],
         [self.diagnostics.trailingAnchor constraintEqualToAnchor:safe.trailingAnchor constant:-12]
     ]];
+    [NSLayoutConstraint activateConstraints:self.diagnosticLayout];
         NSURL *documents = [[[NSFileManager defaultManager] URLsForDirectory:NSDocumentDirectory
         inDomains:NSUserDomainMask] firstObject];
     _hostStarted = documents && _runtime.start(documents.path.UTF8String);
@@ -334,6 +337,17 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     _runtime.cameraMove(_movement.y, _movement.x, (float)dt);
     _runtime.frame(dt);
     if(_runtime.frames()%60==0)[self refreshDiagnostics];
+    if(_menuSmokeRequested&&_runtime.frames()==30){
+        [self.view layoutIfNeeded];
+        bool good=self.metalView.hidden&&!self.diagnostics.hidden&&!self.status.hidden&&!self.commandInput.hidden&&self.hud.hidden;
+        for(UIButton *button in self.gameButtons)good=good&&button.hidden;
+        _runtime.log(good?"iOS diagnostic UI checks: PASS":"iOS diagnostic UI checks: FAIL");
+    }
+    if(_menuSmokeRequested&&_runtime.frames()==120){
+        [self togglePractice:self.play];[self.view layoutIfNeeded];
+        const bool good=self.menu.window!=nil&&self.mapTable.window!=nil&&self.metalView.hidden&&!_runtime.playerState().active;
+        _runtime.log(good?"iOS menu UI checks: PASS":"iOS menu UI checks: FAIL");
+    }
     const auto& player=_runtime.playerState();self.crosshair.hidden=!player.active||_thirdPerson;
     if(player.active){
         NSString *weapon=[NSString stringWithUTF8String:player.weapon];
@@ -366,6 +380,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         _runtime.executeSource("source_camera_reset");
     }
     if (_smokeRequested && _runtime.frames() == 180) _runtime.log("Source simulator runtime contracts: PASS");
+    if(view.hidden)return; // Diagnostics do not draw the hidden fixture scene.
     MTLRenderPassDescriptor *pass = view.currentRenderPassDescriptor;
     id<CAMetalDrawable> drawable = view.currentDrawable;
     if (!pass || !drawable || !self.pipeline) return;

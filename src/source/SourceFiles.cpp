@@ -157,12 +157,12 @@ std::vector<std::string> SourceFiles::maps(){
     std::vector<std::string> result;if(!initialized_)return result;
     // Refresh mounts when resources were copied in Files while the app was open.
     for(const auto* folder:{"hl2","platform","cstrike","cm"})mountContent(folder);
-    auto* fs=static_cast<IFileSystem*>(interface_);FileFindHandle_t handle;
+    auto* fs=static_cast<IFileSystem*>(interface_);FileFindHandle_t handle=FILESYSTEM_INVALID_FIND_HANDLE;
     const char* name=fs->FindFirstEx("maps/*.bsp","GAME",&handle);
     for(unsigned count=0;name&&count<512;++count,name=fs->FindNext(handle)){
         const std::string file(name);if(fs->FindIsDirectory(handle)||file.size()<5)continue;
         const auto stem=file.substr(0,file.size()-4);
-        if(file.substr(file.size()-4)==".bsp"&&stem.size()<=64&&stem.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")==std::string::npos)result.push_back(stem);
+        if(stem.rfind("__source1ios",0)!=0&&file.substr(file.size()-4)==".bsp"&&stem.size()<=64&&stem.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_-")==std::string::npos)result.push_back(stem);
     }
     if(handle!=FILESYSTEM_INVALID_FIND_HANDLE)fs->FindClose(handle);
     std::sort(result.begin(),result.end());result.erase(std::unique(result.begin(),result.end()),result.end());return result;
