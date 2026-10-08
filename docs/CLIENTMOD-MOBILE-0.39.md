@@ -20,7 +20,11 @@ build/mobile_probe DOCUMENTS
 build/map_probe DOCUMENTS aim_map_csgo
 ```
 
-The mobile probe checks imported icons/catalogue/HUD, AWP zoom, AK price/account/inventory, repeat/invalid/wrong-team purchases, pistol purchase, slots, drop and team respawns with a CT rifle purchase. The native contract suite also checks reading a mixed-case loose directory. Simulator smoke creates a fresh device and opens Simulator before launching, following the previous cold-launch timeouts. iOS build and smoke results must be checked separately from native probes.
+The mobile probe checks imported icons/catalogue/HUD, AWP zoom, AK price/account/inventory, repeat/invalid/wrong-team purchases, pistol purchase, slots, drop and team respawns with a CT rifle purchase. The native contract suite also checks reading a mixed-case loose directory. Simulator smoke creates a fresh device and opens Simulator before launching, following the previous cold-launch timeouts. iOS build and smoke results were checked separately from native probes.
+
+On 2026-10-08, [workflow 37764731493](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37764731493) passed both jobs for code commit `400c7f8e9eccb4602a68086e67ca6679a67930a2` (PR merge build `062f221293a85b1e2e32291c6bb662f541ef76a8`). Device ARM64 and simulator builds passed; simulator GPU/runtime checks and diagnostics/menu UI checks passed, with screenshots captured. Native CI passed 7/7 contracts. User-cache gameplay controls were verified by the Linux integration probes; physical iPhone validation of this increment remains pending.
+
+[Download the Source1IOS artifact containing `Source1IOS-unsigned.ipa`](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37764731493/artifacts/11544483559). This is the 0.39 / build 43 app package. The separate `CStrike-ARM64-compile` artifact contains libraries, not an installable app. Artifact ZIP: 6,260,259 bytes; SHA256 `df4d72b033d95d3559421335d538f1e40ba3b4de373b9199713a812ba72fb752`.
 
 ## Still pending
 
