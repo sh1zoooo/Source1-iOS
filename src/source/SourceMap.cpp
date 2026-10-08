@@ -1,4 +1,5 @@
 #include "SourceMap.hpp"
+#include "TextureAtlas.hpp"
 #include "BspLzmaFixture.hpp"
 #include "SourceStudio.hpp"
 #include "SourceEntities.hpp"
@@ -129,15 +130,7 @@ bool report(const char* name, bool ok) {
 }
 struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; float lightmap[3]{}; };
 unsigned appendAtlasTile(source1ios::SourceTexture& atlas,unsigned& count,const source1ios::SourceTexture& texture){
-    const unsigned slot=count++,oldColumns=std::min(16u,slot),columns=std::min(16u,count),rows=(count+columns-1)/columns;
-    source1ios::SourceTexture next{columns*64,rows*64,std::vector<std::uint8_t>(size_t(columns)*rows*64*64*4)};
-    for(unsigned i=0;i<slot;++i)for(unsigned y=0;y<64;++y)
-        std::memcpy(next.pixels.data()+(size_t(i/columns*64+y)*next.width+i%columns*64)*4,
-            atlas.pixels.data()+(size_t(i/oldColumns*64+y)*atlas.width+i%oldColumns*64)*4,64*4);
-    for(unsigned y=0;y<64;++y)for(unsigned x=0;x<64;++x)
-        std::memcpy(next.pixels.data()+(size_t(slot/columns*64+y)*next.width+slot%columns*64+x)*4,
-            texture.pixels.data()+(size_t(y*texture.height/64)*texture.width+x*texture.width/64)*4,4);
-    atlas=std::move(next);return slot;
+    const unsigned slot=count;if(!source1ios::appendTextureTile(atlas,count,texture))return std::numeric_limits<unsigned>::max();return slot;
 }
 source1ios::SourceTexture studioAtlas(const source1ios::StudioMesh& model,const source1ios::SourceTexture& fallback,const source1ios::SourceTexture& checker,unsigned& count){
     if(model.materials.size()<=1){source1ios::SourceTexture texture;count=1;
@@ -316,13 +309,12 @@ bool bspMaterials(BspMaterials& out,const std::array<std::vector<unsigned char>,
     out.slotCount=std::max(1u,unsigned(unique.size()));return true;
 }
 source1ios::SourceTexture bspAtlas(const BspMaterials& materials,const source1ios::SourceTexture& fallback){
-    constexpr unsigned tile=64;const unsigned columns=std::min(16u,materials.slotCount),rows=(materials.slotCount+columns-1)/columns;
-    source1ios::SourceTexture atlas;atlas.width=tile*columns;atlas.height=tile*rows;atlas.pixels.resize(size_t(atlas.width)*atlas.height*4);
+    source1ios::SourceTexture atlas;unsigned count=0;
     std::vector<bool> written(materials.slotCount,false);
     for(size_t i=0;i<materials.names.size();++i){const unsigned slot=materials.slots[i];if(written[slot])continue;written[slot]=true;source1ios::SourceTexture decoded;
         if(!decodeMaterial({materials.names[i]},decoded,"BSP"))decoded=fallback;
-        for(unsigned y=0;y<tile;++y)for(unsigned x=0;x<tile;++x){const unsigned sx=std::min(decoded.width-1,x*decoded.width/tile),sy=std::min(decoded.height-1,y*decoded.height/tile);
-            std::memcpy(atlas.pixels.data()+(size_t((slot/columns)*tile+y)*atlas.width+(slot%columns)*tile+x)*4,decoded.pixels.data()+(size_t(sy)*decoded.width+sx)*4,4);}
+        if(slot!=count||!source1ios::appendTextureTile(atlas,count,decoded))return {};
+
     }return atlas;
 }
 bool lightmapRange(const dface_t& face,const texinfo_t& info,size_t bytes,unsigned& width,unsigned& height){
@@ -803,13 +795,13 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             for(const auto& triangle:triangles){if(mesh.size()+3>maximumVertices){Warning("Source BSP: world vertex budget exceeded\n");return false;}
                 Vector normal;CrossProduct(triangle[1]-triangle[0],triangle[2]-triangle[0],normal);if(normal.LengthSqr()<1e-8f)continue;VectorNormalize(normal);
                 const float shade=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);
-                const float palette[6][3]={{.3f,.7f,.9f},{.7f,.8f,.9f},{.9f,.5f,.2f},{.4f,.8f,.5f},{.65f,.45f,.85f},{.85f,.75f,.35f}};
+
                 for(auto p:triangle){
                     const auto& s=texinfo.textureVecsTexelsPerWorldUnits[0];const auto& t=texinfo.textureVecsTexelsPerWorldUnits[1];
                     const float tx=(p.x*s[0]+p.y*s[1]+p.z*s[2]+s[3])/texdata.width;
                     const float ty=(p.x*t[0]+p.y*t[1]+p.z*t[2]+t[3])/texdata.height;
                     if(!std::isfinite(tx)||!std::isfinite(ty)||std::abs(tx)>65536||std::abs(ty)>65536)return false;
-                    MeshPoint vertex{p,{palette[face%6][0]*shade,palette[face%6][1]*shade,palette[face%6][2]*shade},{tx,ty},materials.slots[texinfo.texdata]};
+                    MeshPoint vertex{p,{shade,shade,shade},{tx,ty},materials.slots[texinfo.texdata]};
                     if(lw){for(int axis=0;axis<2;++axis){const auto& v=texinfo.lightmapVecsLuxelsPerWorldUnits[axis];const float local=p.x*v[0]+p.y*v[1]+p.z*v[2]+v[3]-f.m_LightmapTextureMinsInLuxels[axis];
                             if(!std::isfinite(local))return false;const unsigned extent=axis?lh:lw,origin=axis?ly:lx;vertex.lightmap[axis]=(origin+.5f+std::clamp(local,0.f,float(extent-1)))/1024.f;}
                         vertex.lightmap[2]=1;for(float& color:vertex.color)color=1;}
