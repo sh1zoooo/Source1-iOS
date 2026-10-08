@@ -47,12 +47,13 @@ unsigned read32(const unsigned char* p){return unsigned(p[0])|(unsigned(p[1])<<8
 unsigned read16(const unsigned char* p){return unsigned(p[0])|(unsigned(p[1])<<8);}
 bool checkedVpk(const std::filesystem::path& directoryFile,std::vector<std::filesystem::path>& chunks,std::uint64_t& bytes){
     std::error_code error;const auto size=std::filesystem::file_size(directoryFile,error);
-    if(error||size<12||size>64u*1024*1024||std::filesystem::is_symlink(directoryFile,error)||error)return false;
-    std::ifstream input(directoryFile,std::ios::binary);std::vector<unsigned char> data(size);if(!input.read(reinterpret_cast<char*>(data.data()),data.size()))return false;
+    if(error||size<12||size>512u*1024*1024||std::filesystem::is_symlink(directoryFile,error)||error)return false;
+    std::ifstream input(directoryFile,std::ios::binary);std::vector<unsigned char> data(12);if(!input.read(reinterpret_cast<char*>(data.data()),data.size()))return false;
     if(read32(data.data())!=0x55aa1234)return false;const unsigned version=read32(data.data()+4),treeSize=read32(data.data()+8);if(version!=1&&version!=2)return false;
-    const size_t header=version==1?12:28;if(header>data.size()||treeSize>data.size()-header)return false;
-    const size_t embedded=version==1?data.size()-header-treeSize:read32(data.data()+12);
-    if(header+size_t(treeSize)>data.size()||embedded>data.size()-header-treeSize)return false;
+    const size_t header=version==1?12:28;if(header>size||treeSize>size-header||treeSize>16u*1024*1024)return false;
+    data.resize(header+size_t(treeSize));if(!input.read(reinterpret_cast<char*>(data.data()+12),data.size()-12))return false;
+    const size_t embedded=version==1?size-header-treeSize:read32(data.data()+12);
+    if(embedded>size-header-treeSize)return false;
     const size_t end=header+treeSize;size_t cursor=header;std::set<unsigned> indices;
     auto word=[&](){const size_t begin=cursor;while(cursor<end&&data[cursor])++cursor;if(cursor>=end)return false;++cursor;return cursor>begin+1;};
     while(true){const size_t before=cursor;if(!word()){if(cursor==before+1)break;return false;}
@@ -65,7 +66,9 @@ bool checkedVpk(const std::filesystem::path& directoryFile,std::vector<std::file
         }
     }
     if(cursor!=end||indices.size()>512)return false;
-    auto base=directoryFile.string();if(base.size()<8||base.substr(base.size()-8)!="_dir.vpk")return false;base.resize(base.size()-8);
+    auto base=directoryFile.string();
+    if(base.size()>=8&&base.substr(base.size()-8)=="_dir.vpk")base.resize(base.size()-8);
+    else { if(!indices.empty())return false; if(base.size()<4||base.substr(base.size()-4)!=".vpk")return false;base.resize(base.size()-4); }
     for(unsigned index:indices){char suffix[16];std::snprintf(suffix,sizeof(suffix),"_%03u.vpk",index);std::filesystem::path chunk=base+suffix;
         const auto chunkSize=std::filesystem::file_size(chunk,error);if(error||chunkSize>512u*1024*1024||std::filesystem::is_symlink(chunk,error)||error||std::uint64_t(chunkSize)>8ull*1024*1024*1024-bytes)return false;
         chunks.push_back(chunk);bytes+=chunkSize;}
@@ -142,14 +145,22 @@ bool SourceFiles::mountContent(const std::string& name){
     size_t entries=0;std::vector<std::filesystem::path> archives,chunks;std::uint64_t packedBytes=0;std::filesystem::recursive_directory_iterator it(path,error),end;
     while(!error&&it!=end){if(++entries>100000||it.depth()>32||it->is_symlink(error)||error)return false;
         auto filename=it->path().filename().string();for(char& c:filename)if(c>='A'&&c<='Z')c+=('a'-'A');if(filename=="zip0.zip"||filename=="zip0.360.zip")return false;
-        if(filename.size()>8&&filename.substr(filename.size()-8)=="_dir.vpk"){if(archives.size()>=32||!checkedVpk(it->path(),chunks,packedBytes))return false;auto base=it->path().string();base.resize(base.size()-8);archives.emplace_back(base+".vpk");}it.increment(error);}
+        if(filename.size()>8&&filename.substr(filename.size()-8)=="_dir.vpk"){if(archives.size()>=32||!checkedVpk(it->path(),chunks,packedBytes))return false;auto base=it->path().string();base.resize(base.size()-8);archives.emplace_back(base+".vpk");}
+        else if(filename.size()>4&&filename.substr(filename.size()-4)==".vpk"){
+            const auto stem=filename.substr(0,filename.size()-4);const auto underscore=stem.rfind('_');const bool numbered=underscore!=std::string::npos&&stem.size()-underscore==4&&std::all_of(stem.begin()+underscore+1,stem.end(),[](char c){return c>='0'&&c<='9';});
+            if(!numbered){if(archives.size()>=32||!checkedVpk(it->path(),chunks,packedBytes))return false;archives.push_back(it->path());}
+        }
+        if(name=="cm"&&it->is_directory(error)&&it->path().parent_path()==path/"custom")archives.push_back(it->path());
+        it.increment(error);}
     if(error)return false;
-    std::sort(archives.begin(),archives.end());
-    auto* fs=static_cast<IFileSystem*>(interface_);fs->AddSearchPath(path.c_str(),"GAME",PATH_ADD_TO_TAIL);
+    auto priority=[&](const std::filesystem::path& p){const auto rel=p.lexically_relative(path).generic_string();return rel.rfind("custom/",0)==0?0:rel.rfind("extras/",0)==0?1:rel.rfind("clientmod_base/",0)==0?2:3;};
+    std::sort(archives.begin(),archives.end(),[&](const auto& a,const auto& b){return priority(a)!=priority(b)?priority(a)<priority(b):a<b;});
+    auto* fs=static_cast<IFileSystem*>(interface_);
     for(const auto& archive:archives)fs->AddSearchPath(archive.c_str(),"GAME",PATH_ADD_TO_TAIL);
+    fs->AddSearchPath(path.c_str(),"GAME",PATH_ADD_TO_TAIL);
     if(name=="cm"||name=="cstrike_clientmod"||name=="cstrike"){
-        fs->AddSearchPath(path.c_str(),"MOD",PATH_ADD_TO_TAIL);
         for(const auto& archive:archives)fs->AddSearchPath(archive.c_str(),"MOD",PATH_ADD_TO_TAIL);
+        fs->AddSearchPath(path.c_str(),"MOD",PATH_ADD_TO_TAIL);
     }
     content_.push_back({name,path,archives});Msg("Source content mounted: %s; GAME search path: %s; %zu bounded VPK archives, %zu chunks, %llu bytes\n",name.c_str(),path.c_str(),archives.size(),chunks.size(),static_cast<unsigned long long>(packedBytes));return true;
 }

@@ -5,6 +5,7 @@
 #include "cs_shareddefs.h"
 #include "cs_gamerules.h"
 #include "baseviewmodel_shared.h"
+#include "vphysics_interface.h"
 #include "tier1/strtools.h"
 #include <algorithm>
 #include <vector>
@@ -112,7 +113,9 @@ bool gamePlayerRead(void* entity,PlayerState& out) {
         if(!smoke&&(!model||!model[0]))continue;
         auto& w=out.world[out.worldCount++];w.id=e->entindex();w.kind=smoke?2:projectile?1:0;
         V_strncpy(w.classname,name,sizeof(w.classname));if(model)V_strncpy(w.model,model,sizeof(w.model));copy(w.origin,e->GetAbsOrigin());
-        for(int i=0;i<3;++i)w.angles[i]=e->GetAbsAngles()[i];
+        QAngle worldAngles=e->GetAbsAngles();Vector worldOrigin=e->GetAbsOrigin();
+        if(auto* physics=e->VPhysicsGetObject())physics->GetPosition(&worldOrigin,&worldAngles);
+        copy(w.origin,worldOrigin);for(int i=0;i<3;++i)w.angles[i]=worldAngles[i];
         if(auto* animated=dynamic_cast<CBaseAnimating*>(e)){w.skin=animated->m_nSkin.Get();w.body=animated->m_nBody.Get();}
     }
     V_strncpy(out.model,STRING(p->GetModelName()),sizeof(out.model));

@@ -23,7 +23,7 @@ vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffe
 fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]], texture2d<float> lightmapTexture [[texture(2)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
     bool model=in.material<0;
-    if (model && in.materialCount==1u) return in.color * modelTexture.sample(repeatSample,in.uv);
+    if (model && in.materialCount==1u) { float4 texel=modelTexture.sample(repeatSample,in.uv); if(texel.a<0.01f) discard_fragment(); return in.color * texel; }
     constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
     uint columns=min(16u,in.materialCount),rows=(in.materialCount+columns-1u)/columns;
     float tile=float(model?modelTexture.get_width():texture.get_width())/float(columns);
@@ -31,7 +31,9 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     uint slot=model?uint(-in.material-1):uint(in.material);
     float2 atlasUV=float2((float(slot%columns)+local.x)/float(columns),(float(slot/columns)+local.y)/float(rows));
     float3 light=in.lightmap.z > 0.5 ? lightmapTexture.sample(clampSample,in.lightmap.xy).rgb : float3(1);
-    return float4(in.color.rgb*light,in.color.a) * (model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV));
+    float4 texel=model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV);
+    if(texel.a<0.01f) discard_fragment();
+    return float4(in.color.rgb*light,in.color.a) * texel;
 }
 )metal";
 

@@ -67,7 +67,9 @@ bool vtfResourceRangesValid(const std::vector<std::uint8_t>& bytes){
         budget+=size_t(length);
     }return true;
 }
-bool vmtBaseTexture(std::string name,std::string& base){
+struct MaterialAlpha { bool translucent=false, test=false; float reference=.5f; };
+bool vmtBaseTexture(std::string name,std::string& base,MaterialAlpha* alpha=nullptr){
+    struct AlphaPatch { std::string key,value; bool replace; };std::vector<AlphaPatch> alphaPatches;
     std::vector<std::string> visited;std::string insert,replace;bool hasInsert=false,hasReplace=false;
     for(unsigned chain=0;chain<10;++chain){
         if(!materialPath(name))return false;
@@ -100,13 +102,17 @@ bool vmtBaseTexture(std::string name,std::string& base){
             // only changes an existing key. Inner patch keys win when gathered.
             if(auto* section=kv->FindKey("insert"))if(section->FindKey("$basetexture")){insert=section->GetString("$basetexture");hasInsert=true;}
             if(auto* section=kv->FindKey("replace"))if(section->FindKey("$basetexture")){replace=section->GetString("$basetexture");hasReplace=true;}
+            for(const char* sectionName:{"insert","replace"})if(auto* section=kv->FindKey(sectionName))for(const char* key:{"$translucent","$alphatest","$alphatestreference"})if(section->FindKey(key))alphaPatches.push_back({key,section->GetString(key),!V_strcmp(sectionName,"replace")});
             std::string include=kv->GetString("include","");kv->deleteThis();
             std::replace(include.begin(),include.end(),'\\','/');
             if(include.size()>10&&!V_strnicmp(include.c_str(),"materials/",10))include.erase(0,10);
             if(include.size()<5||V_stricmp(include.substr(include.size()-4).c_str(),".vmt"))return false;
             include.resize(include.size()-4);name=std::move(include);continue;
         }
-        bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");kv->deleteThis();
+        bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");
+        if(alpha){for(auto it=alphaPatches.rbegin();it!=alphaPatches.rend();++it)if(!it->replace||kv->FindKey(it->key.c_str()))kv->SetString(it->key.c_str(),it->value.c_str());
+            alpha->translucent=kv->GetInt("$translucent",0)!=0;alpha->test=kv->GetInt("$alphatest",0)!=0;alpha->reference=std::clamp(kv->GetFloat("$alphatestreference",.5f),0.f,1.f);}
+        kv->deleteThis();
         // These shader families all expose a base texture. This is only their
         // albedo path; blend weights, normals and specular need separate passes.
         if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric")
@@ -131,7 +137,10 @@ bool decodeTexture(const std::string& base,source1ios::SourceTexture& texture){
     DestroyVTFTexture(image);return ok;
 }
 bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture,const char* kind,std::string* resolved=nullptr){
-    for(const auto& name:candidates){std::string base;if(!vmtBaseTexture(name,base)||!decodeTexture(base,texture))continue;
+    for(const auto& name:candidates){std::string base;MaterialAlpha alpha;if(!vmtBaseTexture(name,base,&alpha)||!decodeTexture(base,texture))continue;
+        // Source opaque materials may use texture alpha as a specular mask.
+        // Only explicit VMT transparency flags turn it into coverage.
+        for(size_t i=3;i<texture.pixels.size();i+=4){if(alpha.test)texture.pixels[i]=texture.pixels[i]/255.f>=alpha.reference?255:0;else if(!alpha.translucent)texture.pixels[i]=255;}
         if(resolved)*resolved=name;
         Msg("Source %s VMT/VTF base texture decoded: materials/%s.vmt (%ux%u)\n",kind,name.c_str(),texture.width,texture.height);return true;
     }return false;
@@ -618,6 +627,9 @@ bool SourceMap::start(const std::filesystem::path& root) {
     for(unsigned i=2;i<17;++i){const std::string name="materials/debug/source1ios_slot"+std::to_string(i)+".vmt";
         const std::string vmt=i%2?bspVmt:blueVmt;ok=ok&&writeModel(name.c_str(),std::vector<std::uint8_t>(vmt.begin(),vmt.end()));}
     const std::pair<const char*,const char*> patchFixtures[]={
+        {"__source1ios_alpha_mask","VertexLitGeneric { \"$basetexture\" \"debug/debugempty\" \"$basemapalphaphongmask\" \"1\" }"},
+        {"__source1ios_alpha_test","Patch { include \"materials/debug/__source1ios_alpha_mask.vmt\" insert { \"$alphatest\" \"1\" \"$alphatestreference\" \"0.7\" } }"},
+        {"__source1ios_alpha_translucent","VertexLitGeneric { \"$basetexture\" \"debug/debugempty\" \"$translucent\" \"1\" }"},
         {"__source1ios_patch_empty","LightmappedGeneric { }"},
         {"__source1ios_patch_insert","Patch { include \"materials/debug/__source1ios_patch_empty.vmt\" insert { \"$basetexture\" \"debug/debugblue\" } replace { \"$basetexture\" \"debug/debugempty\" } }"},
         {"__source1ios_patch_noinsert","Patch { include \"materials/debug/__source1ios_patch_empty.vmt\" replace { \"$basetexture\" \"debug/debugblue\" } }"},
@@ -801,6 +813,8 @@ bool SourceMap::load(const char* filename,const char* pathID,bool gameLevel) {
             // Tool surfaces remain in the engine collision BSP, never in the
             // visible mesh. In particular toolsskybox is a mask, not sky art.
             if(texinfo.flags&(SURF_SKY|SURF_SKY2D|SURF_NODRAW|SURF_HINT|SURF_SKIP))continue;
+            const auto materialName=materialKey(materials.names[texinfo.texdata]);
+            if(materialName=="tools/toolstrigger"||materialName=="tools/toolsclip"||materialName=="tools/toolsplayerclip"||materialName=="tools/toolsnpcclip"||materialName=="tools/toolsinvisible"||materialName=="tools/toolsareaportal"||materialName=="tools/toolsblockbullets"||materialName=="tools/toolsblocklos")continue;
             unsigned lx=0,ly=0,lw=0,lh=0;if(!lightmaps.add(f,texinfo,lighting,lx,ly,lw,lh)){Warning("Source BSP rejected %s: invalid lightmap range or atlas capacity; face=%zu\n",filename,face);return false;}
             std::vector<Vector> polygon;
             for(int i=0;i<f.numedges;++i){const int se=surfedges[f.firstedge+i];if(se==std::numeric_limits<int>::min())return false;
@@ -1329,6 +1343,10 @@ bool SourceMap::selfTest(){
     if(handle!=MDLHANDLE_INVALID)g_pMDLCache->Release(handle);
     all&=report("Metal static model geometry staged",impl_->modelMesh.size()==36);
     std::string patchBase;
+    MaterialAlpha alpha;std::string alphaBase;
+    all&=report("VMT specular alpha mask remains opaque",vmtBaseTexture("debug/__source1ios_alpha_mask",alphaBase,&alpha)&&!alpha.translucent&&!alpha.test);
+    all&=report("VMT Patch alpha test inherited coverage",vmtBaseTexture("debug/__source1ios_alpha_test",alphaBase,&alpha)&&alpha.test&&std::abs(alpha.reference-.7f)<.001f);
+    all&=report("VMT explicit translucent coverage",vmtBaseTexture("debug/__source1ios_alpha_translucent",alphaBase,&alpha)&&alpha.translucent&&!alpha.test);
     all&=report("VMT Patch include chain base texture",vmtBaseTexture("debug/debugblue",patchBase)&&patchBase=="debug/debugblue"&&vmtBaseTexture("debug/__source1ios_patch_outer",patchBase)&&patchBase=="debug/debugblue");
     all&=report("VMT Patch insert replace existing-key semantics",vmtBaseTexture("debug/__source1ios_patch_insert",patchBase)&&patchBase=="debug/debugempty"&&!vmtBaseTexture("debug/__source1ios_patch_noinsert",patchBase));
     all&=report("VMT Patch cycle unsafe include and KV macros rejected",!vmtBaseTexture("debug/__source1ios_patch_cycle",patchBase)&&!vmtBaseTexture("debug/__source1ios_patch_unsafe",patchBase)&&!vmtBaseTexture("debug/__source1ios_patch_macro",patchBase));
