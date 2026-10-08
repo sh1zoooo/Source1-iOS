@@ -208,7 +208,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.metalView.colorPixelFormat = MTLPixelFormatBGRA8Unorm;
     self.metalView.depthStencilPixelFormat = MTLPixelFormatDepth32Float;
     self.metalView.clearDepth = 1;
-    self.metalView.clearColor = MTLClearColorMake(0.035, 0.045, 0.065, 1);
+    self.metalView.clearColor = MTLClearColorMake(0.32, 0.52, 0.76, 1);
     self.metalView.preferredFramesPerSecond = 60;
     self.metalView.paused = YES;
     [self.view insertSubview:self.metalView atIndex:0];

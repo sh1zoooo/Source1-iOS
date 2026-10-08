@@ -339,6 +339,21 @@ int main() {
             check(host.vertices(1).size()<imported.size(),"Sky or nodraw tool surfaces rendered as walls");
         }
         bsp=originalMaterials;writeBsp("restored-surfaces.bsp");check(host.executeSource("source_bsp_load maps/restored-surfaces.bsp")&&host.vertices(1).size()==imported.size(),"Tool-mask filtering damaged ordinary faces");
+        check(host.mapSupported("de_mirage_go"),"Mirage absent from practice map menu");
+        const auto skyMaterials=gameMaterials/"skybox";std::filesystem::create_directories(skyMaterials);
+        for(const char* side:{"rt","bk","lf","ft","up","dn"})std::ofstream(skyMaterials/(std::string("testsky")+side+".vmt"))<<"Sky { \"$basetexture\" \"debug/debugblue\" }";
+        const std::string skyEntities="{ classname worldspawn skyname testsky } { classname info_player_start origin \"-190 -160 16\" angles \"8 45 0\" }";
+        bsp=originalMaterials;put32(8,bsp.size());put32(12,skyEntities.size()+1);bsp.insert(bsp.end(),skyEntities.begin(),skyEntities.end());bsp.push_back(0);writeBsp("skybox.bsp");
+        check(host.executeSource("source_bsp_load maps/skybox.bsp"),"Skybox map failed to load");
+        const auto skyView=host.vertices(1);
+        check(skyView.size()==imported.size()+36,"Skybox cube not staged separately");
+        for(size_t i=0;i<36;++i){check(skyView[i].lightmap[2]==0&&skyView[i].material[1]==8,"Skybox uses world lighting or wrong atlas");
+            check(std::abs(skyView[i].position[2]-skyView[i].position[3]*.99999f)<1e-6,"Skybox is not at far depth");}
+        host.cameraMove(1,0,.1);const auto translatedSky=host.vertices(1);
+        for(size_t i=0;i<36;++i)for(unsigned a=0;a<4;++a)check(skyView[i].position[a]==translatedSky[i].position[a],"Skybox moved with camera translation");
+        check(host.executeSource("source_bsp_load maps/restored-surfaces.bsp")&&host.vertices(1).size()==imported.size(),"Previous skybox survived map replacement");
+        bsp=originalMaterials;
+
         uint32_t facesOffset=0;std::memcpy(&facesOffset,bsp.data()+8+7*16,4);
         // Source dface_t.lightofs is byte 20. Rejected lighting must retain
         // the last valid CPU scene and both GPU upload inputs.
