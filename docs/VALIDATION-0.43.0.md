@@ -33,8 +33,16 @@ Validation:
   server entity and additional world geometry checked. HE, flashbang and smoke
   bought and thrown via a tap shorter than a server tick; projectile presence
   checked for each. Real animation cycles advance.
-- Mirage load reaches 1,422 prop instances and active engine collision.
-  Full movement/restart and Apple device/Metal checks are pending at this record.
+- APK configuration imports 32 buttons, 30 icons and four HUD panels. Hidden
+  button flags and show/hide commands follow the imported weapon-slot layout.
+  Inventory next/previous switching and IN_SPEED walking pass the live probe.
+- Mirage: MAP PASS after movement (339 units), shutdown and a second map load.
+  Both gameplay benchmark cycles pass movement, wall collision, crouch, jump,
+  firing, reload, viewmodel poses and pause checks.
+- Continuous offline practice suppresses automatic round cleanup and clears
+  the initial restart timer after explicit player spawn. Ordinary match round
+  restarts remain pending: Mirage brush entities fail during that cleanup.
+- Final Apple device compilation and simulator smoke checks are pending.
 
 This is still a dedicated original CS:S GameDLL with a Metal renderer adapter.
 The original graphical client, Android GameUI and ClientMod shaders are not

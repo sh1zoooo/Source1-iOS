@@ -3,12 +3,16 @@
 #include <iostream>
 #include <stdexcept>
 #include <cstring>
+#include <cmath>
 using namespace source1ios;
 void require(bool value,const char* message){if(!value)throw std::runtime_error(message);}
 void step(Runtime& runtime,double seconds){for(int i=0;i<int(seconds*60);++i)runtime.frame(1./60);}
 int main(int argc,char** argv){try{
  require(argc==2,"usage: world_probe DOCUMENTS");Runtime r;require(r.start(std::filesystem::absolute(argv[1])),"startup");require(r.startGame("awp_lego_2"),"map");step(r,4);
  auto resources=r.mobileResources();size_t icons=0;for(const auto& b:resources.buttons)icons+=!b.texture.pixels.empty();std::cerr<<"APK resources config="<<resources.config<<" buttons="<<resources.buttons.size()<<" icons="<<icons<<" hud="<<resources.hud.size()<<"\n";require(resources.hud.size()==4,"HUD defaults");require(icons>20,"APK touch icons");
+ bool hiddenSwitch=false,visibleSwitch=false;for(const auto& b:resources.buttons){if(b.name=="switch1")hiddenSwitch=(b.flags&1)!=0;if(b.name=="switch2")visibleSwitch=(b.flags&1)==0;}require(hiddenSwitch&&visibleSwitch,"APK slot toggle visibility");
+ const std::string firstWeapon=r.playerState().weapon;require(r.playerAction("invnext"),"next weapon");step(r,1);require(r.playerState().weapon!=firstWeapon,"next weapon changed");require(r.playerAction("invprev"),"previous weapon");step(r,1);require(r.playerState().weapon==firstWeapon,"previous weapon restored");
+ r.cameraMove(1,0,0);step(r,.3);const auto fast=r.playerState();r.playerButton(PlayerSpeed,true);step(r,.3);const auto slow=r.playerState();r.cameraMove(0,0,0);r.playerButton(PlayerSpeed,false);require(std::hypot(fast.velocity[0],fast.velocity[1])>std::hypot(slow.velocity[0],slow.velocity[1])+10,"walk modifier slows movement");step(r,.5);
  const auto original=r.vertices(1.8);const auto before=original.size();size_t originalWorld=0;for(const auto& v:original)originalWorld+=v.material[0]>=0;require(r.playerAction("drop"),"drop command");step(r,.2);
  bool dropped=false;for(int i=0;i<r.playerState().worldCount;++i)dropped|=r.playerState().world[i].kind==0;
  require(dropped,"dropped weapon server entity");auto geometry=r.vertices(1.8);size_t worldVertices=0;

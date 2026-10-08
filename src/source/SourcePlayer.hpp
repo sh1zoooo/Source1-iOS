@@ -2,7 +2,7 @@
 #include "PlayerState.hpp"
 #include <string>
 namespace source1ios {
-enum PlayerButton : unsigned { PlayerJump=1, PlayerDuck=2, PlayerAttack=4, PlayerReload=8, PlayerAttack2=16, PlayerUse=32 };
+enum PlayerButton : unsigned { PlayerJump=1, PlayerDuck=2, PlayerAttack=4, PlayerReload=8, PlayerAttack2=16, PlayerUse=32, PlayerSpeed=64 };
 class SourcePlayer final {
 public:
     int buy(const std::string& alias);

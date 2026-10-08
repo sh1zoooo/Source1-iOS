@@ -38,6 +38,7 @@ MobileResources loadMobileResources(int team){
   MobileButton b;b.name=args[1];b.icon=args[2];b.command=args[3];float* values[]={&b.x1,&b.y1,&b.x2,&b.y2};bool valid=true;
   for(int i=0;i<4;++i){char* end=nullptr;*values[i]=strtof(args[4+i],&end);valid&=end&&!*end&&std::isfinite(*values[i])&&*values[i]>=-.5f&&*values[i]<=1.5f;}
   if(!valid||b.x2<=b.x1||b.y2<=b.y1||b.command.empty())continue;
+  if(args.ArgC()>12)b.flags=unsigned(std::clamp(atoi(args[12]),0,1023));
   for(int i=0;i<4;++i)b.color[i]=std::clamp(atoi(args[8+i]),0,255);
   if(!b.icon.empty()&&b.icon.size()<128&&b.icon.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-/")==std::string::npos&&b.icon.find("//")==std::string::npos)sourceDecodeUITexture(b.icon,b.texture);
   // Xash replaces duplicate names; keep that behavior for imported touch.cfg.

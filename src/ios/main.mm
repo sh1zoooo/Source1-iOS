@@ -3,6 +3,7 @@
 #include "Runtime.hpp"
 #include <chrono>
 #include <cmath>
+#include <sstream>
 
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
@@ -300,7 +301,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     for(auto& button:_mobile.buttons){NSArray *saved=positions[[NSString stringWithUTF8String:button.name.c_str()]];if(saved.count==4){float x1=[saved[0] floatValue],y1=[saved[1] floatValue],x2=[saved[2] floatValue],y2=[saved[3] floatValue];if(std::isfinite(x1)&&std::isfinite(y1)&&std::isfinite(x2)&&std::isfinite(y2)&&x1>=0&&y1>=0&&x2<=1&&y2<=1&&x2>x1&&y2>y1){button.x1=x1;button.y1=y1;button.x2=x2;button.y2=y2;}}}
     for(UIButton *button in self.gameButtons)[button removeFromSuperview];[self.gameButtons removeAllObjects];
     for(NSUInteger i=0;i<_mobile.buttons.size();++i){const auto& b=_mobile.buttons[i];if(b.command=="_move"||b.command=="_look")continue;
-        UIButton *button=[UIButton buttonWithType:UIButtonTypeCustom];button.tag=i;button.accessibilityIdentifier=[@"cm_" stringByAppendingString:[NSString stringWithUTF8String:b.name.c_str()]];button.accessibilityLabel=[NSString stringWithUTF8String:b.name.c_str()];
+        UIButton *button=[UIButton buttonWithType:UIButtonTypeCustom];button.tag=i;button.hidden=(b.flags&1)!=0;button.accessibilityIdentifier=[@"cm_" stringByAppendingString:[NSString stringWithUTF8String:b.name.c_str()]];button.accessibilityLabel=[NSString stringWithUTF8String:b.name.c_str()];
         if(!b.texture.pixels.empty()){
             NSData *data=[NSData dataWithBytes:b.texture.pixels.data() length:b.texture.pixels.size()];CGDataProviderRef provider=CGDataProviderCreateWithCFData((__bridge CFDataRef)data);CGColorSpaceRef space=CGColorSpaceCreateDeviceRGB();
             CGImageRef image=CGImageCreate(b.texture.width,b.texture.height,8,32,b.texture.width*4,space,kCGBitmapByteOrderDefault|kCGImageAlphaLast,provider,nullptr,YES,kCGRenderingIntentDefault);
@@ -319,7 +320,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.hud.hidden=self.hudPanels.count>0;[self.view setNeedsLayout];
 }
 - (void)editTouchPosition:(UIPanGestureRecognizer *)gesture {
-    if(!_editTouch)return;UIButton *button=(UIButton *)gesture.view;auto& b=_mobile.buttons[button.tag];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    if(!_editTouch)return;UIButton *button=(UIButton *)gesture.view;auto& b=_mobile.buttons[button.tag];if(b.flags&2)return;CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
     CGPoint delta=[gesture translationInView:self.view];float width=b.x2-b.x1,height=b.y2-b.y1;
     b.x1=std::clamp(b.x1+float(delta.x/area.size.width),0.f,1.f-width);b.y1=std::clamp(b.y1+float(delta.y/area.size.height),0.f,1.f-height);b.x2=b.x1+width;b.y2=b.y1+height;[gesture setTranslation:CGPointZero inView:self.view];[self.view setNeedsLayout];
     if(gesture.state==UIGestureRecognizerStateEnded){NSMutableDictionary *positions=[[NSUserDefaults.standardUserDefaults dictionaryForKey:@"ClientModTouchPositions"] mutableCopy]?:[NSMutableDictionary dictionary];positions[[NSString stringWithUTF8String:b.name.c_str()]]=@[@(b.x1),@(b.y1),@(b.x2),@(b.y2)];[NSUserDefaults.standardUserDefaults setObject:positions forKey:@"ClientModTouchPositions"];}
@@ -331,7 +332,8 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     if(command.rfind("+jump",0)==0)return source1ios::PlayerJump;
     if(command.rfind("+duck",0)==0)return source1ios::PlayerDuck;
     if(command.rfind("+reload",0)==0)return source1ios::PlayerReload;
-    if(command.rfind("+use",0)==0)return source1ios::PlayerUse;return 0;
+    if(command.rfind("+use",0)==0)return source1ios::PlayerUse;
+    if(command.rfind("+speed",0)==0)return source1ios::PlayerSpeed;return 0;
 }
 - (void)mobileDown:(UIButton *)sender {if(_editTouch)return;unsigned flag=[self mobileFlag:sender];if(flag)_runtime.playerButton(flag,true);}
 - (void)mobileUp:(UIButton *)sender {unsigned flag=[self mobileFlag:sender];if(flag)_runtime.playerButton(flag,false);}
@@ -348,10 +350,18 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         return;
     }
     if(_editTouch)return;
+    if(command==";+duck"){_runtime.playerButton(source1ios::PlayerDuck,!_runtime.playerState().crouched);return;}
+    if(command.rfind("touch_show ",0)==0||command.rfind("touch_hide ",0)==0){
+        std::istringstream commands(command);std::string part;
+        while(std::getline(commands,part,';')){std::istringstream words(part);std::string operation,name;words>>operation>>name;
+            if(operation!="touch_show"&&operation!="touch_hide")continue;
+            for(auto& b:_mobile.buttons)if(b.name==name){if(operation=="touch_hide")b.flags|=1;else b.flags&=~1u;}}
+        for(UIButton *button in self.gameButtons)if([button.accessibilityIdentifier hasPrefix:@"cm_"])button.hidden=(_mobile.buttons[button.tag].flags&1)!=0;return;
+    }
     if(command=="buymenu"){[self showBuyMenu];return;}
     if(command=="gameui_activate"){[self togglePractice:nil];return;}
     if(command=="+lookatweapon"){_runtime.playerAction("inspect");return;}
-    if(command=="drop"||command=="lastinv"||(command.size()==5&&command.rfind("slot",0)==0)){_runtime.playerAction(command);return;}
+    if(command=="drop"||command=="lastinv"||command=="invnext"||command=="invprev"||(command.size()==5&&command.rfind("slot",0)==0)){_runtime.playerAction(command);return;}
     NSString *message=command=="+showscores"?[NSString stringWithFormat:@"Local practice · HP %d · $%d",_runtime.playerState().health,_runtime.playerState().money]:@"This control needs an additional client feature. Chat and voice need multiplayer.";
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:_mobile.buttons[sender.tag].name.c_str()] message:message preferredStyle:UIAlertControllerStyleAlert];[alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];_movement=CGPointZero;_runtime.clearInput();[self presentViewController:alert animated:YES completion:nil];
 }

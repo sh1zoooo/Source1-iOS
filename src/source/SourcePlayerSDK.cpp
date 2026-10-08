@@ -6,6 +6,8 @@
 #include "cs_gamerules.h"
 #include "baseviewmodel_shared.h"
 #include "tier1/strtools.h"
+#include <algorithm>
+#include <vector>
 
 namespace source1ios {
 namespace {
@@ -55,6 +57,13 @@ bool gamePlayerAction(void* entity,const char* action){
     if(!V_strcmp(action,"inspect")){
         auto* vm=p->GetViewModel();auto* weapon=p->GetActiveCSWeapon();if(!vm||!weapon)return false;
         for(const char* name:{"lookat01","inspect","fidget"}){const int sequence=vm->LookupSequence(name);if(sequence>=0){vm->SendViewModelMatchingSequence(sequence);weapon->SetWeaponIdleTime(gpGlobals->curtime+vm->SequenceDuration());return true;}}return false;
+    }
+    if(!V_strcmp(action,"invnext")||!V_strcmp(action,"invprev")){
+        std::vector<CBaseCombatWeapon*> weapons;for(int i=0;i<p->WeaponCount();++i)if(auto* weapon=p->GetWeapon(i))weapons.push_back(weapon);
+        std::sort(weapons.begin(),weapons.end(),[](const CBaseCombatWeapon* a,const CBaseCombatWeapon* b){return a->GetSlot()!=b->GetSlot()?a->GetSlot()<b->GetSlot():a->GetPosition()<b->GetPosition();});
+        if(weapons.empty())return false;const auto found=std::find(weapons.begin(),weapons.end(),p->GetActiveWeapon());
+        int index=found==weapons.end()?0:int(found-weapons.begin());const int direction=!V_strcmp(action,"invnext")?1:-1;
+        for(size_t attempt=0;attempt<weapons.size();++attempt){index=(index+direction+int(weapons.size()))%int(weapons.size());if(p->Weapon_Switch(weapons[index]))return true;}return false;
     }
     if(!V_strcmp(action,"lastinv")){p->SelectLastItem();return true;}
     if(V_strlen(action)==5&&!V_strncmp(action,"slot",4)&&action[4]>='1'&&action[4]<='5'){

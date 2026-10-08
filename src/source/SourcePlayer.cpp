@@ -101,7 +101,7 @@ void SourcePlayer::look(float yaw,float pitch) {
     yaw_=std::remainder(yaw_+yaw,360.f);pitch_=std::clamp(pitch_+pitch,-89.f,89.f);
 }
 void SourcePlayer::button(unsigned flag,bool pressed) {
-    flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload|PlayerAttack2|PlayerUse;
+    flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload|PlayerAttack2|PlayerUse|PlayerSpeed;
     if(pressed){buttons_|=flag;pendingPressed_|=flag;}else buttons_&=~flag;
 }
 void SourcePlayer::step() {
@@ -120,6 +120,7 @@ void SourcePlayer::step() {
     if((buttons_|pendingPressed_)&PlayerReload)command.buttons|=IN_RELOAD;
     if((buttons_|pendingPressed_)&PlayerAttack2)command.buttons|=IN_ATTACK2;
     if((buttons_|pendingPressed_)&PlayerUse)command.buttons|=IN_USE;
+    if((buttons_|pendingPressed_)&PlayerSpeed)command.buttons|=IN_SPEED;
     static_cast<IBotController*>(controller_)->RunPlayerMove(&command);
     pendingPressed_=0;gamePlayerAdvanceView(entity_,tickInterval());
     gamePlayerRead(entity_,state_);
