@@ -220,6 +220,36 @@ replace("tier0/platform_posix.cpp", "( now.tv_nsec * 1e-9 )",
         "( (now.tv_nsec - start_time.tv_nsec) * 1e-9 )")
 replace("filesystem/filesystem_stdio.cpp", "CFileSystem_Stdio g_FileSystem_Stdio;",
         "CFileSystem_Stdio g_FileSystem_Stdio;\nCreateInterfaceFn SourceFileSystem_GetFactory() { return Sys_GetFactoryThis(); }")
+# Windows caches contain mixed-case directory names as well as file names.
+# Resolve each component; the upstream helper only checks the final directory.
+case_source = (args.upstream / "filesystem/linux_support.cpp").read_text()
+case_start = case_source.index("bool findFileInDirCaseInsensitive(")
+replace("filesystem/linux_support.cpp", case_source[case_start:], r'''bool findFileInDirCaseInsensitive( const char *file, char* output, size_t bufSize)
+{
+    if(!file || !output || !bufSize)return false;output[0]=0;
+    if(strlen(file)>=MAX_PATH)return false;
+    char path[MAX_PATH];path[0]=file[0]=='/'?'/':'.';path[1]=0;
+    const char* cursor=file;
+    while(*cursor){while(*cursor=='/')++cursor;if(!*cursor)break;
+        const char* end=strchr(cursor,'/');size_t length=end?size_t(end-cursor):strlen(cursor);
+        if(!length||length>=MAX_PATH)return false;
+        char component[MAX_PATH];memcpy(component,cursor,length);component[length]=0;
+        char match[MAX_PATH]={0};char exact[MAX_PATH];
+        int n=snprintf(exact,sizeof(exact),"%s/%s",path,component);struct stat info;
+        if(n>0&&n<int(sizeof(exact))&&!stat(exact,&info))V_strncpy(match,component,sizeof(match));
+        DIR* dir=match[0]?nullptr:opendir(path);if(!match[0]&&!dir)return false;
+        for(dirent* entry=dir?readdir(dir):nullptr;entry;entry=readdir(dir))if(!strcasecmp(entry->d_name,component)){
+            if(!match[0]||!strcmp(entry->d_name,component)||strcmp(entry->d_name,match)<0)V_strncpy(match,entry->d_name,sizeof(match));
+            if(!strcmp(entry->d_name,component))break;
+        }
+        if(dir)closedir(dir);if(!match[0])return false;
+        size_t current=strlen(path),addition=strlen(match);bool separator=current&&path[current-1]!='/';
+        if(current+separator+addition>=sizeof(path))return false;
+        if(separator)path[current++]='/';memcpy(path+current,match,addition+1);cursor+=length;
+    }
+    if(strlen(path)>=bufSize)return false;V_strncpy(output,path,bufSize);return true;
+}
+''')
 # Embedded VPK offsets must use the actual v1/v2 header size, not always v2.
 replace("public/vpklib/packedstore.h", "int m_nDirectoryDataSize;", "int m_nDirectoryDataSize;\n\tint m_nDirectoryHeaderSize;")
 replace("vpklib/packedstore.cpp", "m_nDirectoryDataSize = 0;", "m_nDirectoryDataSize = 0;\n\tm_nDirectoryHeaderSize = 0;")

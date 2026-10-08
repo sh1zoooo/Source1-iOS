@@ -17,13 +17,19 @@ iphones = [d for group in devices.values() for d in group
 if not iphones:
     raise SystemExit("No available iPhone simulator runtime installed")
 device = next((d for d in iphones if d["name"] == "iPhone 16e"), iphones[0])
-udid = device["udid"]
+# Use a clean device rather than a stale runner simulator. Warm SpringBoard
+# before launching the app; prior runners stalled in simctl launch with no log.
+runtime = next(key for key, group in devices.items() if device in group)
+udid = simctl("create", "Source1IOS Smoke", device.get("deviceTypeIdentifier", "com.apple.CoreSimulator.SimDeviceType.iPhone-16"), runtime)
+device["state"] = "Shutdown"
 bundle = "io.github.sh1zoooo.source1ios"
 print(f"Simulator: {device['name']} ({udid})", flush=True)
 try:
     if device["state"] != "Booted":
         simctl("boot", udid)
     simctl("bootstatus", udid, "-b")
+    subprocess.run(["open", "-a", "Simulator", "--args", "-CurrentDeviceUDID", udid], check=True, timeout=30)
+    simctl("spawn", udid, "launchctl", "list")
     simctl("install", udid, sys.argv[1])
     container = Path(simctl("get_app_container", udid, bundle, "data"))
     log = container / "Documents" / "Source1IOS" / "runtime.log"

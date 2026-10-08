@@ -19,6 +19,9 @@ extern CGameServer sv;
 extern IServerGameDLL* serverGameDLL;
 #endif
 namespace source1ios {
+#ifndef SOURCE_GAME_LINK
+bool gameBuyInfo(const char*,int&,int&) { return false; }
+#endif
 bool SourcePlayer::start(const std::string& map) {
     stop();error_.clear();
 #ifdef SOURCE_GAME_LINK
@@ -29,7 +32,7 @@ bool SourcePlayer::start(const std::string& map) {
     auto factory=Sys_GetFactoryThis();
     auto* bots=static_cast<IBotManager*>(factory(INTERFACEVERSION_PLAYERBOTMANAGER,nullptr));
     if(!bots){error_="Original player-control interface missing";return false;}
-    for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_autoteambalance",0},{"mp_limitteams",0},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
+    for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_autoteambalance",0},{"mp_limitteams",0},{"mp_startmoney",16000},{"mp_buytime",99},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
         if(auto* var=g_pCVar->FindVar(setting.first))var->SetValue(setting.second);
     auto name=map;ownsLevel_=true;
     if(!Host_NewGame(name.data(),false,false)||!sv.IsActive()){error_="Original GameDLL could not activate map";stop();return false;}
@@ -37,7 +40,7 @@ bool SourcePlayer::start(const std::string& map) {
     // not change maps underneath the controlled player and its camera.
     Cbuf_Init();
     entity_=bots->CreateBot("iOS local player");
-    auto* opponent=bots->CreateBot("iOS practice opponent");
+    auto* opponent=bots->CreateBot("iOS practice opponent");opponent_=opponent;
     if(!entity_||!opponent||!gamePlayerSpawn(entity_,2)||!gamePlayerSpawn(opponent,3)){
         error_="Original CCSPlayer round spawn failed";stop();return false;
     }
@@ -51,8 +54,29 @@ bool SourcePlayer::start(const std::string& map) {
     error_="Linked CS:S GameDLL required";return false;
 #endif
 }
+int SourcePlayer::buy(const std::string& alias){
+#ifdef SOURCE_GAME_LINK
+    if(!active()||alias.empty()||alias.size()>32||alias.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_")!=std::string::npos)return 5;
+    const auto result=gamePlayerBuy(entity_,alias.c_str());gamePlayerRead(entity_,state_);return result;
+#else
+    return 5;
+#endif
+}
+bool SourcePlayer::action(const std::string& action){
+#ifdef SOURCE_GAME_LINK
+    if(!active())return false;
+    if(action=="team2"||action=="team3"){
+        const int team=action.back()-'0';buttons_=0;forward_=right_=0;
+        if(!gamePlayerSpawn(opponent_,team==2?3:2)||!gamePlayerSpawn(entity_,team))return false;
+        gamePlayerRead(entity_,state_);yaw_=state_.angles[1];pitch_=state_.angles[0];return true;
+    }
+    const bool result=gamePlayerAction(entity_,action.c_str());gamePlayerRead(entity_,state_);return result;
+#else
+    return false;
+#endif
+}
 void SourcePlayer::stop() {
-    entity_=controller_=nullptr;state_={};forward_=right_=0;buttons_=0;
+    entity_=opponent_=controller_=nullptr;state_={};forward_=right_=0;buttons_=0;
 #ifdef SOURCE_GAME_LINK
     if(ownsLevel_&&serverGameDLL){
         HostState_GameShutdown();
@@ -77,13 +101,13 @@ void SourcePlayer::look(float yaw,float pitch) {
     yaw_=std::remainder(yaw_+yaw,360.f);pitch_=std::clamp(pitch_+pitch,-89.f,89.f);
 }
 void SourcePlayer::button(unsigned flag,bool pressed) {
-    flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload;
+    flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload|PlayerAttack2|PlayerUse;
     if(pressed)buttons_|=flag;else buttons_&=~flag;
 }
 void SourcePlayer::step() {
 #ifdef SOURCE_GAME_LINK
     if(!active())return;
-    if(!sv.IsActive()||sv.GetSpawnCount()!=spawnCount_){entity_=controller_=nullptr;state_={};error_="Game level changed";return;}
+    if(!sv.IsActive()||sv.GetSpawnCount()!=spawnCount_){entity_=opponent_=controller_=nullptr;state_={};error_="Game level changed";return;}
     if(sv.GetTick()==lastTick_)return;
     lastTick_=sv.GetTick();
     CBotCmd command;command.command_number=++command_;command.tick_count=lastTick_;
@@ -94,6 +118,8 @@ void SourcePlayer::step() {
     if(buttons_&PlayerDuck)command.buttons|=IN_DUCK;
     if(buttons_&PlayerAttack)command.buttons|=IN_ATTACK;
     if(buttons_&PlayerReload)command.buttons|=IN_RELOAD;
+    if(buttons_&PlayerAttack2)command.buttons|=IN_ATTACK2;
+    if(buttons_&PlayerUse)command.buttons|=IN_USE;
     static_cast<IBotController*>(controller_)->RunPlayerMove(&command);
     gamePlayerRead(entity_,state_);
 #endif

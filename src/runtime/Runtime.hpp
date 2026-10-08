@@ -25,9 +25,14 @@ public:
     std::uint64_t modelTextureRevision() const { return source_.modelTextureRevision(); }
     void cameraLook(float yaw, float pitch) { source_.cameraLook(yaw,pitch); }
     void cameraMove(float forward, float right, float seconds) { source_.cameraMove(forward,right,seconds); }
+    bool mapSupported(const std::string& name) const { return practiceMapSupported(name); }
     std::vector<std::string> maps() { return source_.maps(); }
     bool startGame(const std::string& map="awp_lego_2") { return running_&&source_.startGame(map); }
+    MobileResources mobileResources() { return source_.mobileResources(); }
+    int buy(const std::string& alias) { return running_&&active_?source_.buy(alias):3; }
+    bool playerAction(const std::string& action) { return running_&&active_&&source_.playerAction(action); }
     void stopGame() { source_.stopGame(); }
+    void clearInput() { source_.clearInput(); }
     void playerButton(unsigned button,bool pressed) { if(active_)source_.playerButton(button,pressed); }
     void thirdPerson(bool enabled) { source_.thirdPerson(enabled); }
     const PlayerState& playerState() const { return source_.playerState(); }

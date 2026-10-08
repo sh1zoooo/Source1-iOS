@@ -7,6 +7,8 @@
 #include "SourceMap.hpp"
 #include "RenderTypes.hpp"
 #include "SourcePlayer.hpp"
+#include "SourceMobile.hpp"
+#include "PracticeMaps.hpp"
 
 namespace source1ios {
 class SourceBridge final {
@@ -28,7 +30,10 @@ public:
     std::vector<std::string> maps() { return files_.maps(); }
     bool startGame(const std::string& map);
     void stopGame();
-    void clearInput() { player_.move(0,0);player_.button(15,false);accumulator_=0; }
+    MobileResources mobileResources() { return loadMobileResources(player_.state().team); }
+    int buy(const std::string& alias) { return player_.buy(alias); }
+    bool playerAction(const std::string& action) { return player_.action(action); }
+    void clearInput() { player_.move(0,0);player_.button(63,false);accumulator_=0; }
     void playerButton(unsigned button,bool pressed) { player_.button(button,pressed); }
     void thirdPerson(bool enabled) { thirdPerson_=enabled;gameModel_.clear(); }
     const PlayerState& playerState() const { return player_.state(); }
