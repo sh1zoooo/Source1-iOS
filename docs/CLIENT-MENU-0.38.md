@@ -2,7 +2,7 @@
 
 Normal launch displays a bounded diagnostic-log tail and Play. Play opens an app-native ClientMod-labelled local-server menu populated from the mounted Source filesystem. Entering a server hides diagnostics and command/export controls; Exit server returns to diagnostics. Touch Jump, Duck, Fire, Reload, and perspective controls use circular overlays on the right, with left movement / right look retained.
 
-The view adapter now reads original CCSPlayer GetPunchAngle and applies the CS:S camera recoil scale of two without changing usercmd or ballistic recoil. Weapon movement adapts the original CS:S vertical/lateral bob and CBaseViewModel facing lag on simulation time, after original bone animation. These are Source CS:S formulas, not verified proprietary ClientMod custom behavior.
+The view adapter now reads original CCSPlayer GetPunchAngle and applies it once, matching original CBasePlayer::CalcPlayerView without changing usercmd or ballistic recoil. Weapon movement adapts the original CS:S vertical/lateral bob and CBaseViewModel facing lag on simulation time, after original bone animation. These are Source CS:S formulas, not verified proprietary ClientMod custom behavior.
 
 The map list discovers installed BSP names, refreshes known mounts, sorts and deduplicates. Only awp_lego_2 remains enabled for actual practice: other imported maps have not passed engine compatibility tests and some cause native aborts. They appear with an explicit pending label. There is no Internet server browser yet. The menu and HUD are native approximations; archive-only ClientMod resources contain no original client implementation.
 

@@ -884,9 +884,9 @@ void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool mode
     if(!impl_||!player.active)return;
     impl_->gameView=true;impl_->viewModel=!thirdPerson;impl_->gameModelReady=modelReady;impl_->animationPlaying=false;
     impl_->camera=Vector(player.eye[0],player.eye[1],player.eye[2]);
-    // CS:S view uses twice the original server punch angle. Never feed this
+    // Original CBasePlayer::CalcPlayerView adds the server punch angle once. Never feed this
     // visual offset back into usercmd: the GameDLL owns ballistic recoil.
-    impl_->angles=QAngle(player.angles[0]+(thirdPerson?0:2*player.punch[0]),player.angles[1]+(thirdPerson?0:2*player.punch[1]),thirdPerson?0:2*player.punch[2]);
+    impl_->angles=QAngle(player.angles[0]+(thirdPerson?0:player.punch[0]),player.angles[1]+(thirdPerson?0:player.punch[1]),thirdPerson?0:player.punch[2]);
     if(thirdPerson){Vector forward;AngleVectors(impl_->angles,&forward);
         const Vector end=impl_->camera-forward*120+Vector(0,0,20);trace_t trace{};
         g_pPhysicsCollision->TraceBox(impl_->camera,end,Vector(-4,-4,-4),Vector(4,4,4),impl_->collision.get(),vec3_origin,vec3_angle,&trace);
