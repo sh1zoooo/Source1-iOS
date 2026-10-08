@@ -44,6 +44,9 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     BOOL _smokeRequested;
     BOOL _menuSmokeRequested;
     BOOL _thirdPerson;
+    BOOL _buyMenu;
+    BOOL _editTouch;
+    source1ios::MobileResources _mobile;
     std::uint64_t _mapTextureRevision;
     std::uint64_t _modelTextureRevision;
     std::uint64_t _submittedSceneRevision;
@@ -68,6 +71,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 @property(nonatomic, strong) NSArray<NSLayoutConstraint *> *diagnosticLayout;
 @property(nonatomic, strong) NSArray<NSLayoutConstraint *> *gameLayout;
 @property(nonatomic, strong) UILabel *crosshair;
+@property(nonatomic, strong) NSMutableArray<UILabel *> *hudPanels;
 @property(nonatomic, strong) UIButton *play;
 @end
 
@@ -255,7 +259,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.metalView.hidden=!_smokeRequested;
     self.status.hidden=NO;self.diagnostics.hidden=_smokeRequested;
     self.commandInput.hidden=NO;self.shareButton.hidden=NO;self.runButton.hidden=NO;
-    self.hud.hidden=YES;self.crosshair.hidden=YES;
+    self.hud.hidden=YES;self.crosshair.hidden=YES;for(UILabel *label in self.hudPanels)label.hidden=YES;
     for(UIButton *button in self.gameButtons)button.hidden=YES;
     [self.play setTitle:@"Play" forState:UIControlStateNormal];
     self.status.text=@"Source 1 iOS · diagnostics\nPlay → local server / map selection";
@@ -270,7 +274,87 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if(!text)text=[[NSString alloc] initWithData:data encoding:NSISOLatin1StringEncoding];self.diagnostics.text=text;
     }@catch(NSException *exception){self.diagnostics.text=@"Use Share diagnostic log to export the full log.";}@finally{[file closeFile];}
 }
-- (void)closeMenu:(UIButton *)sender { [self.menu removeFromSuperview];self.menu=nil; }
+- (void)viewDidLayoutSubviews {
+    [super viewDidLayoutSubviews];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    for(UIButton *button in self.gameButtons)if(button.accessibilityIdentifier.length&&[button.accessibilityIdentifier hasPrefix:@"cm_"]){
+        const auto& b=_mobile.buttons[button.tag];button.frame=CGRectMake(area.origin.x+b.x1*area.size.width,area.origin.y+b.y1*area.size.height,(b.x2-b.x1)*area.size.width,(b.y2-b.y1)*area.size.height);
+    }
+    CGFloat scale=area.size.height/480.;
+    for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& panel=_mobile.hud[i];
+        auto coordinate=[&](const std::string& value,CGFloat origin,CGFloat length){const char* text=value.c_str();if(*text=='r')return origin+length-atof(text+1)*scale;if(*text=='c')return origin+length/2+atof(text+1)*scale;return origin+atof(text)*scale;};
+        self.hudPanels[i].frame=CGRectMake(coordinate(panel.x,area.origin.x,area.size.width),coordinate(panel.y,area.origin.y,area.size.height),panel.width*scale,panel.height*scale);
+        self.hudPanels[i].font=[UIFont boldSystemFontOfSize:MAX(14,24*scale)];
+    }
+}
+- (void)installMobileControls {
+    _editTouch=NO;
+    _mobile=_runtime.mobileResources();if(_mobile.buttons.empty())return;
+    NSDictionary *positions=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"ClientModTouchPositions"];
+    for(auto& button:_mobile.buttons){NSArray *saved=positions[[NSString stringWithUTF8String:button.name.c_str()]];if(saved.count==4){float x1=[saved[0] floatValue],y1=[saved[1] floatValue],x2=[saved[2] floatValue],y2=[saved[3] floatValue];if(std::isfinite(x1)&&std::isfinite(y1)&&std::isfinite(x2)&&std::isfinite(y2)&&x1>=0&&y1>=0&&x2<=1&&y2<=1&&x2>x1&&y2>y1){button.x1=x1;button.y1=y1;button.x2=x2;button.y2=y2;}}}
+    for(UIButton *button in self.gameButtons)[button removeFromSuperview];[self.gameButtons removeAllObjects];
+    for(NSUInteger i=0;i<_mobile.buttons.size();++i){const auto& b=_mobile.buttons[i];if(b.command=="_move"||b.command=="_look")continue;
+        UIButton *button=[UIButton buttonWithType:UIButtonTypeCustom];button.tag=i;button.accessibilityIdentifier=[@"cm_" stringByAppendingString:[NSString stringWithUTF8String:b.name.c_str()]];button.accessibilityLabel=[NSString stringWithUTF8String:b.name.c_str()];
+        if(!b.texture.pixels.empty()){
+            NSData *data=[NSData dataWithBytes:b.texture.pixels.data() length:b.texture.pixels.size()];CGDataProviderRef provider=CGDataProviderCreateWithCFData((__bridge CFDataRef)data);CGColorSpaceRef space=CGColorSpaceCreateDeviceRGB();
+            CGImageRef image=CGImageCreate(b.texture.width,b.texture.height,8,32,b.texture.width*4,space,kCGBitmapByteOrderDefault|kCGImageAlphaLast,provider,nullptr,YES,kCGRenderingIntentDefault);
+            if(image){[button setImage:[UIImage imageWithCGImage:image] forState:UIControlStateNormal];CGImageRelease(image);}CGColorSpaceRelease(space);CGDataProviderRelease(provider);
+            button.imageView.contentMode=UIViewContentModeScaleAspectFit;button.alpha=b.color[3]/255.;
+        }else{[button setTitle:[NSString stringWithUTF8String:b.name.c_str()] forState:UIControlStateNormal];button.titleLabel.font=[UIFont systemFontOfSize:12];button.backgroundColor=[UIColor colorWithWhite:0 alpha:.25];}
+        [button addTarget:self action:@selector(mobileDown:) forControlEvents:UIControlEventTouchDown];
+        [button addTarget:self action:@selector(mobileUp:) forControlEvents:UIControlEventTouchUpInside|UIControlEventTouchUpOutside|UIControlEventTouchCancel];
+        [button addTarget:self action:@selector(mobileActivate:) forControlEvents:UIControlEventTouchUpInside];
+        UIPanGestureRecognizer *drag=[[UIPanGestureRecognizer alloc] initWithTarget:self action:@selector(editTouchPosition:)];drag.delegate=self;[button addGestureRecognizer:drag];
+        [self.gameButtons addObject:button];[self.view addSubview:button];
+    }
+    UIButton *perspective=[UIButton buttonWithType:UIButtonTypeSystem];perspective.frame=CGRectMake(self.view.safeAreaLayoutGuide.layoutFrame.size.width/2,8,44,36);[perspective setTitle:_thirdPerson?@"1P":@"3P" forState:UIControlStateNormal];[perspective addTarget:self action:@selector(togglePerspective:) forControlEvents:UIControlEventTouchUpInside];[self.gameButtons addObject:perspective];[self.view addSubview:perspective];
+    for(UILabel *label in self.hudPanels)[label removeFromSuperview];self.hudPanels=[NSMutableArray array];
+    for(const auto& panel:_mobile.hud){UILabel *label=[[UILabel alloc] init];label.textColor=UIColor.whiteColor;label.backgroundColor=[UIColor colorWithWhite:0 alpha:96./255.];label.textAlignment=NSTextAlignmentCenter;[self.hudPanels addObject:label];[self.view addSubview:label];}
+    self.hud.hidden=self.hudPanels.count>0;[self.view setNeedsLayout];
+}
+- (void)editTouchPosition:(UIPanGestureRecognizer *)gesture {
+    if(!_editTouch)return;UIButton *button=(UIButton *)gesture.view;auto& b=_mobile.buttons[button.tag];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    CGPoint delta=[gesture translationInView:self.view];float width=b.x2-b.x1,height=b.y2-b.y1;
+    b.x1=std::clamp(b.x1+float(delta.x/area.size.width),0.f,1.f-width);b.y1=std::clamp(b.y1+float(delta.y/area.size.height),0.f,1.f-height);b.x2=b.x1+width;b.y2=b.y1+height;[gesture setTranslation:CGPointZero inView:self.view];[self.view setNeedsLayout];
+    if(gesture.state==UIGestureRecognizerStateEnded){NSMutableDictionary *positions=[[NSUserDefaults.standardUserDefaults dictionaryForKey:@"ClientModTouchPositions"] mutableCopy]?:[NSMutableDictionary dictionary];positions[[NSString stringWithUTF8String:b.name.c_str()]]=@[@(b.x1),@(b.y1),@(b.x2),@(b.y2)];[NSUserDefaults.standardUserDefaults setObject:positions forKey:@"ClientModTouchPositions"];}
+}
+- (unsigned)mobileFlag:(UIButton *)sender {
+    const auto& command=_mobile.buttons[sender.tag].command;
+    if(command.rfind("+attack2",0)==0)return source1ios::PlayerAttack2;
+    if(command.rfind("+attack",0)==0)return source1ios::PlayerAttack;
+    if(command.rfind("+jump",0)==0)return source1ios::PlayerJump;
+    if(command.rfind("+duck",0)==0)return source1ios::PlayerDuck;
+    if(command.rfind("+reload",0)==0)return source1ios::PlayerReload;
+    if(command.rfind("+use",0)==0)return source1ios::PlayerUse;return 0;
+}
+- (void)mobileDown:(UIButton *)sender {if(_editTouch)return;unsigned flag=[self mobileFlag:sender];if(flag)_runtime.playerButton(flag,true);}
+- (void)mobileUp:(UIButton *)sender {unsigned flag=[self mobileFlag:sender];if(flag)_runtime.playerButton(flag,false);}
+- (void)mobileActivate:(UIButton *)sender {
+    unsigned flag=[self mobileFlag:sender];if(flag){_runtime.playerButton(flag,false);return;}if(!sender.isTouchInside)return;
+    const auto& command=_mobile.buttons[sender.tag].command;
+    if(command=="chooseteam"){
+        _movement=CGPointZero;_runtime.clearInput();UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Choose team" message:nil preferredStyle:UIAlertControllerStyleAlert];
+        for(NSString *team in @[@"Terrorists",@"Counter-Terrorists"]){int number=[team isEqualToString:@"Terrorists"]?2:3;[alert addAction:[UIAlertAction actionWithTitle:team style:UIAlertActionStyleDefault handler:^(UIAlertAction *action){if(self->_runtime.playerAction(number==2?"team2":"team3"))[self installMobileControls];}]];}[alert addAction:[UIAlertAction actionWithTitle:@"Cancel" style:UIAlertActionStyleCancel handler:nil]];[self presentViewController:alert animated:YES completion:nil];return;
+    }
+    if(command=="touch_enableedit"){
+        _editTouch=!_editTouch;_movement=CGPointZero;_runtime.clearInput();
+        for(UIButton *button in self.gameButtons)button.layer.borderWidth=_editTouch?1:0;
+        return;
+    }
+    if(_editTouch)return;
+    if(command=="buymenu"){[self showBuyMenu];return;}
+    if(command=="gameui_activate"){[self togglePractice:nil];return;}
+    if(command=="+lookatweapon"){_runtime.playerAction("inspect");return;}
+    if(command=="drop"||command=="lastinv"||(command.size()==5&&command.rfind("slot",0)==0)){_runtime.playerAction(command);return;}
+    NSString *message=command=="+showscores"?[NSString stringWithFormat:@"Local practice · HP %d · $%d",_runtime.playerState().health,_runtime.playerState().money]:@"This control needs an additional client feature. Chat and voice need multiplayer.";
+    UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:_mobile.buttons[sender.tag].name.c_str()] message:message preferredStyle:UIAlertControllerStyleAlert];[alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];_movement=CGPointZero;_runtime.clearInput();[self presentViewController:alert animated:YES completion:nil];
+}
+- (void)showBuyMenu {
+    _movement=CGPointZero;_runtime.clearInput();_buyMenu=YES;
+    self.menu=[[UIView alloc] initWithFrame:self.view.safeAreaLayoutGuide.layoutFrame];self.menu.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;self.menu.backgroundColor=[UIColor colorWithWhite:.05 alpha:.95];[self.view addSubview:self.menu];
+    UIButton *back=[UIButton buttonWithType:UIButtonTypeSystem];back.frame=CGRectMake(12,8,220,40);[back setTitle:@"BUY · Back" forState:UIControlStateNormal];[back addTarget:self action:@selector(closeMenu:) forControlEvents:UIControlEventTouchUpInside];[self.menu addSubview:back];
+    self.mapTable=[[UITableView alloc] initWithFrame:CGRectMake(0,52,self.menu.bounds.size.width,self.menu.bounds.size.height-52) style:UITableViewStylePlain];self.mapTable.autoresizingMask=UIViewAutoresizingFlexibleWidth|UIViewAutoresizingFlexibleHeight;self.mapTable.backgroundColor=UIColor.clearColor;self.mapTable.delegate=self;self.mapTable.dataSource=self;[self.menu addSubview:self.mapTable];
+}
+- (void)closeMenu:(UIButton *)sender { [self.menu removeFromSuperview];self.menu=nil;_buyMenu=NO; }
 - (void)togglePractice:(UIButton *)sender {
     [self.commandInput resignFirstResponder];_movement=CGPointZero;
     if(_runtime.playerState().active){_runtime.stopGame();[self showDiagnostics];_hasPrevious=NO;return;}
@@ -281,18 +365,20 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     UILabel *title=[[UILabel alloc] init];title.text=@"CLIENTMOD · LOCAL SERVER";title.textColor=UIColor.whiteColor;title.font=[UIFont boldSystemFontOfSize:22];title.translatesAutoresizingMaskIntoConstraints=NO;[self.menu addSubview:title];
     UIButton *back=[UIButton buttonWithType:UIButtonTypeSystem];[back setTitle:@"Back" forState:UIControlStateNormal];back.translatesAutoresizingMaskIntoConstraints=NO;[back addTarget:self action:@selector(closeMenu:) forControlEvents:UIControlEventTouchUpInside];[self.menu addSubview:back];
     UILabel *hint=[[UILabel alloc] init];hint.numberOfLines=0;hint.font=[UIFont systemFontOfSize:13];hint.textColor=UIColor.lightGrayColor;hint.translatesAutoresizingMaskIntoConstraints=NO;
-    hint.text=names.count?@"Choose an installed map. Checked: awp_lego_2. Other maps are listed but still need compatibility testing.":@"No maps found. Import cm, cstrike, hl2, platform into Source1IOS/content using Files, then reopen this menu.";[self.menu addSubview:hint];
+    hint.text=names.count?@"Choose an installed map marked checked to start local practice.":@"No maps found. Import cm, cstrike, hl2, platform into Source1IOS/content using Files, then reopen this menu.";[self.menu addSubview:hint];
     self.mapTable=[[UITableView alloc] initWithFrame:CGRectZero style:UITableViewStylePlain];self.mapTable.backgroundColor=UIColor.clearColor;self.mapTable.delegate=self;self.mapTable.dataSource=self;self.mapTable.translatesAutoresizingMaskIntoConstraints=NO;[self.menu addSubview:self.mapTable];
     [NSLayoutConstraint activateConstraints:@[[title.topAnchor constraintEqualToAnchor:self.menu.topAnchor constant:16],[title.leadingAnchor constraintEqualToAnchor:self.menu.leadingAnchor constant:16],[title.trailingAnchor constraintLessThanOrEqualToAnchor:back.leadingAnchor constant:-8],[back.topAnchor constraintEqualToAnchor:self.menu.topAnchor constant:16],[back.trailingAnchor constraintEqualToAnchor:self.menu.trailingAnchor constant:-16],[hint.topAnchor constraintEqualToAnchor:title.bottomAnchor constant:12],[hint.leadingAnchor constraintEqualToAnchor:title.leadingAnchor],[hint.trailingAnchor constraintEqualToAnchor:self.menu.trailingAnchor constant:-16],[self.mapTable.topAnchor constraintEqualToAnchor:hint.bottomAnchor constant:12],[self.mapTable.leadingAnchor constraintEqualToAnchor:self.menu.leadingAnchor],[self.mapTable.trailingAnchor constraintEqualToAnchor:self.menu.trailingAnchor],[self.mapTable.bottomAnchor constraintEqualToAnchor:self.menu.bottomAnchor]]];
 }
-- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return self.mapNames.count; }
+- (NSInteger)tableView:(UITableView *)tableView numberOfRowsInSection:(NSInteger)section { return _buyMenu?_mobile.buy.size():self.mapNames.count; }
 - (UITableViewCell *)tableView:(UITableView *)tableView cellForRowAtIndexPath:(NSIndexPath *)indexPath {
     UITableViewCell *cell=[tableView dequeueReusableCellWithIdentifier:@"map"];
     if(!cell)cell=[[UITableViewCell alloc] initWithStyle:UITableViewCellStyleSubtitle reuseIdentifier:@"map"];
+    if(_buyMenu){const auto& item=_mobile.buy[indexPath.row];cell.textLabel.text=[NSString stringWithUTF8String:item.label.c_str()];cell.detailTextLabel.text=[NSString stringWithFormat:@"%@ · $%d · balance $%d",[NSString stringWithUTF8String:item.category.c_str()],item.price,_runtime.playerState().money];cell.textLabel.textColor=UIColor.whiteColor;cell.detailTextLabel.textColor=UIColor.lightGrayColor;cell.backgroundColor=UIColor.clearColor;return cell;}
     NSString *map=self.mapNames[indexPath.row];cell.textLabel.text=map;cell.textLabel.textColor=UIColor.whiteColor;cell.backgroundColor=UIColor.clearColor;
-    cell.detailTextLabel.text=[map isEqualToString:@"awp_lego_2"]?@"Start local server · checked":@"Compatibility testing pending";cell.detailTextLabel.textColor=UIColor.lightGrayColor;return cell;
+    cell.detailTextLabel.text=_runtime.mapSupported(map.UTF8String)?@"Start local server · checked":@"Compatibility testing pending";cell.detailTextLabel.textColor=UIColor.lightGrayColor;return cell;
 }
 - (void)tableView:(UITableView *)tableView didSelectRowAtIndexPath:(NSIndexPath *)indexPath {
+    if(_buyMenu){const auto& item=_mobile.buy[indexPath.row];int result=_runtime.buy(item.alias);[self.mapTable reloadData];if(result!=0){NSArray *messages=@[@"Purchased",@"Already owned",@"Not enough money",@"Cannot buy now",@"Not allowed",@"Unknown item"];UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Buy" message:messages[MIN(5,MAX(0,result))] preferredStyle:UIAlertControllerStyleAlert];[alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];[self presentViewController:alert animated:YES completion:nil];}return;}
     NSString *map=self.mapNames[indexPath.row];
     if(!_runtime.startGame(map.UTF8String)){
         UIAlertController *alert=[UIAlertController alertControllerWithTitle:@"Map unavailable" message:[NSString stringWithUTF8String:_runtime.gameError().c_str()] preferredStyle:UIAlertControllerStyleAlert];
@@ -301,6 +387,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [self closeMenu:nil];[NSLayoutConstraint deactivateConstraints:self.diagnosticLayout];[NSLayoutConstraint activateConstraints:self.gameLayout];self.metalView.hidden=NO;self.status.hidden=YES;self.diagnostics.hidden=YES;
     self.commandInput.hidden=YES;self.runButton.hidden=YES;self.shareButton.hidden=YES;self.hud.hidden=NO;
     for(UIButton *button in self.gameButtons)button.hidden=NO;
+    [self installMobileControls];
     [self.play setTitle:@"Exit server" forState:UIControlStateNormal];_runtime.thirdPerson(_thirdPerson);_hasPrevious=NO;
 }
 - (void)togglePerspective:(UIButton *)sender {
@@ -351,6 +438,8 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     const auto& player=_runtime.playerState();self.crosshair.hidden=!player.active||_thirdPerson;
     if(player.active){
         NSString *weapon=[NSString stringWithUTF8String:player.weapon];
+        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"%d",player.armor]:name=="HudAmmo"?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:[NSString stringWithFormat:@"$%d",player.money];}
+        self.crosshair.text=player.fov<80?@"⊕":@"+";
         self.hud.text=[NSString stringWithFormat:@"HP %d   Armor %d   $%d   Ammo %d / %d\n%@ · %.0f u/s · %@",player.health,player.armor,player.money,player.clip,player.reserve,weapon,std::hypot(player.velocity[0],player.velocity[1]),player.crouched?@"duck":player.grounded?@"ground":@"air"];
     }
     if (_smokeRequested && _runtime.frames() == 60) {
@@ -439,6 +528,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     [command commit];
 }
 - (BOOL)gestureRecognizer:(UIGestureRecognizer *)gesture shouldReceiveTouch:(UITouch *)touch {
+    if(gesture.view!=self.metalView)return _editTouch;
+    if(self.menu||_editTouch)return NO;
+    CGPoint location=[touch locationInView:self.view];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    const BOOL moving=[gesture.name isEqualToString:@"move"];
+    for(const auto& button:_mobile.buttons)if(button.command==(moving?"_move":"_look"))return CGRectContainsPoint(CGRectMake(area.origin.x+button.x1*area.size.width,area.origin.y+button.y1*area.size.height,(button.x2-button.x1)*area.size.width,(button.y2-button.y1)*area.size.height),location);
     const BOOL left=[touch locationInView:self.metalView].x<self.metalView.bounds.size.width/2;
     return [gesture.name isEqualToString:@"move"]?left:!left;
 }
@@ -449,8 +543,8 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         if(movement)_movement=CGPointZero;return;
     }
     CGPoint delta=[gesture translationInView:self.metalView];
-    if(movement)_movement=CGPointMake(MAX(-1,MIN(1,delta.x/70)),MAX(-1,MIN(1,-delta.y/70)));
-    else{_runtime.cameraLook((float)-delta.x*.18f,(float)delta.y*.18f);[gesture setTranslation:CGPointZero inView:self.metalView];}
+    if(movement){CGFloat side=_mobile.buttons.empty()?70:self.metalView.bounds.size.width*_mobile.sideZone,forward=_mobile.buttons.empty()?70:self.metalView.bounds.size.height*_mobile.forwardZone;_movement=CGPointMake(MAX(-1,MIN(1,delta.x/side)),MAX(-1,MIN(1,-delta.y/forward)));}
+    else{float yaw=_mobile.buttons.empty()?.18f:_mobile.yaw/self.metalView.bounds.size.width,pitch=_mobile.buttons.empty()?.18f:_mobile.pitch/self.metalView.bounds.size.height;_runtime.cameraLook((float)-delta.x*yaw,(float)delta.y*pitch);[gesture setTranslation:CGPointZero inView:self.metalView];}
 }
 - (BOOL)textFieldShouldReturn:(UITextField *)textField {
     [self runCommand:nil];

@@ -3,6 +3,7 @@
 #include "cs_player.h"
 #include "weapon_csbase.h"
 #include "cs_shareddefs.h"
+#include "cs_gamerules.h"
 #include "baseviewmodel_shared.h"
 #include "tier1/strtools.h"
 
@@ -38,6 +39,30 @@ void animation(CBaseAnimating* entity,char* name,int size,float& cycle,int& skin
     V_strncpy(name,header->pAnimdesc(index).pszName(),size);
 }
 }
+bool gameBuyInfo(const char* alias,int& price,int& team){
+    auto* info=GetWeaponInfo(AliasToWeaponID(GetTranslatedWeaponAlias(alias)));if(!info)return false;
+    price=info->GetWeaponPrice();team=info->m_iTeam;return price>=0;
+}
+int gamePlayerBuy(void* entity,const char* alias){
+    auto* p=player(entity);if(!p||!p->IsAlive())return BUY_PLAYER_CANT_BUY;
+    // Local practice explicitly permits shopping away from map buy triggers;
+    // prices, team restrictions, inventory and account deduction stay original.
+    const bool zone=p->m_bInBuyZone;p->m_bInBuyZone=true;
+    const auto result=p->HandleCommand_Buy(alias);p->m_bInBuyZone=zone;return result;
+}
+bool gamePlayerAction(void* entity,const char* action){
+    auto* p=player(entity);if(!p||!p->IsAlive())return false;
+    if(!V_strcmp(action,"inspect")){
+        auto* vm=p->GetViewModel();auto* weapon=p->GetActiveCSWeapon();if(!vm||!weapon)return false;
+        for(const char* name:{"lookat01","inspect","fidget"}){const int sequence=vm->LookupSequence(name);if(sequence>=0){vm->SendViewModelMatchingSequence(sequence);weapon->SetWeaponIdleTime(gpGlobals->curtime+vm->SequenceDuration());return true;}}return false;
+    }
+    if(!V_strcmp(action,"lastinv")){p->SelectLastItem();return true;}
+    if(V_strlen(action)==5&&!V_strncmp(action,"slot",4)&&action[4]>='1'&&action[4]<='5'){
+        auto* weapon=p->Weapon_GetSlot(action[4]-'1');return weapon&&p->Weapon_Switch(weapon);
+    }
+    if(!V_strcmp(action,"drop")){CCommand args;args.Tokenize("drop");return p->ClientCommand(args);}
+    return false;
+}
 bool gamePlayerSpawn(void* entity,int team) {
     auto* p=player(entity);if(!p||!p->IsBot()||(team!=TEAM_TERRORIST&&team!=TEAM_CT))return false;
     p->ChangeTeam(team);
@@ -45,13 +70,14 @@ bool gamePlayerSpawn(void* entity,int team) {
     // Offline practice uses the original round-respawn path, including inventory,
     // player model, VPhysics hull and the active player state.
     p->RoundRespawn();
+    if(p->m_iAccount<16000)p->AddAccount(16000-p->m_iAccount,false);
     return p->IsAlive()&&!p->IsObserver();
 }
 bool gamePlayerRead(void* entity,PlayerState& out) {
     auto* p=player(entity);out={};if(!p)return false;
     out.active=true;out.alive=p->IsAlive();out.grounded=(p->GetFlags()&FL_ONGROUND)!=0;
     out.crouched=(p->GetFlags()&FL_DUCKING)!=0;out.health=p->GetHealth();out.armor=p->ArmorValue();
-    out.simulationTime=gpGlobals->curtime;out.money=p->m_iAccount;out.team=p->GetTeamNumber();out.tick=gpGlobals->tickcount;
+    out.fov=p->GetFOV();out.simulationTime=gpGlobals->curtime;out.money=p->m_iAccount;out.team=p->GetTeamNumber();out.tick=gpGlobals->tickcount;
     copy(out.origin,p->GetAbsOrigin());copy(out.eye,p->EyePosition());copy(out.velocity,p->GetAbsVelocity());
     const auto angles=p->EyeAngles();const auto punch=p->GetPunchAngle();
     for(int i=0;i<3;++i){out.angles[i]=angles[i];out.punch[i]=punch[i];}

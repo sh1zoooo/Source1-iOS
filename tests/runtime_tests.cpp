@@ -33,6 +33,12 @@ int main() {
         check(host.frames() == 0, "Stopped host accepted a frame");
         check(host.start(directory), "Could not start host");
         check(host.sourceReady(), "Real Source modules did not start");
+        const auto mixedIcons=directory/"Source1IOS/game/materials/RBTouch";
+        std::filesystem::create_directories(mixedIcons);std::ofstream(mixedIcons/"Shoot.txt")<<"button";
+        auto iconFile=g_pFullFileSystem->Open("materials/rbtouch/shoot.txt","rb","GAME");
+        check(iconFile!=nullptr,"Mixed-case cache directory was not resolved");char iconBytes[6];
+        check(g_pFullFileSystem->Read(iconBytes,6,iconFile)==6&&!std::memcmp(iconBytes,"button",6),"Mixed-case cache content mismatch");g_pFullFileSystem->Close(iconFile);
+
         const auto bspTexture=host.texture();const auto bspTextureRevision=host.textureRevision();
         check(bspTexture.width==128&&bspTexture.height==64&&bspTexture.pixels.size()==128*64*4,"BSP material atlas missing");
         bool material0=false,material1=false;for(const auto& vertex:host.vertices(1)){material0|=vertex.material[0]==0;material1|=vertex.material[0]==1;}

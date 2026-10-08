@@ -7,6 +7,7 @@
 namespace source1ios {
 // Original engine brush loading/collision for the built-in world; polygon
 // preview for user maps. Drawing uses our Metal adapter, not Source shaderapi.
+bool sourceDecodeUITexture(const std::string& material,SourceTexture& texture);
 class SourceMap final {
 public:
     SourceMap();

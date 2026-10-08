@@ -35,7 +35,7 @@
 namespace {
 constexpr int idStudioHeader=(('T'<<24)+('S'<<16)+('D'<<8)+'I');
 constexpr size_t maximumFile = 128 * 1024 * 1024;
-constexpr size_t maximumVertices = 300000;
+constexpr size_t maximumVertices = 1500000;
 bool readBounded(const char* path,const char* pathID,size_t limit,std::vector<std::uint8_t>& bytes){
     auto file=g_pFullFileSystem->Open(path,"rb",pathID);if(!file)return false;const unsigned size=g_pFullFileSystem->Size(file);bool ok=size>0&&size<=limit;if(ok){bytes.resize(size);ok=g_pFullFileSystem->Read(bytes.data(),size,file)==int(size);}g_pFullFileSystem->Close(file);if(!ok)bytes.clear();return ok;
 }
@@ -110,15 +110,18 @@ bool vmtBaseTexture(std::string name,std::string& base){
         return normalizeMaterialPath(base);
     }return false;
 }
+bool decodeTexture(const std::string& base,source1ios::SourceTexture& texture){
+    if(!materialPath(base))return false;std::vector<std::uint8_t> vtf;
+    if(!readBounded(("materials/"+base+".vtf").c_str(),"GAME",16*1024*1024,vtf)||!vtfResourceRangesValid(vtf))return false;
+    auto* image=CreateVTFTexture();if(!image)return false;CUtlBuffer buffer(vtf.data(),vtf.size(),CUtlBuffer::READ_ONLY);
+    bool ok=image->Unserialize(buffer,true)&&image->Width()>0&&image->Height()>0&&image->Width()<=2048&&image->Height()<=2048&&image->Depth()==1&&image->FrameCount()==1&&image->FaceCount()==1;
+    if(ok){buffer.SeekGet(CUtlBuffer::SEEK_HEAD,0);ok=image->Unserialize(buffer);}
+    if(ok){image->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);texture.width=image->Width();texture.height=image->Height();const auto* data=image->ImageData(0,0,0);ok=data!=nullptr;if(ok)texture.pixels.assign(data,data+size_t(texture.width)*texture.height*4);}
+    DestroyVTFTexture(image);return ok;
+}
 bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture,const char* kind){
-    for(const auto& name:candidates){std::string base;if(!vmtBaseTexture(name,base))continue;const std::string path="materials/"+name+".vmt";
-        std::vector<std::uint8_t> vtf;const std::string texturePath="materials/"+base+".vtf";if(!readBounded(texturePath.c_str(),"GAME",16*1024*1024,vtf))continue;
-        if(!vtfResourceRangesValid(vtf))continue;
-        auto* image=CreateVTFTexture();if(!image)continue;CUtlBuffer buffer(vtf.data(),vtf.size(),CUtlBuffer::READ_ONLY);
-        bool ok=image->Unserialize(buffer,true)&&image->Width()>0&&image->Height()>0&&image->Width()<=2048&&image->Height()<=2048&&image->Depth()==1&&image->FrameCount()==1&&image->FaceCount()==1;
-        if(ok){buffer.SeekGet(CUtlBuffer::SEEK_HEAD,0);ok=image->Unserialize(buffer);}
-        if(ok){image->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);texture.width=image->Width();texture.height=image->Height();const auto* data=image->ImageData(0,0,0);ok=data!=nullptr;if(ok)texture.pixels.assign(data,data+size_t(texture.width)*texture.height*4);}
-        DestroyVTFTexture(image);if(ok){Msg("Source %s VMT/VTF base texture decoded: %s (%ux%u)\n",kind,path.c_str(),texture.width,texture.height);return true;}
+    for(const auto& name:candidates){std::string base;if(!vmtBaseTexture(name,base)||!decodeTexture(base,texture))continue;
+        Msg("Source %s VMT/VTF base texture decoded: materials/%s.vmt (%ux%u)\n",kind,name.c_str(),texture.width,texture.height);return true;
     }return false;
 }
 bool report(const char* name, bool ok) {
@@ -346,7 +349,10 @@ struct LightmapAtlas {
         if(!lightmapRange(face,info,samples.size()*sizeof(ColorRGBExp32),w,h))return false;
         if(!w)return true;
         if(x+w+2>texture.width){x=0;y+=row;row=0;}
-        if(y+h+2>texture.height)return false;
+        while(y+h+2>texture.height){
+            if(texture.height>=8192)return false;
+            texture.height*=2;texture.pixels.resize(size_t(texture.width)*texture.height*4,255);
+        }
         ox=x+1;oy=y+1;const auto* source=samples.data()+face.lightofs/sizeof(ColorRGBExp32);
         for(unsigned sy=0;sy<h+2;++sy)for(unsigned sx=0;sx<w+2;++sx){const auto& c=source[size_t(std::min(h-1,sy?sy-1:0))*w+std::min(w-1,sx?sx-1:0)];
             auto* pixel=texture.pixels.data()+(size_t(y+sy)*texture.width+x+sx)*4;
@@ -360,19 +366,19 @@ bool displacementTriangles(const std::vector<Vector>& polygon,size_t face,const 
     const std::vector<CDispVert>& verts,const std::vector<CDispTri>& tris,std::vector<Triangle>& out,
     std::unique_ptr<PortCDispCollTree>* collisionTree=nullptr){
     if(polygon.size()!=4 || d.m_iMapFace!=face || d.power<MIN_MAP_DISP_POWER || d.power>MAX_MAP_DISP_POWER
-        || !boundedPoint(d.startPosition) || !std::isfinite(d.smoothingAngle) || d.smoothingAngle<0 || d.smoothingAngle>180)return false;
+        || !boundedPoint(d.startPosition) || !std::isfinite(d.smoothingAngle) || d.smoothingAngle<0 || d.smoothingAngle>180){Warning("Source displacement metadata rejected: face=%zu mapFace=%u power=%d smoothing=%f\n",face,unsigned(d.m_iMapFace),d.power,d.smoothingAngle);return false;}
     const size_t nv=d.NumVerts(),nt=d.NumTris();
     if(d.m_iDispVertStart<0 || size_t(d.m_iDispVertStart)>verts.size() || nv>verts.size()-d.m_iDispVertStart
-        || d.m_iDispTriStart<0 || size_t(d.m_iDispTriStart)>tris.size() || nt>tris.size()-d.m_iDispTriStart)return false;
+        || d.m_iDispTriStart<0 || size_t(d.m_iDispTriStart)>tris.size() || nt>tris.size()-d.m_iDispTriStart){Warning("Source displacement ranges rejected: face=%zu verts=%zu/%zu tris=%zu/%zu\n",face,nv,verts.size(),nt,tris.size());return false;}
     bool startMatches=false;for(const auto& p:polygon){if(!boundedPoint(p))return false;startMatches|=(p-d.startPosition).LengthSqr()<.01f;}
-    if(!startMatches)return false;
+    if(!startMatches){Warning("Source displacement start mismatch: face=%zu mapFace=%u\n",face,unsigned(d.m_iMapFace));return false;}
     Vector normal;CrossProduct(polygon[1]-polygon[0],polygon[2]-polygon[0],normal);
     if(normal.LengthSqr()<1e-4f)return false;VectorNormalize(normal);
     for(int i=0;i<4;++i){Vector cross;CrossProduct(polygon[(i+1)%4]-polygon[i],polygon[(i+2)%4]-polygon[(i+1)%4],cross);
-        if(DotProduct(cross,normal)<=1e-4f || std::abs(DotProduct(polygon[i]-polygon[0],normal))>.1f)return false;}
+        if(DotProduct(cross,normal)<=1e-4f || std::abs(DotProduct(polygon[i]-polygon[0],normal))>.1f){Warning("Source displacement quad rejected: face=%zu corner=%d convex=%f plane=%f\n",face,i,DotProduct(cross,normal),DotProduct(polygon[i]-polygon[0],normal));return false;}}
     for(size_t i=0;i<nv;++i){const auto& v=verts[d.m_iDispVertStart+i];
-        if(!v.m_vVector.IsValid() || v.m_vVector.LengthSqr()>4 || !std::isfinite(v.m_flDist) || std::abs(v.m_flDist)>32768
-            || !std::isfinite(v.m_flAlpha) || v.m_flAlpha<0 || v.m_flAlpha>255)return false;}
+        if(!v.m_vVector.IsValid() || v.m_vVector.LengthSqr()>32768.f*32768.f || !std::isfinite(v.m_flDist) || std::abs(v.m_flDist)>32768
+            || !std::isfinite(v.m_flAlpha) || std::abs(v.m_flAlpha)>65536){Warning("Source displacement vertex rejected: face=%zu vertex=%zu vector=%f dist=%f alpha=%f\n",face,i,v.m_vVector.LengthSqr(),v.m_flDist,v.m_flAlpha);return false;}}
     CCoreDispInfo core;auto* surface=core.GetSurface();surface->SetPointCount(4);surface->SetPointStart(d.startPosition);
     Vector axisS=polygon[1]-polygon[0],axisT=polygon[3]-polygon[0];VectorNormalize(axisS);VectorNormalize(axisT);
     surface->SetSAxis(axisS);surface->SetTAxis(axisT);surface->SetFlags(0);
@@ -384,7 +390,7 @@ bool displacementTriangles(const std::vector<Vector>& polygon,size_t face,const 
     // Preview builds full-resolution triangles, not the graphical engine's
     // neighbor-dependent LOD, lighting or surface-physics flag behavior.
     core.InitDispInfo(d.power,0,d.smoothingAngle,verts.data()+d.m_iDispVertStart,tris.data()+d.m_iDispTriStart);
-    if(!core.CreateWithoutLOD())return false;
+    if(!core.CreateWithoutLOD()){Warning("Source displacement tessellation rejected: face=%zu\n",face);return false;}
     for(size_t i=0;i<nt;++i){Triangle t;core.GetTriPos(i,t[0],t[1],t[2]);
         for(const auto& p:t)if(!boundedPoint(p))return false;
         out.push_back(t);
@@ -511,9 +517,13 @@ std::vector<std::uint8_t> entityPropsFixture(){
 }
 }
 namespace source1ios {
+bool sourceDecodeUITexture(const std::string& material,SourceTexture& texture){
+    bool ok=decodeMaterial({material},texture,"mobile UI")||decodeTexture(material,texture);
+    if(!ok)Warning("Source mobile icon unavailable: %s; exists=%d\n",material.c_str(),int(g_pFullFileSystem->FileExists(("materials/"+material+".vtf").c_str(),"GAME")));return ok;
+}
 struct SourceMap::Impl {
     bool gameView=false,viewModel=false,gameModelReady=false;int gamePoseTick=-1;
-    Vector lastFacing=Vector(1,0,0);bool facingReady=false;float bobTime=0,lastBobTime=0,bobSpeed=0;
+    float gameFov=90;bool zoomed=false;Vector lastFacing=Vector(1,0,0);bool facingReady=false;float bobTime=0,lastBobTime=0,bobSpeed=0;
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
     std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,entityModelInstances=0,entityModelCandidates=0;
@@ -790,7 +800,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
                     Warning("Source BSP rejected %s: invalid displacement; face=%zu, disp=%d\n",filename,face,f.dispinfo);return false;}
                 displacementCollision.push_back(std::move(tree));
             }else for(size_t i=1;i+1<polygon.size();++i)triangles.push_back({polygon[0],polygon[i],polygon[i+1]});
-            for(const auto& triangle:triangles){if(mesh.size()+3>maximumVertices)return false;
+            for(const auto& triangle:triangles){if(mesh.size()+3>maximumVertices){Warning("Source BSP: world vertex budget exceeded\n");return false;}
                 Vector normal;CrossProduct(triangle[1]-triangle[0],triangle[2]-triangle[0],normal);if(normal.LengthSqr()<1e-8f)continue;VectorNormalize(normal);
                 const float shade=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);
                 const float palette[6][3]={{.3f,.7f,.9f},{.7f,.8f,.9f},{.9f,.5f,.2f},{.4f,.8f,.5f},{.65f,.45f,.85f},{.85f,.75f,.35f}};
@@ -816,13 +826,13 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         const bool entityModel=propIndex++>=staticPropCount;
         auto found=std::find_if(cached.begin(),cached.end(),[&](const auto& c){return c.name==prop.model;});
         if(found==cached.end()){
-            if(cached.size()>=128){Warning("Source BSP: static prop model budget exceeded\n");return false;}
+            if(cached.size()>=512){Warning("Source BSP: static prop model budget exceeded\n");return false;}
             CachedProp candidate;candidate.name=prop.model;const std::string base=prop.model.substr(0,prop.model.size()-4);
             std::vector<std::uint8_t> mdl,vvd,vtx;std::string reason;
             auto readModel=[&](const std::string& name,std::vector<std::uint8_t>& data){if(!readBounded(name.c_str(),"GAME",32*1024*1024,data)||data.size()>64*1024*1024-modelBytes)return false;modelBytes+=data.size();return true;};
             if(readModel(prop.model,mdl)&&readModel(base+".vvd",vvd)&&readModel(base+".dx90.vtx",vtx)&&parseStudioModel(mdl,vvd,vtx,candidate.mesh,reason)){
                 candidate.mesh.animations.clear();candidate.mesh.bones.clear();
-                if(candidate.mesh.bodyTriangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512)return false;
+                if(candidate.mesh.bodyTriangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512){Warning("Source BSP: cached prop budget exceeded\n");return false;}
                 cachedVertices+=candidate.mesh.bodyTriangles.size();
                 const size_t slots=std::max(size_t(1),candidate.mesh.materials.size());if(slots>512-stagedMaterialCount)return false;
                 for(size_t slot=0;slot<slots;++slot){SourceTexture texture;if(slot>=candidate.mesh.materials.size()||!decodeMaterial(candidate.mesh.materials[slot],texture,"static prop"))texture=impl_->checkerTexture;
@@ -833,7 +843,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         if(!found->valid){++skipped;continue;}
         if(!selectStudioBody(found->mesh,prop.body)){Warning("Source BSP prop body selection rejected: %s\n",prop.model.c_str());return false;}
         if(!selectStudioSkin(found->mesh,unsigned(prop.skin))){Warning("Source BSP static prop skin rejected: %s; skin=%d\n",prop.model.c_str(),prop.skin);return false;}
-        if(found->mesh.triangles.size()>maximumVertices-mesh.size()-propsMesh.size())return false;
+        if(found->mesh.triangles.size()>maximumVertices-mesh.size()-propsMesh.size()){Warning("Source BSP: prop instance vertex budget exceeded\n");return false;}
         matrix3x4_t transform;AngleMatrix(QAngle(prop.angles[0],prop.angles[1],prop.angles[2]),Vector(prop.origin[0],prop.origin[1],prop.origin[2]),transform);
         for(const auto& v:found->mesh.triangles){Vector position,normal;VectorTransform(v.position*prop.scale,transform,position);VectorRotate(v.normal,transform,normal);
             if(!position.IsValid()||std::abs(position.x)>65536||std::abs(position.y)>65536||std::abs(position.z)>65536)return false;
@@ -873,8 +883,9 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     if(phyInstances)Msg("Source BSP exact PHY collision ready: %u SOLID_VPHYSICS objects\n",phyInstances);
     Msg("Source BSP static props staged: %u instances, %zu triangles, %zu model types, %u skipped\n",propInstances,impl_->propsMesh.size()/3,cached.size(),skipped);
     impl_->displacementCollision=std::move(displacementCollision);
+    for(auto& vertex:mesh)vertex.lightmap[1]*=1024.f/lightmaps.texture.height;
     impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;impl_->hdrLighting=selectedLighting.hdr;
-    Msg("Source BSP %s lightmap atlas ready: %u faces, 1024x1024 RGBA\n",impl_->hdrLighting?"HDR preview":"LDR",impl_->lightmappedFaces);
+    Msg("Source BSP %s lightmap atlas ready: %u faces, %ux%u RGBA\n",impl_->hdrLighting?"HDR preview":"LDR",impl_->lightmappedFaces,impl_->lightmapTexture.width,impl_->lightmapTexture.height);
     impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
@@ -882,6 +893,7 @@ void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->
 void SourceMap::clearGameView(){if(impl_){impl_->gameView=impl_->viewModel=false;impl_->facingReady=false;impl_->bobTime=impl_->lastBobTime=impl_->bobSpeed=0;impl_->gamePoseTick=-1;resetCamera();}}
 void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool modelReady){
     if(!impl_||!player.active)return;
+    impl_->gameFov=std::clamp(player.fov,10.f,120.f);impl_->zoomed=!thirdPerson&&player.fov<80;
     impl_->gameView=true;impl_->viewModel=!thirdPerson;impl_->gameModelReady=modelReady;impl_->animationPlaying=false;
     impl_->camera=Vector(player.eye[0],player.eye[1],player.eye[2]);
     // Original CBasePlayer::CalcPlayerView adds the server punch angle once. Never feed this
@@ -967,7 +979,7 @@ void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(secon
 }
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
     std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
-    const float a=std::max(aspect,.01f),scale=1.3f,near=1,far=8192;
+    const float a=std::max(aspect,.01f),scale=impl_->gameView&&impl_->viewModel?1.3f/std::tan(impl_->gameFov*3.14159265358979323846f/360):1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
         const bool weapon=model&&impl_->viewModel;
         float x=DotProduct(relative,r)*scale/a,y=DotProduct(relative,u)*scale,z=depth*far/(far-near)-near*far/(far-near);
@@ -975,7 +987,7 @@ std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
         out.push_back({{x,y,z,depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
     for(const auto& v:impl_->mesh)append(v);
     for(const auto& v:impl_->propsMesh)append(v);
-    if(!impl_->gameView||impl_->gameModelReady)for(const auto& v:impl_->modelMesh)append(v,true);
+    if(!impl_->gameView||(impl_->gameModelReady&&!impl_->zoomed))for(const auto& v:impl_->modelMesh)append(v,true);
     if(impl_->scene&&!impl_->gameView){
         constexpr int rings=6,slices=12;
         constexpr float pi=3.14159265358979323846f;
