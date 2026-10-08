@@ -32,11 +32,12 @@
 #include <cmath>
 #include <cstring>
 #include <limits>
+#include <unordered_map>
 
 namespace {
 constexpr int idStudioHeader=(('T'<<24)+('S'<<16)+('D'<<8)+'I');
 constexpr size_t maximumFile = 128 * 1024 * 1024;
-constexpr size_t maximumVertices = 3000000; // 192 MB maximum expanded GPU vertex payload.
+constexpr size_t maximumVertices = 8000000; // Bounded CPU scene; active prop ranges are culled before GPU expansion.
 bool readBounded(const char* path,const char* pathID,size_t limit,std::vector<std::uint8_t>& bytes){
     auto file=g_pFullFileSystem->Open(path,"rb",pathID);if(!file)return false;const unsigned size=g_pFullFileSystem->Size(file);bool ok=size>0&&size<=limit;if(ok){bytes.resize(size);ok=g_pFullFileSystem->Read(bytes.data(),size,file)==int(size);}g_pFullFileSystem->Close(file);if(!ok)bytes.clear();return ok;
 }
@@ -66,7 +67,9 @@ bool vtfResourceRangesValid(const std::vector<std::uint8_t>& bytes){
         budget+=size_t(length);
     }return true;
 }
-bool vmtBaseTexture(std::string name,std::string& base){
+struct MaterialAlpha { bool translucent=false, test=false; float reference=.5f; };
+bool vmtBaseTexture(std::string name,std::string& base,MaterialAlpha* alpha=nullptr){
+    struct AlphaPatch { std::string key,value; bool replace; };std::vector<AlphaPatch> alphaPatches;
     std::vector<std::string> visited;std::string insert,replace;bool hasInsert=false,hasReplace=false;
     for(unsigned chain=0;chain<10;++chain){
         if(!materialPath(name))return false;
@@ -99,13 +102,17 @@ bool vmtBaseTexture(std::string name,std::string& base){
             // only changes an existing key. Inner patch keys win when gathered.
             if(auto* section=kv->FindKey("insert"))if(section->FindKey("$basetexture")){insert=section->GetString("$basetexture");hasInsert=true;}
             if(auto* section=kv->FindKey("replace"))if(section->FindKey("$basetexture")){replace=section->GetString("$basetexture");hasReplace=true;}
+            for(const char* sectionName:{"insert","replace"})if(auto* section=kv->FindKey(sectionName))for(const char* key:{"$translucent","$alphatest","$alphatestreference"})if(section->FindKey(key))alphaPatches.push_back({key,section->GetString(key),!V_strcmp(sectionName,"replace")});
             std::string include=kv->GetString("include","");kv->deleteThis();
             std::replace(include.begin(),include.end(),'\\','/');
             if(include.size()>10&&!V_strnicmp(include.c_str(),"materials/",10))include.erase(0,10);
             if(include.size()<5||V_stricmp(include.substr(include.size()-4).c_str(),".vmt"))return false;
             include.resize(include.size()-4);name=std::move(include);continue;
         }
-        bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");kv->deleteThis();
+        bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");
+        if(alpha){for(auto it=alphaPatches.rbegin();it!=alphaPatches.rend();++it)if(!it->replace||kv->FindKey(it->key.c_str()))kv->SetString(it->key.c_str(),it->value.c_str());
+            alpha->translucent=kv->GetInt("$translucent",0)!=0;alpha->test=kv->GetInt("$alphatest",0)!=0;alpha->reference=std::clamp(kv->GetFloat("$alphatestreference",.5f),0.f,1.f);}
+        kv->deleteThis();
         // These shader families all expose a base texture. This is only their
         // albedo path; blend weights, normals and specular need separate passes.
         if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric")
@@ -129,15 +136,20 @@ bool decodeTexture(const std::string& base,source1ios::SourceTexture& texture){
     if(ok){image->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);texture.width=image->Width();texture.height=image->Height();const auto* data=image->ImageData(0,0,0);ok=data!=nullptr;if(ok)texture.pixels.assign(data,data+size_t(texture.width)*texture.height*4);}
     DestroyVTFTexture(image);return ok;
 }
-bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture,const char* kind){
-    for(const auto& name:candidates){std::string base;if(!vmtBaseTexture(name,base)||!decodeTexture(base,texture))continue;
+bool decodeMaterial(const std::vector<std::string>& candidates,source1ios::SourceTexture& texture,const char* kind,std::string* resolved=nullptr){
+    for(const auto& name:candidates){std::string base;MaterialAlpha alpha;if(!vmtBaseTexture(name,base,&alpha)||!decodeTexture(base,texture))continue;
+        // Source opaque materials may use texture alpha as a specular mask.
+        // Only explicit VMT transparency flags turn it into coverage.
+        for(size_t i=3;i<texture.pixels.size();i+=4){if(alpha.test)texture.pixels[i]=texture.pixels[i]/255.f>=alpha.reference?255:0;else if(!alpha.translucent)texture.pixels[i]=255;}
+        if(resolved)*resolved=name;
         Msg("Source %s VMT/VTF base texture decoded: materials/%s.vmt (%ux%u)\n",kind,name.c_str(),texture.width,texture.height);return true;
     }return false;
 }
 bool report(const char* name, bool ok) {
     Msg("Source BSP self-test %s: %s\n",name,ok?"PASS":"FAIL");return ok;
 }
-struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; float lightmap[3]{}; };
+std::string materialKey(std::string name){std::replace(name.begin(),name.end(),'\\','/');for(char& c:name)if(c>='A'&&c<='Z')c+='a'-'A';return name;}
+struct MeshPoint { Vector position; float color[3]; float uv[2]; unsigned material=0; float lightmap[3]{}; float opacity=1; };
 unsigned appendAtlasTile(source1ios::SourceTexture& atlas,unsigned& count,const source1ios::SourceTexture& texture){
     const unsigned slot=count;if(!source1ios::appendTextureTile(atlas,count,texture))return std::numeric_limits<unsigned>::max();return slot;
 }
@@ -526,7 +538,12 @@ struct SourceMap::Impl {
     bool gameView=false,viewModel=false,gameModelReady=false;int gamePoseTick=-1;
     float gameFov=90;bool zoomed=false;Vector lastFacing=Vector(1,0,0);bool facingReady=false;float bobTime=0,lastBobTime=0,bobSpeed=0;
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
-    std::vector<MeshPoint> mesh,modelMesh,skyMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
+    std::vector<MeshPoint> mesh,modelMesh,skyMesh,worldMesh,smokeMesh;
+    struct WorldModel {StudioMesh mesh;std::vector<unsigned> slots;bool valid=false;};
+    std::unordered_map<std::string,WorldModel> worldModels;int worldTick=-1;
+    std::unordered_map<std::string,unsigned> materialSlots;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
+    struct PropRange {size_t begin=0,end=0;Vector center;float radius=0;};
+    std::vector<PropRange> propRanges;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,entityModelInstances=0,entityModelCandidates=0;
     std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
@@ -610,6 +627,9 @@ bool SourceMap::start(const std::filesystem::path& root) {
     for(unsigned i=2;i<17;++i){const std::string name="materials/debug/source1ios_slot"+std::to_string(i)+".vmt";
         const std::string vmt=i%2?bspVmt:blueVmt;ok=ok&&writeModel(name.c_str(),std::vector<std::uint8_t>(vmt.begin(),vmt.end()));}
     const std::pair<const char*,const char*> patchFixtures[]={
+        {"__source1ios_alpha_mask","VertexLitGeneric { \"$basetexture\" \"debug/debugempty\" \"$basemapalphaphongmask\" \"1\" }"},
+        {"__source1ios_alpha_test","Patch { include \"materials/debug/__source1ios_alpha_mask.vmt\" insert { \"$alphatest\" \"1\" \"$alphatestreference\" \"0.7\" } }"},
+        {"__source1ios_alpha_translucent","VertexLitGeneric { \"$basetexture\" \"debug/debugempty\" \"$translucent\" \"1\" }"},
         {"__source1ios_patch_empty","LightmappedGeneric { }"},
         {"__source1ios_patch_insert","Patch { include \"materials/debug/__source1ios_patch_empty.vmt\" insert { \"$basetexture\" \"debug/debugblue\" } replace { \"$basetexture\" \"debug/debugempty\" } }"},
         {"__source1ios_patch_noinsert","Patch { include \"materials/debug/__source1ios_patch_empty.vmt\" replace { \"$basetexture\" \"debug/debugblue\" } }"},
@@ -737,7 +757,7 @@ bool SourceMap::loadModel(const char* filename,const char* pathID){
 }
 bool SourceMap::playAnimation(unsigned index){if(!impl_||index>=impl_->studio.animations.size())return false;impl_->animation=index;impl_->poseTime=0;impl_->animationPlaying=true;Msg("Source studio animation selected: %u\n",index);return true;}
 bool SourceMap::setAnimationPlaying(bool playing){if(!impl_||impl_->studio.animations.empty())return false;impl_->animationPlaying=playing;Msg("Source studio animation %s\n",playing?"resumed":"paused");return true;}
-bool SourceMap::load(const char* filename,const char* pathID) {
+bool SourceMap::load(const char* filename,const char* pathID,bool gameLevel) {
     if(!impl_ || !filename || std::strlen(filename)>=MAX_PATH || CMapLoadHelper::GetRefCount()!=0)return false;
     auto file=g_pFullFileSystem->Open(filename,"rb",pathID);if(!file){Warning("Source BSP: file not found: %s\n",filename);return false;}
     const auto size=g_pFullFileSystem->Size(file);dheader_t h{};
@@ -774,7 +794,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     char overlay[MAX_PATH];V_StripExtension(filename,overlay,sizeof(overlay));V_strncat(overlay,"_l_0.lmp",sizeof(overlay));
     if(g_pFullFileSystem->FileExists(overlay,pathID)){Warning("Source BSP: external lump overlays unsupported\n");return false;}
     const auto selectedLighting=previewLighting(h);
-    std::vector<MeshPoint> mesh;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;LightmapAtlas lightmaps;lightmaps.hdr=selectedLighting.hdr;
+    std::vector<MeshPoint> mesh;std::unordered_map<std::string,unsigned> materialSlots;SourceTexture stagedMapTexture=impl_->checkerTexture;unsigned stagedMaterialCount=1;LightmapAtlas lightmaps;lightmaps.hdr=selectedLighting.hdr;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
     {
         LoaderScope scope(filename);
@@ -782,6 +802,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         auto surfedges=lump<int>(LUMP_SURFEDGES,decoded[LUMP_SURFEDGES]);auto faces=lump<dface_t>(selectedLighting.faces,decoded[selectedLighting.faces]);
         auto disps=lump<ddispinfo_t>(LUMP_DISPINFO,decoded[LUMP_DISPINFO]);auto dispVerts=lump<CDispVert>(LUMP_DISP_VERTS,decoded[LUMP_DISP_VERTS]);auto dispTris=lump<CDispTri>(LUMP_DISP_TRIS,decoded[LUMP_DISP_TRIS]);
         BspMaterials materials;if(!bspMaterials(materials,decoded))return false;
+        for(size_t i=0;i<materials.names.size();++i)materialSlots[materialKey(materials.names[i])]=materials.slots[i];
         const auto lighting=lump<ColorRGBExp32>(selectedLighting.samples,decoded[selectedLighting.samples]);
         stagedMapTexture=bspAtlas(materials,impl_->checkerTexture);stagedMaterialCount=materials.slotCount;
         Msg("Source BSP material atlas ready: %u slots, %ux%u RGBA\n",materials.slotCount,stagedMapTexture.width,stagedMapTexture.height);
@@ -792,6 +813,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             // Tool surfaces remain in the engine collision BSP, never in the
             // visible mesh. In particular toolsskybox is a mask, not sky art.
             if(texinfo.flags&(SURF_SKY|SURF_SKY2D|SURF_NODRAW|SURF_HINT|SURF_SKIP))continue;
+            const auto materialName=materialKey(materials.names[texinfo.texdata]);
+            if(materialName=="tools/toolstrigger"||materialName=="tools/toolsclip"||materialName=="tools/toolsplayerclip"||materialName=="tools/toolsnpcclip"||materialName=="tools/toolsinvisible"||materialName=="tools/toolsareaportal"||materialName=="tools/toolsblockbullets"||materialName=="tools/toolsblocklos")continue;
             unsigned lx=0,ly=0,lw=0,lh=0;if(!lightmaps.add(f,texinfo,lighting,lx,ly,lw,lh)){Warning("Source BSP rejected %s: invalid lightmap range or atlas capacity; face=%zu\n",filename,face);return false;}
             std::vector<Vector> polygon;
             for(int i=0;i<f.numedges;++i){const int se=surfedges[f.firstedge+i];if(se==std::numeric_limits<int>::min())return false;
@@ -843,7 +866,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         }
         Msg("Source skybox ready: %s; %u/6 imported faces, camera-relative far depth\n",skyName.c_str(),imported);
     }
-    std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
+    std::vector<MeshPoint> propsMesh;std::vector<Impl::PropRange> propRanges;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
     struct CachedProp {std::string name;StudioMesh mesh;PhyGeometry phy;std::vector<std::pair<float,Collision>> shapes;std::vector<unsigned> slots;bool valid=false,phyRead=false;};std::vector<CachedProp> cached;
     size_t cachedVertices=0,modelBytes=0,phyPoints=0,propIndex=0;unsigned phyInstances=0,entityInstances=0;
     for(const auto& prop:props){
@@ -856,11 +879,17 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             auto readModel=[&](const std::string& name,std::vector<std::uint8_t>& data){if(!readBounded(name.c_str(),"GAME",32*1024*1024,data)||data.size()>64*1024*1024-modelBytes)return false;modelBytes+=data.size();return true;};
             if(readModel(prop.model,mdl)&&readModel(base+".vvd",vvd)&&readModel(base+".dx90.vtx",vtx)&&parseStudioModel(mdl,vvd,vtx,candidate.mesh,reason)){
                 candidate.mesh.animations.clear();candidate.mesh.bones.clear();
-                if(candidate.mesh.bodyTriangles.size()>maximumVertices-cachedVertices||stagedMaterialCount>=512){Warning("Source BSP: cached prop budget exceeded\n");return false;}
+                if(candidate.mesh.bodyTriangles.size()>maximumVertices-cachedVertices){Warning("Source BSP: cached prop vertices exceeded: %zu + %zu > %zu\n",cachedVertices,candidate.mesh.bodyTriangles.size(),maximumVertices);return false;}
                 cachedVertices+=candidate.mesh.bodyTriangles.size();
-                const size_t slots=std::max(size_t(1),candidate.mesh.materials.size());if(slots>512-stagedMaterialCount)return false;
-                for(size_t slot=0;slot<slots;++slot){SourceTexture texture;if(slot>=candidate.mesh.materials.size()||!decodeMaterial(candidate.mesh.materials[slot],texture,"static prop"))texture=impl_->checkerTexture;
-                    candidate.slots.push_back(appendAtlasTile(stagedMapTexture,stagedMaterialCount,texture));}candidate.valid=true;
+                const size_t slots=std::max(size_t(1),candidate.mesh.materials.size());
+                for(size_t slot=0;slot<slots;++slot){unsigned reused=std::numeric_limits<unsigned>::max();
+                    if(slot<candidate.mesh.materials.size())for(const auto& name:candidate.mesh.materials[slot]){auto hit=materialSlots.find(materialKey(name));if(hit!=materialSlots.end()){reused=hit->second;break;}}
+                    if(reused!=std::numeric_limits<unsigned>::max()){candidate.slots.push_back(reused);continue;}
+                    SourceTexture texture;std::string resolved;
+                    if(slot>=candidate.mesh.materials.size()||!decodeMaterial(candidate.mesh.materials[slot],texture,"static prop",&resolved)){texture=impl_->checkerTexture;resolved="__source1ios_fallback";}
+                    auto hit=materialSlots.find(materialKey(resolved));if(hit!=materialSlots.end())reused=hit->second;
+                    else{reused=appendAtlasTile(stagedMapTexture,stagedMaterialCount,texture);if(reused==std::numeric_limits<unsigned>::max()){Warning("Source BSP: unique material budget exceeded (%u)\n",stagedMaterialCount);return false;}materialSlots[materialKey(resolved)]=reused;}
+                    candidate.slots.push_back(reused);}candidate.valid=true;
             }else Warning("Source BSP static prop model unavailable: %s (%s)\n",prop.model.c_str(),reason.c_str());
             cached.push_back(std::move(candidate));found=cached.end()-1;
         }
@@ -869,10 +898,13 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         if(!selectStudioSkin(found->mesh,unsigned(prop.skin))){Warning("Source BSP static prop skin rejected: %s; skin=%d\n",prop.model.c_str(),prop.skin);return false;}
         if(found->mesh.triangles.size()>maximumVertices-mesh.size()-propsMesh.size()){Warning("Source BSP: prop instance vertex budget exceeded\n");return false;}
         matrix3x4_t transform;AngleMatrix(QAngle(prop.angles[0],prop.angles[1],prop.angles[2]),Vector(prop.origin[0],prop.origin[1],prop.origin[2]),transform);
+        const size_t propBegin=propsMesh.size();Vector low(65536,65536,65536),high(-65536,-65536,-65536);
         for(const auto& v:found->mesh.triangles){Vector position,normal;VectorTransform(v.position*prop.scale,transform,position);VectorRotate(v.normal,transform,normal);
             if(!position.IsValid()||std::abs(position.x)>65536||std::abs(position.y)>65536||std::abs(position.z)>65536)return false;
+            for(int axis=0;axis<3;++axis){low[axis]=std::min(low[axis],position[axis]);high[axis]=std::max(high[axis],position[axis]);}
             if(v.material>=found->slots.size())return false;
             const float light=.35f+.65f*std::abs(normal.z*.8f+normal.x*.3f+normal.y*.2f);propsMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},found->slots[v.material]});}
+        if(propsMesh.size()>propBegin)propRanges.push_back({propBegin,propsMesh.size(),(low+high)*.5f,(high-low).Length()*.5f});
         ++propInstances;
         if(entityModel)++entityInstances;
         if(prop.solid==2){if(propCollisions.size()>=512){Warning("Source BSP: static prop collision budget exceeded\n");return false;}PropCollision collider;
@@ -887,10 +919,15 @@ bool SourceMap::load(const char* filename,const char* pathID) {
             if(cachedShape==found->shapes.end()){for(const auto& cloud:found->phy.convexes){if(cloud.size()>262144-phyPoints)return false;phyPoints+=cloud.size();}auto shape=ownedPhy(found->phy,prop.scale);if(!shape)return false;found->shapes.push_back({prop.scale,shape});cachedShape=found->shapes.end()-1;}
             PropCollision collider;collider.shape=collider.cameraShape=cachedShape->second;collider.origin=Vector(prop.origin[0],prop.origin[1],prop.origin[2]);collider.angles=collider.cameraAngles=QAngle(prop.angles[0],prop.angles[1],prop.angles[2]);collider.phy=true;propCollisions.push_back(std::move(collider));++phyInstances;}
     }
-    auto* soup=g_pPhysicsCollision->PolysoupCreate();if(!soup)return false;
-    for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
-    Collision collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
-    auto live=physicsScene(collision,propCollisions);if(!live)return false;
+    // Active game levels already own exact engine BSP/PHY collision. Rebuilding the
+    // entire Mirage render mesh as one IVP polysoup overflows its 16-bit vector.
+    Collision collision;std::unique_ptr<PhysicsScene> live;
+    if(!gameLevel){
+        auto* soup=g_pPhysicsCollision->PolysoupCreate();if(!soup)return false;
+        for(size_t i=0;i<mesh.size();i+=3)g_pPhysicsCollision->PolysoupAddTriangle(soup,mesh[i].position,mesh[i+1].position,mesh[i+2].position,0);
+        collision=Collision(g_pPhysicsCollision->ConvertPolysoupToCollide(soup,false),CollisionDelete{});g_pPhysicsCollision->PolysoupDestroy(soup);if(!collision)return false;
+        live=physicsScene(collision,propCollisions);if(!live)return false;
+    }else Msg("Source BSP collision: active GameDLL engine world; preview polysoup rebuild skipped\n");
     impl_->spawns=std::move(spawns);impl_->spawnCamera=Vector(-190,-160,80);impl_->spawnAngles=QAngle(8,45,0);
     if(!impl_->spawns.empty()){
         auto rank=[](const PreviewSpawn& spawn){return spawn.classname=="info_player_start"?0:spawn.classname=="info_player_counterterrorist"?1:spawn.classname=="info_player_terrorist"?2:3;};
@@ -900,7 +937,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         Msg("Source BSP camera spawn: %s; eye %.2f %.2f %.2f; angles %.2f %.2f; %zu candidates\n",spawn.classname.c_str(),impl_->spawnCamera.x,impl_->spawnCamera.y,impl_->spawnCamera.z,impl_->spawnAngles.x,impl_->spawnAngles.y,impl_->spawns.size());
     }else Msg("Source BSP camera spawn: no player start; preview fallback\n");
     impl_->scene=std::move(live);
-    impl_->propsMesh=std::move(propsMesh);impl_->propInstances=propInstances;
+    impl_->propsMesh=std::move(propsMesh);impl_->propRanges=std::move(propRanges);impl_->propInstances=propInstances;
     impl_->entityModelCandidates=entityModels.size();impl_->entityModelInstances=entityInstances;
     Msg("Source BSP entity models staged: %u instances from %zu candidates; bind pose, visual only\n",entityInstances,entityModels.size());
     impl_->propCollisions=std::move(propCollisions);Msg("Source BSP static prop collision ready: %zu SOLID_BBOX objects, %u unsupported/degenerate\n",impl_->propCollisions.size()-phyInstances,collisionSkipped);
@@ -910,7 +947,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     for(auto& vertex:mesh)vertex.lightmap[1]*=1024.f/lightmaps.texture.height;
     impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;impl_->hdrLighting=selectedLighting.hdr;
     Msg("Source BSP %s lightmap atlas ready: %u faces, %ux%u RGBA\n",impl_->hdrLighting?"HDR preview":"LDR",impl_->lightmappedFaces,impl_->lightmapTexture.width,impl_->lightmapTexture.height);
-    impl_->skyMesh=std::move(skyMesh);impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
+    impl_->materialSlots=std::move(materialSlots);impl_->worldMesh.clear();impl_->worldModels.clear();impl_->worldTick=-1;impl_->skyMesh=std::move(skyMesh);impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->angles=impl_->spawnAngles;}}
@@ -925,12 +962,62 @@ void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool mode
     impl_->angles=QAngle(player.angles[0]+(thirdPerson?0:player.punch[0]),player.angles[1]+(thirdPerson?0:player.punch[1]),thirdPerson?0:player.punch[2]);
     if(thirdPerson){Vector forward;AngleVectors(impl_->angles,&forward);
         const Vector end=impl_->camera-forward*120+Vector(0,0,20);trace_t trace{};
-        g_pPhysicsCollision->TraceBox(impl_->camera,end,Vector(-4,-4,-4),Vector(4,4,4),impl_->collision.get(),vec3_origin,vec3_angle,&trace);
+        Ray_t ray;ray.Init(impl_->camera,end,Vector(-4,-4,-4),Vector(4,4,4));CM_BoxTrace(ray,0,MASK_PLAYERSOLID,true,trace);
+        tracePropBoxes(impl_->propCollisions,impl_->camera,end,Vector(-4,-4,-4),Vector(4,4,4),trace);
         if(!trace.startsolid)impl_->camera+=(end-impl_->camera)*std::max(0.f,trace.fraction-.02f);
+    }
+    // Snapshot transforms come from live GameDLL entities, including real grenade physics.
+    if(impl_->worldTick!=player.tick){
+        impl_->worldTick=player.tick;impl_->worldMesh.clear();impl_->smokeMesh.clear();
+        for(int index=0;index<std::clamp(player.worldCount,0,128);++index){const auto& entity=player.world[index];
+            const std::string name(entity.model,strnlen(entity.model,sizeof(entity.model)));
+            if(entity.kind==2){
+                auto hit=impl_->materialSlots.find("__source1ios_smoke");unsigned slot;
+                if(hit==impl_->materialSlots.end()){SourceTexture texture{64,64,std::vector<std::uint8_t>(64*64*4)};
+                    for(unsigned y=0;y<64;++y)for(unsigned x=0;x<64;++x){auto* pixel=texture.pixels.data()+(y*64+x)*4;const float radius=std::hypot((float(x)-31.5f)/31.5f,(float(y)-31.5f)/31.5f);pixel[0]=pixel[1]=pixel[2]=210;pixel[3]=std::clamp(1.f-radius,0.f,1.f)*200;}
+                    slot=appendAtlasTile(impl_->texture,impl_->mapMaterialCount,texture);if(slot==std::numeric_limits<unsigned>::max())continue;
+                    impl_->materialSlots["__source1ios_smoke"]=slot;++impl_->textureRevision;
+                }else slot=hit->second;
+                Vector forward,right,up;AngleVectors(impl_->angles,&forward,&right,&up);std::vector<Vector> centers;
+                for(int puff=0;puff<32;++puff){const float angle=puff*2.399963f,radius=110*std::sqrt(float(puff%11)/10);centers.push_back(Vector(entity.origin[0]+std::cos(angle)*radius,entity.origin[1]+std::sin(angle)*radius,entity.origin[2]+25+(puff%5)*28));}
+                std::sort(centers.begin(),centers.end(),[&](const Vector& a,const Vector& b){return DotProduct(a-impl_->camera,forward)>DotProduct(b-impl_->camera,forward);});
+                for(const auto& center:centers){const float uv[4][2]={{0,0},{0,1},{1,1},{1,0}};for(int corner:{0,1,2,0,2,3}){MeshPoint point{center+right*((uv[corner][0]*2-1)*100)+up*((1-uv[corner][1]*2)*100),{1,1,1},{uv[corner][0]*.999f,uv[corner][1]*.999f},slot};point.opacity=.55f;impl_->smokeMesh.push_back(point);}}
+                continue;
+            }
+            if(!materialPath(name)||name.size()<5||name.substr(name.size()-4)!=".mdl")continue;
+            auto found=impl_->worldModels.find(name);
+            if(found==impl_->worldModels.end()){
+                if(impl_->worldModels.size()>=32)continue;
+                Impl::WorldModel cached;std::vector<std::uint8_t> mdl,vvd,vtx;std::string reason;const auto base=name.substr(0,name.size()-4);
+                if(readBounded(name.c_str(),"GAME",8*1024*1024,mdl)&&readBounded((base+".vvd").c_str(),"GAME",8*1024*1024,vvd)&&readBounded((base+".dx90.vtx").c_str(),"GAME",8*1024*1024,vtx)&&parseStudioModel(mdl,vvd,vtx,cached.mesh,reason)&&cached.mesh.bodyTriangles.size()<=200000){
+                    cached.valid=true;
+                    for(const auto& candidates:cached.mesh.materials){unsigned slot=std::numeric_limits<unsigned>::max();
+                        for(const auto& candidate:candidates){auto hit=impl_->materialSlots.find(materialKey(candidate));if(hit!=impl_->materialSlots.end()){slot=hit->second;break;}}
+                        if(slot==std::numeric_limits<unsigned>::max()){SourceTexture texture;std::string resolved;
+                            if(!decodeMaterial(candidates,texture,"world entity",&resolved)){texture=impl_->checkerTexture;resolved="__source1ios_fallback";}
+                            auto hit=impl_->materialSlots.find(materialKey(resolved));
+                            if(hit!=impl_->materialSlots.end())slot=hit->second;
+                            else{slot=appendAtlasTile(impl_->texture,impl_->mapMaterialCount,texture);if(slot!=std::numeric_limits<unsigned>::max()){impl_->materialSlots[materialKey(resolved)]=slot;++impl_->textureRevision;}}
+                        }
+                        if(slot==std::numeric_limits<unsigned>::max())cached.valid=false;cached.slots.push_back(slot);
+                    }
+                    cached.mesh.animations.clear();
+                }
+                Msg("Source world entity model %s: %s\n",cached.valid?"ready":"unavailable",name.c_str());
+                found=impl_->worldModels.emplace(name,std::move(cached)).first;
+            }
+            auto& cached=found->second;if(!cached.valid||!selectStudioBody(cached.mesh,unsigned(std::max(0,entity.body)))||!selectStudioSkin(cached.mesh,unsigned(std::max(0,entity.skin))))continue;
+            if(cached.mesh.triangles.size()>300000-impl_->worldMesh.size())continue;
+            matrix3x4_t transform;AngleMatrix(QAngle(entity.angles[0],entity.angles[1],entity.angles[2]),Vector(entity.origin[0],entity.origin[1],entity.origin[2]),transform);
+            for(const auto& v:cached.mesh.triangles){if(v.material>=cached.slots.size())continue;Vector position,normal;VectorTransform(v.position,transform,position);VectorRotate(v.normal,transform,normal);
+                const float light=.55f+.45f*std::abs(normal.z);impl_->worldMesh.push_back({position,{light,light,light},{v.uv.x,v.uv.y},cached.slots[v.material]});}
+        }
     }
     if(!modelReady||impl_->gamePoseTick==player.tick)return;
     impl_->gamePoseTick=player.tick;
     auto& studio=impl_->studio;
+    const int body=thirdPerson?player.modelBody:player.viewBody;
+    if(body>=0&&unsigned(body)!=studio.activeBody)selectStudioBody(studio,unsigned(body));
     const int skin=thirdPerson?player.modelSkin:player.viewSkin;
     if(skin>=0&&unsigned(skin)!=studio.activeSkin)selectStudioSkin(studio,unsigned(skin));
     std::vector<StudioVertex> posed;StudioPose pose;
@@ -965,10 +1052,11 @@ void SourceMap::setGameView(const PlayerState& player,bool thirdPerson,bool mode
         AngleMatrix(QAngle(-vertical*.4f,-lateral*.3f,vertical*.5f),offset,weaponTransform);
     }
     matrix3x4_t transform;AngleMatrix(QAngle(0,player.angles[1],0),Vector(player.origin[0],player.origin[1],player.origin[2]),transform);
-    if(posed.size()!=impl_->modelMesh.size())return;
+    impl_->modelMesh.resize(posed.size());
     for(size_t i=0;i<posed.size();++i){auto& v=impl_->modelMesh[i];
         if(thirdPerson&&!originalPose)VectorTransform(posed[i].position,transform,v.position);else if(!thirdPerson)VectorTransform(posed[i].position,weaponTransform,v.position);else v.position=posed[i].position;
-        v.material=posed[i].material;
+        v.material=posed[i].material;v.uv[0]=posed[i].uv.x;v.uv[1]=posed[i].uv.y;
+        for(float& channel:v.color)channel=.55f+.45f*std::abs(posed[i].normal.z);
     }
 }
 bool SourceMap::resetPhysics(){
@@ -1002,17 +1090,23 @@ void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(secon
         if(sampleStudioAnimation(impl_->studio,impl_->animation,impl_->poseTime,pose)&&skinStudioModel(impl_->studio,pose.rotations,posed,pose.positions)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);for(float& channel:impl_->modelMesh[i].color)channel=light;}}}
 }
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
-    std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size()+impl_->skyMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
+    std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->worldMesh.size()+impl_->modelMesh.size()+impl_->skyMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=impl_->gameView&&impl_->viewModel?1.3f/std::tan(impl_->gameFov*3.14159265358979323846f/360):1.3f,near=1,far=8192;
     auto append=[&](const MeshPoint& v,bool model=false,bool sky=false){Vector relative=sky?v.position:v.position-impl_->camera;float depth=DotProduct(relative,f);
         const bool weapon=model&&impl_->viewModel;
         float x=DotProduct(relative,r)*scale/a,y=DotProduct(relative,u)*scale,z=depth*far/(far-near)-near*far/(far-near);
         if(sky)z=depth*.99999f;
         if(weapon){depth=v.position.x;x=-v.position.y*1.96f/a;y=v.position.z*1.96f;z=.001f*depth-.0005f;}
-        out.push_back({{x,y,z,depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
+        out.push_back({{x,y,z,depth},{v.color[0],v.color[1],v.color[2],v.opacity},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
     for(const auto& v:impl_->skyMesh)append(v,false,true);
     for(const auto& v:impl_->mesh)append(v);
-    for(const auto& v:impl_->propsMesh)append(v);
+    for(const auto& range:impl_->propRanges){
+        const Vector relative=range.center-impl_->camera;const float depth=DotProduct(relative,f),radius=range.radius;
+        if(impl_->gameView&&(depth+radius<near||depth-radius>far||std::abs(DotProduct(relative,r))*scale/a>depth+radius*(1+scale/a)||std::abs(DotProduct(relative,u))*scale>depth+radius*(1+scale)))continue;
+        for(size_t i=range.begin;i<range.end;++i)append(impl_->propsMesh[i]);
+    }
+    if(impl_->gameView)for(const auto& v:impl_->worldMesh)append(v);
+    if(impl_->gameView)for(const auto& v:impl_->smokeMesh)append(v);
     if(!impl_->gameView||(impl_->gameModelReady&&!impl_->zoomed))for(const auto& v:impl_->modelMesh)append(v,true);
     if(impl_->scene&&!impl_->gameView){
         constexpr int rings=6,slices=12;
@@ -1249,6 +1343,10 @@ bool SourceMap::selfTest(){
     if(handle!=MDLHANDLE_INVALID)g_pMDLCache->Release(handle);
     all&=report("Metal static model geometry staged",impl_->modelMesh.size()==36);
     std::string patchBase;
+    MaterialAlpha alpha;std::string alphaBase;
+    all&=report("VMT specular alpha mask remains opaque",vmtBaseTexture("debug/__source1ios_alpha_mask",alphaBase,&alpha)&&!alpha.translucent&&!alpha.test);
+    all&=report("VMT Patch alpha test inherited coverage",vmtBaseTexture("debug/__source1ios_alpha_test",alphaBase,&alpha)&&alpha.test&&std::abs(alpha.reference-.7f)<.001f);
+    all&=report("VMT explicit translucent coverage",vmtBaseTexture("debug/__source1ios_alpha_translucent",alphaBase,&alpha)&&alpha.translucent&&!alpha.test);
     all&=report("VMT Patch include chain base texture",vmtBaseTexture("debug/debugblue",patchBase)&&patchBase=="debug/debugblue"&&vmtBaseTexture("debug/__source1ios_patch_outer",patchBase)&&patchBase=="debug/debugblue");
     all&=report("VMT Patch insert replace existing-key semantics",vmtBaseTexture("debug/__source1ios_patch_insert",patchBase)&&patchBase=="debug/debugempty"&&!vmtBaseTexture("debug/__source1ios_patch_noinsert",patchBase));
     all&=report("VMT Patch cycle unsafe include and KV macros rejected",!vmtBaseTexture("debug/__source1ios_patch_cycle",patchBase)&&!vmtBaseTexture("debug/__source1ios_patch_unsafe",patchBase)&&!vmtBaseTexture("debug/__source1ios_patch_macro",patchBase));

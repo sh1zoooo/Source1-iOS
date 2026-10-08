@@ -59,6 +59,8 @@ else()
       # Manual integration probe: requires user-supplied game content, never CI fixtures.
       add_executable(mobile_probe tests/mobile_probe.cpp)
       target_link_libraries(mobile_probe PRIVATE port_runtime source_modules)
+      add_executable(world_probe tests/world_probe.cpp)
+      target_link_libraries(world_probe PRIVATE port_runtime source_modules)
       add_executable(map_probe tests/map_probe.cpp)
       target_link_libraries(map_probe PRIVATE port_runtime source_modules)
       add_executable(gameplay_probe tests/gameplay_probe.cpp)

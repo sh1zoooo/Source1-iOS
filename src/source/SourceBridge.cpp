@@ -227,7 +227,7 @@ bool SourceBridge::startGame(const std::string& map) {
     stopGame();
     for(const auto* folder:{"hl2","platform","cstrike","cm"})files_.mountContent(folder);
     if(!player_.start(map)) { gameError_=player_.error();Msg("Practice unavailable: %s\n",player_.error().c_str());return false; }
-    if(!map_.load(("maps/"+map+".bsp").c_str())) { player_.stop();gameError_="BSP render adapter rejected this map";return false; }
+    if(!map_.load(("maps/"+map+".bsp").c_str(),"GAME",true)) { player_.stop();gameError_="BSP render adapter rejected this map";return false; }
     gameModel_.clear();gameModelReady_=false;accumulator_=0;thirdPerson_=false;
     map_.setGameView(player_.state(),false,false);return true;
 }

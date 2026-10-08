@@ -33,7 +33,7 @@ public:
     MobileResources mobileResources() { return loadMobileResources(player_.state().team); }
     int buy(const std::string& alias) { return player_.buy(alias); }
     bool playerAction(const std::string& action) { return player_.action(action); }
-    void clearInput() { player_.move(0,0);player_.button(63,false);accumulator_=0; }
+    void clearInput() { player_.move(0,0);player_.clearButtons();accumulator_=0; }
     void playerButton(unsigned button,bool pressed) { player_.button(button,pressed); }
     void thirdPerson(bool enabled) { thirdPerson_=enabled;gameModel_.clear(); }
     const PlayerState& playerState() const { return player_.state(); }

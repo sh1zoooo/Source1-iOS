@@ -28,7 +28,7 @@ void buyNodes(KeyValues* node,MobileResources& out,const char* category,std::set
 }
 MobileResources loadMobileResources(int team){
  MobileResources out;std::string data;
- for(const auto* path:{"cfg/touch.cfg","cfg/touch_default.cfg"})if(text(path,data)){out.config=path;break;}
+ for(const auto* path:{"cfg/touch_apk.cfg","cfg/touch.cfg","cfg/touch_default.cfg"})if(text(path,data)){out.config=path;break;}
  std::istringstream lines(data);std::string line;
  while(std::getline(lines,line)&&out.buttons.size()<64){CCommand args;args.Tokenize(line.c_str());
   if(args.ArgC()==2){float* setting=nullptr;std::string key=args[0];if(key=="touch_yaw")setting=&out.yaw;else if(key=="touch_pitch")setting=&out.pitch;else if(key=="touch_forwardzone")setting=&out.forwardZone;else if(key=="touch_sidezone")setting=&out.sideZone;
@@ -38,6 +38,7 @@ MobileResources loadMobileResources(int team){
   MobileButton b;b.name=args[1];b.icon=args[2];b.command=args[3];float* values[]={&b.x1,&b.y1,&b.x2,&b.y2};bool valid=true;
   for(int i=0;i<4;++i){char* end=nullptr;*values[i]=strtof(args[4+i],&end);valid&=end&&!*end&&std::isfinite(*values[i])&&*values[i]>=-.5f&&*values[i]<=1.5f;}
   if(!valid||b.x2<=b.x1||b.y2<=b.y1||b.command.empty())continue;
+  if(args.ArgC()>12)b.flags=unsigned(std::clamp(atoi(args[12]),0,1023));
   for(int i=0;i<4;++i)b.color[i]=std::clamp(atoi(args[8+i]),0,255);
   if(!b.icon.empty()&&b.icon.size()<128&&b.icon.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-/")==std::string::npos&&b.icon.find("//")==std::string::npos)sourceDecodeUITexture(b.icon,b.texture);
   // Xash replaces duplicate names; keep that behavior for imported touch.cfg.
@@ -48,6 +49,7 @@ MobileResources loadMobileResources(int team){
    if(auto* panel=kv->FindKey(name)){float width=panel->GetFloat("wide",0),height=panel->GetFloat("tall",0);if(width>0&&height>0&&width<640&&height<480)out.hud.push_back({name,panel->GetString("xpos","0"),panel->GetString("ypos","0"),width,height});}
   }kv->deleteThis();
  }
+ for(const char* name:{"HudHealth","HudArmor","HudAccount","HudAmmo"})if(std::none_of(out.hud.begin(),out.hud.end(),[&](const auto& panel){return panel.name==name;}))out.hud.push_back({name,"0","r40",150,36});
  const bool ct=team==3;std::set<std::string> seen;
  for(const auto& entry:{std::pair<const char*,std::string>{"Pistols",ct?"buypistols_ct":"buypistols_ter"},{"Rifles",ct?"buyrifles_ct":"buyrifles_ter"},{"SMG",ct?"buysubmachineguns_ct":"buysubmachineguns_ter"},{"Shotguns","buyshotguns"},{"Machine guns","buymachineguns"},{"Equipment",ct?"buyequipment_ct":"buyequipment_ter"}}){
   const auto path="resource/ui/"+entry.second+".res";std::string res;

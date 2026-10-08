@@ -24,6 +24,9 @@ int main(int argc,char** argv){
             const auto walk=runtime.playerState();
             std::cerr<<"Movement diagnostic: tick="<<start.tick<<"->"<<walk.tick<<" angles="<<start.angles[0]<<","<<start.angles[1]<<" origin="<<start.origin[0]<<","<<start.origin[1]<<","<<start.origin[2]<<" -> "<<walk.origin[0]<<","<<walk.origin[1]<<","<<walk.origin[2]<<" velocity="<<walk.velocity[0]<<","<<walk.velocity[1]<<" alive="<<walk.alive<<"\n";
             require(std::hypot(walk.origin[0]-start.origin[0],walk.origin[1]-start.origin[1])>8,"Real usercmd walking failed");
+            // Practice keeps the first spawn instead of relocating players in a match restart.
+            // Walk to the actual boundary before asserting that the hull stops.
+            runtime.cameraMove(1,0,0);advance(runtime,8);runtime.cameraMove(0,0,0);
             advance(runtime,.5);const auto wall=runtime.playerState();
             runtime.cameraMove(1,0,0);advance(runtime,1);runtime.cameraMove(0,0,0);
             require(std::hypot(runtime.playerState().origin[0]-wall.origin[0],runtime.playerState().origin[1]-wall.origin[1])<2,"Player passed the awp_lego_2 wall");

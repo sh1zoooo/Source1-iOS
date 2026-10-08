@@ -32,7 +32,7 @@ bool SourcePlayer::start(const std::string& map) {
     auto factory=Sys_GetFactoryThis();
     auto* bots=static_cast<IBotManager*>(factory(INTERFACEVERSION_PLAYERBOTMANAGER,nullptr));
     if(!bots){error_="Original player-control interface missing";return false;}
-    for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_autoteambalance",0},{"mp_limitteams",0},{"mp_startmoney",16000},{"mp_buytime",99},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
+    for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_ignore_round_win_conditions",1},{"mp_autoteambalance",0},{"mp_limitteams",0},{"mp_startmoney",16000},{"mp_buytime",99},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
         if(auto* var=g_pCVar->FindVar(setting.first))var->SetValue(setting.second);
     auto name=map;ownsLevel_=true;
     if(!Host_NewGame(name.data(),false,false)||!sv.IsActive()){error_="Original GameDLL could not activate map";stop();return false;}
@@ -66,7 +66,7 @@ bool SourcePlayer::action(const std::string& action){
 #ifdef SOURCE_GAME_LINK
     if(!active())return false;
     if(action=="team2"||action=="team3"){
-        const int team=action.back()-'0';buttons_=0;forward_=right_=0;
+        const int team=action.back()-'0';buttons_=pendingPressed_=0;forward_=right_=0;
         if(!gamePlayerSpawn(opponent_,team==2?3:2)||!gamePlayerSpawn(entity_,team))return false;
         gamePlayerRead(entity_,state_);yaw_=state_.angles[1];pitch_=state_.angles[0];return true;
     }
@@ -76,7 +76,7 @@ bool SourcePlayer::action(const std::string& action){
 #endif
 }
 void SourcePlayer::stop() {
-    entity_=opponent_=controller_=nullptr;state_={};forward_=right_=0;buttons_=0;
+    entity_=opponent_=controller_=nullptr;state_={};forward_=right_=0;buttons_=pendingPressed_=0;
 #ifdef SOURCE_GAME_LINK
     if(ownsLevel_&&serverGameDLL){
         HostState_GameShutdown();
@@ -101,8 +101,8 @@ void SourcePlayer::look(float yaw,float pitch) {
     yaw_=std::remainder(yaw_+yaw,360.f);pitch_=std::clamp(pitch_+pitch,-89.f,89.f);
 }
 void SourcePlayer::button(unsigned flag,bool pressed) {
-    flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload|PlayerAttack2|PlayerUse;
-    if(pressed)buttons_|=flag;else buttons_&=~flag;
+    flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload|PlayerAttack2|PlayerUse|PlayerSpeed;
+    if(pressed){buttons_|=flag;pendingPressed_|=flag;}else buttons_&=~flag;
 }
 void SourcePlayer::step() {
 #ifdef SOURCE_GAME_LINK
@@ -114,13 +114,15 @@ void SourcePlayer::step() {
     command.viewangles=QAngle(pitch_,yaw_,0);
     const float length=std::max(1.f,std::sqrt(forward_*forward_+right_*right_));
     command.forwardmove=forward_*400/length;command.sidemove=right_*400/length;
-    if(buttons_&PlayerJump)command.buttons|=IN_JUMP;
-    if(buttons_&PlayerDuck)command.buttons|=IN_DUCK;
-    if(buttons_&PlayerAttack)command.buttons|=IN_ATTACK;
-    if(buttons_&PlayerReload)command.buttons|=IN_RELOAD;
-    if(buttons_&PlayerAttack2)command.buttons|=IN_ATTACK2;
-    if(buttons_&PlayerUse)command.buttons|=IN_USE;
+    if((buttons_|pendingPressed_)&PlayerJump)command.buttons|=IN_JUMP;
+    if((buttons_|pendingPressed_)&PlayerDuck)command.buttons|=IN_DUCK;
+    if((buttons_|pendingPressed_)&PlayerAttack)command.buttons|=IN_ATTACK;
+    if((buttons_|pendingPressed_)&PlayerReload)command.buttons|=IN_RELOAD;
+    if((buttons_|pendingPressed_)&PlayerAttack2)command.buttons|=IN_ATTACK2;
+    if((buttons_|pendingPressed_)&PlayerUse)command.buttons|=IN_USE;
+    if((buttons_|pendingPressed_)&PlayerSpeed)command.buttons|=IN_SPEED;
     static_cast<IBotController*>(controller_)->RunPlayerMove(&command);
+    pendingPressed_=0;gamePlayerAdvanceView(entity_,tickInterval());
     gamePlayerRead(entity_,state_);
 #endif
 }

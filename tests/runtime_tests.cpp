@@ -222,6 +222,8 @@ int main() {
         const auto content=directory/"Source1IOS/content";const auto cm=content/"cm";std::filesystem::create_directories(cm/"maps");
         std::filesystem::create_directories(cm/"packed");std::filesystem::copy_file(directory/"Source1IOS/selftest/fixture2_dir.vpk",cm/"packed/cache_dir.vpk");
         std::filesystem::copy_file(maps/"imported.bsp",cm/"maps/cache_probe.bsp");
+        std::filesystem::create_directories(cm/"extras");std::filesystem::copy_file(directory/"Source1IOS/selftest/fixture2_dir.vpk",cm/"extras/!hud.vpk");
+        std::filesystem::create_directories(cm/"custom/hudcolor/resource");{std::ofstream marker(cm/"custom/hudcolor/resource/custom_mount_probe.txt");marker<<"ClientMod custom loose override";}
         std::filesystem::create_directories(cm/"models");std::filesystem::create_directories(cm/"materials/models/source1ios");
         const auto gameModels=directory/"Source1IOS/game/models";
         std::ifstream modelInput(gameModels/"__source1ios_static_probe.mdl",std::ios::binary);std::vector<char> cacheMdl((std::istreambuf_iterator<char>(modelInput)),{});
@@ -240,6 +242,7 @@ int main() {
         check(!host.startGame("cache_probe")&&!host.playerState().active,"Unverified map bypassed practice compatibility gate");
 
         check(g_pFullFileSystem->FileExists("fixture/hello.txt","MOD"),"GameDLL MOD path could not read imported VPK");
+        check(g_pFullFileSystem->FileExists("resource/custom_mount_probe.txt","GAME")&&g_pFullFileSystem->FileExists("resource/custom_mount_probe.txt","MOD"),"ClientMod custom loose resources were not mounted");
         auto modWrite=g_pFullFileSystem->Open("mod_write_probe.txt","wb","MOD");
         check(modWrite!=nullptr,"GameDLL MOD write path missing");g_pFullFileSystem->Close(modWrite);
         check(std::filesystem::is_regular_file(directory/"Source1IOS/game/mod_write_probe.txt")&&!std::filesystem::exists(cm/"mod_write_probe.txt"),"MOD write escaped app-owned game directory");

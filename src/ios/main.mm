@@ -3,16 +3,17 @@
 #include "Runtime.hpp"
 #include <chrono>
 #include <cmath>
+#include <sstream>
 
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Output { float4 position [[position]]; float3 color; float2 uv; float3 lightmap; int material [[flat]]; uint materialCount [[flat]]; };
+struct Output { float4 position [[position]]; float4 color; float2 uv; float3 lightmap; int material [[flat]]; uint materialCount [[flat]]; };
 struct Input { float4 position; float4 color; float2 uv; float2 material; float4 lightmap; };
 vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
     out.position = vertices[id].position;
-    out.color = vertices[id].color.xyz;
+    out.color = vertices[id].color;
     out.uv = vertices[id].uv;
     out.material = int(vertices[id].material.x);
     out.materialCount = max(1u,uint(vertices[id].material.y));
@@ -22,7 +23,7 @@ vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffe
 fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]], texture2d<float> lightmapTexture [[texture(2)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
     bool model=in.material<0;
-    if (model && in.materialCount==1u) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
+    if (model && in.materialCount==1u) { float4 texel=modelTexture.sample(repeatSample,in.uv); if(texel.a<0.01f) discard_fragment(); return in.color * texel; }
     constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
     uint columns=min(16u,in.materialCount),rows=(in.materialCount+columns-1u)/columns;
     float tile=float(model?modelTexture.get_width():texture.get_width())/float(columns);
@@ -30,7 +31,9 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     uint slot=model?uint(-in.material-1):uint(in.material);
     float2 atlasUV=float2((float(slot%columns)+local.x)/float(columns),(float(slot/columns)+local.y)/float(rows));
     float3 light=in.lightmap.z > 0.5 ? lightmapTexture.sample(clampSample,in.lightmap.xy).rgb : float3(1);
-    return float4(in.color*light,1) * (model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV));
+    float4 texel=model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV);
+    if(texel.a<0.01f) discard_fragment();
+    return float4(in.color.rgb*light,in.color.a) * texel;
 }
 )metal";
 
@@ -71,6 +74,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 @property(nonatomic, strong) NSArray<NSLayoutConstraint *> *diagnosticLayout;
 @property(nonatomic, strong) NSArray<NSLayoutConstraint *> *gameLayout;
 @property(nonatomic, strong) UILabel *crosshair;
+@property(nonatomic, strong) UIView *flashOverlay;
 @property(nonatomic, strong) NSMutableArray<UILabel *> *hudPanels;
 @property(nonatomic, strong) UIButton *play;
 @end
@@ -212,6 +216,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.metalView.preferredFramesPerSecond = 60;
     self.metalView.paused = YES;
     [self.view insertSubview:self.metalView atIndex:0];
+    self.flashOverlay=[[UIView alloc] initWithFrame:self.view.bounds];self.flashOverlay.backgroundColor=UIColor.whiteColor;self.flashOverlay.userInteractionEnabled=NO;self.flashOverlay.alpha=0;[self.view insertSubview:self.flashOverlay aboveSubview:self.metalView];
     [NSLayoutConstraint activateConstraints:@[
         [self.metalView.topAnchor constraintEqualToAnchor:safe.topAnchor],
         [self.metalView.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
@@ -226,6 +231,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     descriptor.vertexFunction = [library newFunctionWithName:@"vertexMain"];
     descriptor.fragmentFunction = [library newFunctionWithName:@"fragmentMain"];
     descriptor.colorAttachments[0].pixelFormat = self.metalView.colorPixelFormat;
+    descriptor.colorAttachments[0].blendingEnabled=YES;
+    descriptor.colorAttachments[0].sourceRGBBlendFactor=MTLBlendFactorSourceAlpha;
+    descriptor.colorAttachments[0].destinationRGBBlendFactor=MTLBlendFactorOneMinusSourceAlpha;
+    descriptor.colorAttachments[0].sourceAlphaBlendFactor=MTLBlendFactorOne;
+    descriptor.colorAttachments[0].destinationAlphaBlendFactor=MTLBlendFactorOneMinusSourceAlpha;
     descriptor.depthAttachmentPixelFormat = self.metalView.depthStencilPixelFormat;
     self.pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
     if (!self.pipeline) { [self fail:error.localizedDescription ?: @"Pipeline creation failed"]; return; }
@@ -275,25 +285,25 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     }@catch(NSException *exception){self.diagnostics.text=@"Use Share diagnostic log to export the full log.";}@finally{[file closeFile];}
 }
 - (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    [super viewDidLayoutSubviews];self.flashOverlay.frame=self.view.bounds;CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    const CGFloat controlsHeight=MAX(1,area.size.height-42);
     for(UIButton *button in self.gameButtons)if(button.accessibilityIdentifier.length&&[button.accessibilityIdentifier hasPrefix:@"cm_"]){
-        const auto& b=_mobile.buttons[button.tag];button.frame=CGRectMake(area.origin.x+b.x1*area.size.width,area.origin.y+b.y1*area.size.height,(b.x2-b.x1)*area.size.width,(b.y2-b.y1)*area.size.height);
+        const auto& b=_mobile.buttons[button.tag];button.frame=CGRectMake(area.origin.x+b.x1*area.size.width,area.origin.y+std::clamp(b.y1,0.f,1.f)*controlsHeight,(b.x2-b.x1)*area.size.width,(std::clamp(b.y2,0.f,1.f)-std::clamp(b.y1,0.f,1.f))*controlsHeight);
     }
-    CGFloat scale=area.size.height/480.;
-    for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& panel=_mobile.hud[i];
-        auto coordinate=[&](const std::string& value,CGFloat origin,CGFloat length){const char* text=value.c_str();if(*text=='r')return origin+length-atof(text+1)*scale;if(*text=='c')return origin+length/2+atof(text+1)*scale;return origin+atof(text)*scale;};
-        self.hudPanels[i].frame=CGRectMake(coordinate(panel.x,area.origin.x,area.size.width),coordinate(panel.y,area.origin.y,area.size.height),panel.width*scale,panel.height*scale);
-        self.hudPanels[i].font=[UIFont boldSystemFontOfSize:MAX(14,24*scale)];
+    const CGFloat width=(area.size.width-20)/4;
+    for(NSUInteger i=0;i<self.hudPanels.count;++i){
+        self.hudPanels[i].frame=CGRectMake(area.origin.x+4+i*(width+4),CGRectGetMaxY(area)-38,width,34);
+        self.hudPanels[i].font=[UIFont boldSystemFontOfSize:20];
     }
 }
 - (void)installMobileControls {
     _editTouch=NO;
-    _mobile=_runtime.mobileResources();if(_mobile.buttons.empty())return;
+    _mobile=_runtime.mobileResources();
     NSDictionary *positions=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"ClientModTouchPositions"];
     for(auto& button:_mobile.buttons){NSArray *saved=positions[[NSString stringWithUTF8String:button.name.c_str()]];if(saved.count==4){float x1=[saved[0] floatValue],y1=[saved[1] floatValue],x2=[saved[2] floatValue],y2=[saved[3] floatValue];if(std::isfinite(x1)&&std::isfinite(y1)&&std::isfinite(x2)&&std::isfinite(y2)&&x1>=0&&y1>=0&&x2<=1&&y2<=1&&x2>x1&&y2>y1){button.x1=x1;button.y1=y1;button.x2=x2;button.y2=y2;}}}
     for(UIButton *button in self.gameButtons)[button removeFromSuperview];[self.gameButtons removeAllObjects];
     for(NSUInteger i=0;i<_mobile.buttons.size();++i){const auto& b=_mobile.buttons[i];if(b.command=="_move"||b.command=="_look")continue;
-        UIButton *button=[UIButton buttonWithType:UIButtonTypeCustom];button.tag=i;button.accessibilityIdentifier=[@"cm_" stringByAppendingString:[NSString stringWithUTF8String:b.name.c_str()]];button.accessibilityLabel=[NSString stringWithUTF8String:b.name.c_str()];
+        UIButton *button=[UIButton buttonWithType:UIButtonTypeCustom];button.tag=i;button.hidden=(b.flags&1)!=0;button.accessibilityIdentifier=[@"cm_" stringByAppendingString:[NSString stringWithUTF8String:b.name.c_str()]];button.accessibilityLabel=[NSString stringWithUTF8String:b.name.c_str()];
         if(!b.texture.pixels.empty()){
             NSData *data=[NSData dataWithBytes:b.texture.pixels.data() length:b.texture.pixels.size()];CGDataProviderRef provider=CGDataProviderCreateWithCFData((__bridge CFDataRef)data);CGColorSpaceRef space=CGColorSpaceCreateDeviceRGB();
             CGImageRef image=CGImageCreate(b.texture.width,b.texture.height,8,32,b.texture.width*4,space,kCGBitmapByteOrderDefault|kCGImageAlphaLast,provider,nullptr,YES,kCGRenderingIntentDefault);
@@ -312,7 +322,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.hud.hidden=self.hudPanels.count>0;[self.view setNeedsLayout];
 }
 - (void)editTouchPosition:(UIPanGestureRecognizer *)gesture {
-    if(!_editTouch)return;UIButton *button=(UIButton *)gesture.view;auto& b=_mobile.buttons[button.tag];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    if(!_editTouch)return;UIButton *button=(UIButton *)gesture.view;auto& b=_mobile.buttons[button.tag];if(b.flags&2)return;CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
     CGPoint delta=[gesture translationInView:self.view];float width=b.x2-b.x1,height=b.y2-b.y1;
     b.x1=std::clamp(b.x1+float(delta.x/area.size.width),0.f,1.f-width);b.y1=std::clamp(b.y1+float(delta.y/area.size.height),0.f,1.f-height);b.x2=b.x1+width;b.y2=b.y1+height;[gesture setTranslation:CGPointZero inView:self.view];[self.view setNeedsLayout];
     if(gesture.state==UIGestureRecognizerStateEnded){NSMutableDictionary *positions=[[NSUserDefaults.standardUserDefaults dictionaryForKey:@"ClientModTouchPositions"] mutableCopy]?:[NSMutableDictionary dictionary];positions[[NSString stringWithUTF8String:b.name.c_str()]]=@[@(b.x1),@(b.y1),@(b.x2),@(b.y2)];[NSUserDefaults.standardUserDefaults setObject:positions forKey:@"ClientModTouchPositions"];}
@@ -324,7 +334,8 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     if(command.rfind("+jump",0)==0)return source1ios::PlayerJump;
     if(command.rfind("+duck",0)==0)return source1ios::PlayerDuck;
     if(command.rfind("+reload",0)==0)return source1ios::PlayerReload;
-    if(command.rfind("+use",0)==0)return source1ios::PlayerUse;return 0;
+    if(command.rfind("+use",0)==0)return source1ios::PlayerUse;
+    if(command.rfind("+speed",0)==0)return source1ios::PlayerSpeed;return 0;
 }
 - (void)mobileDown:(UIButton *)sender {if(_editTouch)return;unsigned flag=[self mobileFlag:sender];if(flag)_runtime.playerButton(flag,true);}
 - (void)mobileUp:(UIButton *)sender {unsigned flag=[self mobileFlag:sender];if(flag)_runtime.playerButton(flag,false);}
@@ -341,10 +352,18 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         return;
     }
     if(_editTouch)return;
+    if(command==";+duck"){_runtime.playerButton(source1ios::PlayerDuck,!_runtime.playerState().crouched);return;}
+    if(command.rfind("touch_show ",0)==0||command.rfind("touch_hide ",0)==0){
+        std::istringstream commands(command);std::string part;
+        while(std::getline(commands,part,';')){std::istringstream words(part);std::string operation,name;words>>operation>>name;
+            if(operation!="touch_show"&&operation!="touch_hide")continue;
+            for(auto& b:_mobile.buttons)if(b.name==name){if(operation=="touch_hide")b.flags|=1;else b.flags&=~1u;}}
+        for(UIButton *button in self.gameButtons)if([button.accessibilityIdentifier hasPrefix:@"cm_"])button.hidden=(_mobile.buttons[button.tag].flags&1)!=0;return;
+    }
     if(command=="buymenu"){[self showBuyMenu];return;}
     if(command=="gameui_activate"){[self togglePractice:nil];return;}
     if(command=="+lookatweapon"){_runtime.playerAction("inspect");return;}
-    if(command=="drop"||command=="lastinv"||(command.size()==5&&command.rfind("slot",0)==0)){_runtime.playerAction(command);return;}
+    if(command=="drop"||command=="lastinv"||command=="invnext"||command=="invprev"||(command.size()==5&&command.rfind("slot",0)==0)){_runtime.playerAction(command);return;}
     NSString *message=command=="+showscores"?[NSString stringWithFormat:@"Local practice · HP %d · $%d",_runtime.playerState().health,_runtime.playerState().money]:@"This control needs an additional client feature. Chat and voice need multiplayer.";
     UIAlertController *alert=[UIAlertController alertControllerWithTitle:[NSString stringWithUTF8String:_mobile.buttons[sender.tag].name.c_str()] message:message preferredStyle:UIAlertControllerStyleAlert];[alert addAction:[UIAlertAction actionWithTitle:@"OK" style:UIAlertActionStyleDefault handler:nil]];_movement=CGPointZero;_runtime.clearInput();[self presentViewController:alert animated:YES completion:nil];
 }
@@ -435,10 +454,10 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         const bool good=self.menu.window!=nil&&self.mapTable.window!=nil&&self.metalView.hidden&&!_runtime.playerState().active;
         _runtime.log(good?"iOS menu UI checks: PASS":"iOS menu UI checks: FAIL");
     }
-    const auto& player=_runtime.playerState();self.crosshair.hidden=!player.active||_thirdPerson;
+    const auto& player=_runtime.playerState();self.flashOverlay.alpha=player.active?std::clamp(player.flashAlpha,0.f,1.f):0;self.crosshair.hidden=!player.active||_thirdPerson;
     if(player.active){
         NSString *weapon=[NSString stringWithUTF8String:player.weapon];
-        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"%d",player.armor]:name=="HudAmmo"?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:[NSString stringWithFormat:@"$%d",player.money];}
+        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].hidden=NO;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"Armor %d",player.armor]:name=="HudAmmo"?(player.clip>=0?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:player.reserve>0?[NSString stringWithFormat:@"%d",player.reserve]:@"—"):[NSString stringWithFormat:@"$%d",player.money];}
         self.crosshair.text=player.fov<80?@"⊕":@"+";
         self.hud.text=[NSString stringWithFormat:@"HP %d   Armor %d   $%d   Ammo %d / %d\n%@ · %.0f u/s · %@",player.health,player.armor,player.money,player.clip,player.reserve,weapon,std::hypot(player.velocity[0],player.velocity[1]),player.crouched?@"duck":player.grounded?@"ground":@"air"];
     }
