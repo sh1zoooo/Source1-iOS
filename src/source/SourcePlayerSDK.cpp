@@ -74,6 +74,9 @@ bool gamePlayerSpawn(void* entity,int team) {
     // Offline practice uses the original round-respawn path, including inventory,
     // player model, VPhysics hull and the active player state.
     p->RoundRespawn();
+    // Practice explicitly respawns its controlled players; do not schedule the
+    // match constructor's second map-entity rebuild after this fresh level spawn.
+    if(auto* rules=CSGameRules()){rules->m_flRestartRoundTime=0;rules->m_bCompleteReset=false;}
     if(p->m_iAccount<16000)p->AddAccount(16000-p->m_iAccount,false);
     return p->IsAlive()&&!p->IsObserver();
 }

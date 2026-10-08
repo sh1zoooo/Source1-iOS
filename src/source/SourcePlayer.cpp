@@ -32,7 +32,7 @@ bool SourcePlayer::start(const std::string& map) {
     auto factory=Sys_GetFactoryThis();
     auto* bots=static_cast<IBotManager*>(factory(INTERFACEVERSION_PLAYERBOTMANAGER,nullptr));
     if(!bots){error_="Original player-control interface missing";return false;}
-    for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_autoteambalance",0},{"mp_limitteams",0},{"mp_startmoney",16000},{"mp_buytime",99},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
+    for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_ignore_round_win_conditions",1},{"mp_autoteambalance",0},{"mp_limitteams",0},{"mp_startmoney",16000},{"mp_buytime",99},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
         if(auto* var=g_pCVar->FindVar(setting.first))var->SetValue(setting.second);
     auto name=map;ownsLevel_=true;
     if(!Host_NewGame(name.data(),false,false)||!sv.IsActive()){error_="Original GameDLL could not activate map";stop();return false;}

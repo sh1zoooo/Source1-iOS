@@ -8,7 +8,7 @@ void require(bool value,const char* message){if(!value)throw std::runtime_error(
 void step(Runtime& runtime,double seconds){for(int i=0;i<int(seconds*60);++i)runtime.frame(1./60);}
 int main(int argc,char** argv){try{
  require(argc==2,"usage: world_probe DOCUMENTS");Runtime r;require(r.start(std::filesystem::absolute(argv[1])),"startup");require(r.startGame("awp_lego_2"),"map");step(r,4);
- require(r.mobileResources().hud.size()==4,"HUD defaults");
+ auto resources=r.mobileResources();size_t icons=0;for(const auto& b:resources.buttons)icons+=!b.texture.pixels.empty();std::cerr<<"APK resources config="<<resources.config<<" buttons="<<resources.buttons.size()<<" icons="<<icons<<" hud="<<resources.hud.size()<<"\n";require(resources.hud.size()==4,"HUD defaults");require(icons>20,"APK touch icons");
  const auto original=r.vertices(1.8);const auto before=original.size();size_t originalWorld=0;for(const auto& v:original)originalWorld+=v.material[0]>=0;require(r.playerAction("drop"),"drop command");step(r,.2);
  bool dropped=false;for(int i=0;i<r.playerState().worldCount;++i)dropped|=r.playerState().world[i].kind==0;
  require(dropped,"dropped weapon server entity");auto geometry=r.vertices(1.8);size_t worldVertices=0;
