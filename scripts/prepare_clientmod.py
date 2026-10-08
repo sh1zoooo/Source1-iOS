@@ -23,7 +23,7 @@ paths = ["gameui/ModMenu/ClientModMenuWindow.cpp", "game/client/cdll_client_int.
          "game/shared/gamerules_register.h", "vgui2/src/system_posix.cpp",
          "game/shared/cstrike/achievements_cs.cpp",
          "vgui2/vgui_controls/FileOpenDialog.cpp", "vguimatsurface/MatSystemSurface.cpp",
-         "vguimatsurface/FontTextureCache.cpp"]
+         "vguimatsurface/FontTextureCache.cpp", "gameui/BasePanel.cpp", "gameui/BasePanel.h"]
 previous = {}
 for path in paths:
     file = args.output / path
@@ -86,6 +86,32 @@ replace(paths[5], '#elif defined( OSX )',
 for path in paths[6:8]:
     replace(path, '#include <Carbon/Carbon.h>',
             '#ifndef SOURCE_IOS\n#include <Carbon/Carbon.h>\n#endif')
+
+# Rec 1.4's original GameMenu.res sends this command, but the public fork left
+# its settings page unconnected. Wire that command to the original dialog.
+replace(paths[8], '#include "BasePanel.h"',
+        '#include "BasePanel.h"\n#include "ModMenu/ClientModMenuWindow.h"')
+replace(paths[8], '\t"OpenOptionsDialog",',
+        '\t"OpenOptionsDialog",\n\t"OpenClientModMenuWindow",')
+replace(paths[8], '\telse if ( !Q_stricmp( command, "OpenOptionsDialog" ) )',
+        '\telse if ( !Q_stricmp( command, "OpenClientModMenuWindow" ) )\n\t{\n\t\tOnOpenClientModMenuWindow();\n\t}\n\telse if ( !Q_stricmp( command, "OpenOptionsDialog" ) )')
+replace(paths[8], 'void CBasePanel::OnOpenOptionsDialog()\n{',
+        '''void CBasePanel::OnOpenClientModMenuWindow()
+{
+\tif ( !m_hClientModMenuWindow.Get() )
+\t{
+\t\tm_hClientModMenuWindow = new ClientModMenuWindow(this);
+\t\tPositionDialog( m_hClientModMenuWindow );
+\t}
+\tstatic_cast<ClientModMenuWindow *>(m_hClientModMenuWindow.Get())->Run();
+}
+
+void CBasePanel::OnOpenOptionsDialog()
+{''')
+replace(paths[9], '\tvoid OnOpenOptionsDialog();',
+        '\tvoid OnOpenOptionsDialog();\n\tvoid OnOpenClientModMenuWindow();')
+replace(paths[9], '\tvgui::DHANDLE<vgui::PropertyDialog> m_hOptionsDialog;',
+        '\tvgui::DHANDLE<vgui::PropertyDialog> m_hOptionsDialog;\n\tvgui::DHANDLE<vgui::PropertyDialog> m_hClientModMenuWindow;')
 
 # Reconfiguration must not recompile unchanged patched translation units.
 for path, (data, modified) in previous.items():

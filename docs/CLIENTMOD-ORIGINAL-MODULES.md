@@ -44,8 +44,18 @@ Total: 888 source objects. iOS adds one UIKit platform-service object.
 host already owns allocation. GameUI additionally compiles upstream
 `ModMenu/ClientModMainMenu.cpp` and `ClientModMenuWindow.cpp`, omitted from the
 fork's Waf list. They are **viewmodel/settings pages**, not proof that the entire
-Rec 1.4 main menu has been recovered or activated. The fork has no call site
-opening `ClientModMenuWindow` in its BasePanel.
+Rec 1.4 main menu has been recovered or activated. The public fork has no call
+site opening `ClientModMenuWindow` in its BasePanel; the preparation adapter now
+connects the exact `OpenClientModMenuWindow` command found in the imported
+`cm/resource/gamemenu.res` to that original dialog, using its existing positioning
+and managed-handle lifecycle.
+
+The distribution also contains `cm/resource/clientmodmainmenu.res`. Its field
+names match the fork's offset/recoil sliders, labels and weapon-side selector.
+The fork's `NewBobbing` checkbox name is absent from that layout, another concrete
+version difference. This layout is loaded from the imported content as provided;
+no replacement layout is drawn. The archive contains original buy-menu CT/T
+layouts, HUD layout and schemes, too.
 
 ## Adaptations
 
@@ -68,6 +78,8 @@ copies them into the build directory and applies explicit compatibility changes:
 6. ClientMod's original `IMatSystemSurface` extension, `DrawFilledPolygon`, is
    retained for its radar and paired surface implementation. Other public headers
    use the already patched SDK. This is not a claim of complete binary ABI parity.
+7. BasePanel dispatches the imported menu's original settings command to the
+   original `ClientModMenuWindow`, previously unconnected in the public fork.
 
 `USE_SDL` matches the original graphical configuration. These archives must not
 be linked casually into the current non-SDL dedicated host: graphical factory
@@ -83,8 +95,12 @@ python3 scripts/verify_clientmod_archives.py build-clientmod
 
 Native compilation and object coverage passed for all eight archives. The first
 iPhone ARM64 build identified the unsupported desktop Open in Explorer call;
-the platform adaptation is included and needs repeat ARM64 validation. The VGUI
-surface's unused macOS Carbon include is also excluded from the iOS build.
+after the platform adaptations, Linux and iPhone ARM64 checks both passed in
+[run 37832471993](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37832471993).
+That run validates the eight-module foundation before the subsequent menu-command
+wiring. The wiring has also compiled natively; its latest CI run is separate.
+Both VGUI
+surface/font-cache unused macOS Carbon imports are excluded from the iOS build.
 
 The native shader-registry test links the original library separately from the
 dedicated engine and checks `ShaderDLL004`, shader registration and the original
