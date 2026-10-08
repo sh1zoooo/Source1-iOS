@@ -25,6 +25,7 @@ public:
     std::uint64_t modelTextureRevision() const { return source_.modelTextureRevision(); }
     void cameraLook(float yaw, float pitch) { source_.cameraLook(yaw,pitch); }
     void cameraMove(float forward, float right, float seconds) { source_.cameraMove(forward,right,seconds); }
+    std::vector<std::string> maps() { return source_.maps(); }
     bool startGame(const std::string& map="awp_lego_2") { return running_&&source_.startGame(map); }
     void stopGame() { source_.stopGame(); }
     void playerButton(unsigned button,bool pressed) { if(active_)source_.playerButton(button,pressed); }

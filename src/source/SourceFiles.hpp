@@ -13,6 +13,7 @@ public:
     bool probeContent(const std::string& path);
     bool mountContent(const std::string& name);
     bool unmountContent(const std::string& name);
+    std::vector<std::string> maps();
     bool ready() const { return initialized_; }
 private:
     void* interface_ = nullptr;

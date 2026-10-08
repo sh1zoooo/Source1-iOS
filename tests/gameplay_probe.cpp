@@ -41,7 +41,10 @@ int main(int argc,char** argv){
             for(int i=0;i<90;++i){runtime.frame(1./60);peak=std::max(peak,runtime.playerState().origin[2]);}
             require(peak>ground+20&&runtime.playerState().grounded,"Original jump/landing failed");
             auto clip=runtime.playerState().clip;
-            runtime.playerButton(PlayerAttack,true);advance(runtime,2);runtime.playerButton(PlayerAttack,false);
+            runtime.playerButton(PlayerAttack,true);float maxPunch=0;
+            for(int frame=0;frame<120;++frame){runtime.frame(1./60);maxPunch=std::max(maxPunch,std::abs(runtime.playerState().punch[0]));}
+            runtime.playerButton(PlayerAttack,false);
+            require(maxPunch>.1f,"Original recoil punch was not exported to the view adapter");
             require(runtime.playerState().clip<clip,"Original weapon did not consume ammunition");
             const auto fired=runtime.playerState();
             runtime.playerButton(PlayerReload,true);advance(runtime,5);runtime.playerButton(PlayerReload,false);

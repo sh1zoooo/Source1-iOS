@@ -1,0 +1,11 @@
+# 0.38: diagnostics, local-server menu, and weapon view
+
+Normal launch displays a bounded diagnostic-log tail and Play. Play opens an app-native ClientMod-labelled local-server menu populated from the mounted Source filesystem. Entering a server hides diagnostics and command/export controls; Exit server returns to diagnostics. Touch Jump, Duck, Fire, Reload, and perspective controls use circular overlays on the right, with left movement / right look retained.
+
+The view adapter now reads original CCSPlayer GetPunchAngle and applies the CS:S camera recoil scale of two without changing usercmd or ballistic recoil. Weapon movement adapts the original CS:S vertical/lateral bob and CBaseViewModel facing lag on simulation time, after original bone animation. These are Source CS:S formulas, not verified proprietary ClientMod custom behavior.
+
+The map list discovers installed BSP names, refreshes known mounts, sorts and deduplicates. Only awp_lego_2 remains enabled for actual practice: other imported maps have not passed engine compatibility tests and some cause native aborts. They appear with an explicit pending label. There is no Internet server browser yet. The menu and HUD are native approximations; archive-only ClientMod resources contain no original client implementation.
+
+Original Source shaders, exact ClientMod HUD/icon assets, arbitrary-map support, and physical-device validation of this update remain outstanding. Do not report this as the full ClientMod port.
+
+Validation: runtime contract adds map discovery, sorting/deduplication, and rejection of unverified maps. The resource-dependent gameplay probe additionally asserts a real weapon shot exports nonzero server recoil. The actual ClientMod content is not available in this restored workspace, so that new integration assertion has not been run here. iOS compilation and simulator verification are delegated to the PR workflow; results must be inspected before calling the IPA ready.

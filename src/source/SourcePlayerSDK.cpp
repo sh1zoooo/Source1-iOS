@@ -51,9 +51,10 @@ bool gamePlayerRead(void* entity,PlayerState& out) {
     auto* p=player(entity);out={};if(!p)return false;
     out.active=true;out.alive=p->IsAlive();out.grounded=(p->GetFlags()&FL_ONGROUND)!=0;
     out.crouched=(p->GetFlags()&FL_DUCKING)!=0;out.health=p->GetHealth();out.armor=p->ArmorValue();
-    out.money=p->m_iAccount;out.team=p->GetTeamNumber();out.tick=gpGlobals->tickcount;
+    out.simulationTime=gpGlobals->curtime;out.money=p->m_iAccount;out.team=p->GetTeamNumber();out.tick=gpGlobals->tickcount;
     copy(out.origin,p->GetAbsOrigin());copy(out.eye,p->EyePosition());copy(out.velocity,p->GetAbsVelocity());
-    const auto angles=p->EyeAngles();for(int i=0;i<3;++i)out.angles[i]=angles[i];
+    const auto angles=p->EyeAngles();const auto punch=p->GetPunchAngle();
+    for(int i=0;i<3;++i){out.angles[i]=angles[i];out.punch[i]=punch[i];}
     V_strncpy(out.model,STRING(p->GetModelName()),sizeof(out.model));
     bones(p,out.modelBones,out.modelBoneCount,false);
     animation(p,out.modelAnimation,sizeof(out.modelAnimation),out.modelCycle,out.modelSkin);

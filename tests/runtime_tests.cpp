@@ -214,6 +214,11 @@ int main() {
         check(!host.executeSource("source_bsp_load maps/cache_probe.bsp"),"Unmounted content leaked into GAME search paths");
         check(host.executeSource("source_content_mount cm")&&host.executeSource("source_content_mount cm"),"Loose cache directory mount was not idempotent");
         check(host.executeSource("source_content_selftest")&&host.executeSource("source_content_probe fixture/hello.txt"),"Mounted nested VPK could not be read through Source filesystem");
+        const auto installedMaps=host.maps();
+        check(std::find(installedMaps.begin(),installedMaps.end(),"cache_probe")!=installedMaps.end(),"Map menu did not discover imported BSP");
+        check(std::is_sorted(installedMaps.begin(),installedMaps.end())&&std::adjacent_find(installedMaps.begin(),installedMaps.end())==installedMaps.end(),"Map menu contains unsorted duplicates");
+        check(!host.startGame("cache_probe")&&!host.playerState().active,"Unverified map bypassed practice compatibility gate");
+
         check(g_pFullFileSystem->FileExists("fixture/hello.txt","MOD"),"GameDLL MOD path could not read imported VPK");
         auto modWrite=g_pFullFileSystem->Open("mod_write_probe.txt","wb","MOD");
         check(modWrite!=nullptr,"GameDLL MOD write path missing");g_pFullFileSystem->Close(modWrite);
