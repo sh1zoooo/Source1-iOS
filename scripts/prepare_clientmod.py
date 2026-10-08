@@ -22,7 +22,8 @@ fcntl.flock(lock, fcntl.LOCK_EX)
 paths = ["gameui/ModMenu/ClientModMenuWindow.cpp", "game/client/cdll_client_int.cpp",
          "game/shared/gamerules_register.h", "vgui2/src/system_posix.cpp",
          "game/shared/cstrike/achievements_cs.cpp",
-         "vgui2/vgui_controls/FileOpenDialog.cpp", "vguimatsurface/MatSystemSurface.cpp"]
+         "vgui2/vgui_controls/FileOpenDialog.cpp", "vguimatsurface/MatSystemSurface.cpp",
+         "vguimatsurface/FontTextureCache.cpp"]
 previous = {}
 for path in paths:
     file = args.output / path
@@ -82,8 +83,9 @@ replace(paths[3], '\t\tAssert( !"execlp failed" );\n\t}\n}',
         '\t\tAssert( !"execlp failed" );\n\t}\n#endif\n}')
 replace(paths[5], '#elif defined( OSX )',
         '#elif defined(SOURCE_IOS)\n\tvgui::system()->ShellExecute("open", pCurrentDirectory);\n#elif defined( OSX )')
-replace(paths[6], '#ifdef OSX\n#include <Carbon/Carbon.h>',
-        '#if defined(OSX) && !defined(SOURCE_IOS)\n#include <Carbon/Carbon.h>')
+for path in paths[6:8]:
+    replace(path, '#include <Carbon/Carbon.h>',
+            '#ifndef SOURCE_IOS\n#include <Carbon/Carbon.h>\n#endif')
 
 # Reconfiguration must not recompile unchanged patched translation units.
 for path, (data, modified) in previous.items():

@@ -32,18 +32,20 @@ jobs:
       - run: git -C third_party/source submodule update --init --depth 1 thirdparty ivp
       - name: Configure original modules
         run: >-
-          cmake -S . -B build-clientmod-ios -G Xcode
+          cmake -S . -B build-clientmod-ios -G "Unix Makefiles"
           -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos
           -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
-          -DSOURCE_BUILD_CLIENTMOD=ON
+          -DCMAKE_BUILD_TYPE=Release -DSOURCE_BUILD_CLIENTMOD=ON
       - name: Compile original modules
-        run: cmake --build build-clientmod-ios --target clientmod_compile_check --config Release -- -quiet CODE_SIGNING_ALLOWED=NO
-      - run: python3 scripts/verify_clientmod_archives.py build-clientmod-ios/Release-iphoneos --ios
+        # Continue independent objects after an error so one attempt reports all
+        # outstanding platform incompatibilities. Make still exits nonzero.
+        run: cmake --build build-clientmod-ios --target clientmod_compile_check --parallel 4 -- -k
+      - run: python3 scripts/verify_clientmod_archives.py build-clientmod-ios --ios
       - uses: actions/upload-artifact@v4
         with:
           name: ClientMod-ARM64-compilation-${{ github.sha }}
           path: |
-            build-clientmod-ios/Release-iphoneos/libclientmod_*.a
+            build-clientmod-ios/libclientmod_*.a
             cmake/clientmod-files.json
             docs/CLIENTMOD-ORIGINAL-MODULES.md
             third_party/clientmod/README.md
