@@ -8,6 +8,8 @@ void require(bool ok,const char* what){if(!ok)throw std::runtime_error(what);}
 void frames(Runtime& r,int count){for(int i=0;i<count;++i)r.frame(1./60);}
 int main(int argc,char** argv){try{
  require(argc==2,"usage: mobile_probe DOCUMENTS");Runtime r;require(r.start(std::filesystem::absolute(argv[1])),"start");require(r.startGame(),"map");frames(r,240);
+ const auto& modelTexture=r.modelTexture();std::cerr<<"GRAPHICS weapon atlas="<<modelTexture.width<<"x"<<modelTexture.height<<" bytes="<<modelTexture.pixels.size()<<'\n';
+ require(modelTexture.width==4608&&modelTexture.height==512,"AWP high-detail atlas missing");
  auto resources=r.mobileResources();size_t icons=0;for(const auto& b:resources.buttons)icons+=!b.texture.pixels.empty();std::cerr<<"RESOURCES buttons="<<resources.buttons.size()<<" icons="<<icons<<" buy="<<resources.buy.size()<<" hud="<<resources.hud.size()<<'\n';
  require(resources.buttons.size()>15&&icons>15&&resources.buy.size()>15&&resources.hud.size()==4,"Imported mobile resources missing");
  r.playerButton(PlayerAttack2,true);frames(r,1);r.playerButton(PlayerAttack2,false);frames(r,30);require(r.playerState().fov<80,"AWP zoom missing");
