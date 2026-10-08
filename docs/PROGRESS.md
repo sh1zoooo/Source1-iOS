@@ -1,5 +1,15 @@
 # Прогресс Source 1 → iOS
 
+**Перенос оригинального ClientMod начат:** закреплён публичный Android-форк;
+добавлена отдельная сборка настоящих client, GameUI, VGUI и их controls.
+Это пока проверка компиляции; оригинальный графический клиент/HUD/меню ещё не
+активны в IPA. Совпадение найденного форка с Rec 1.4 не подтверждено.
+[Состав, ограничения и проверки](CLIENTMOD-ORIGINAL-MODULES.md).
+
+**CI 0.44 прошёл:** ARM64 IPA, запуск симулятора и C++ runtime contracts,
+[run 37824035814](https://github.com/sh1zoooo/Source1-iOS/actions/runs/37824035814).
+Это проверка предыдущего preview-порта, а не нового графического ClientMod.
+
 **Этап 0.37 реализован и прошёл CI:** original CCSPlayer movement, HUD, 1P/3P models на
 `awp_lego_2`. Два полных native gameplay цикла, оригинальные bone poses, видимость моделей
 1P/3P и 7/7 CTest прошли; ARM64 IPA и симулятор (264 PASS, GPU, pause/resume)
