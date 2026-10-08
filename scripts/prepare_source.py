@@ -92,6 +92,11 @@ replace("engine/modelloader.cpp",
         "\tcase MDLCACHE_STUDIOHWDATA:\n#ifndef SWDS\n\t\tComputeModelFlags( pModel, handle );\n#endif")
 
 if args.cstrike:
+    # Some imported maps contain a clip brush without a usable physics solid.
+    # Source's stock entity dereferences the failed initialization on round cleanup.
+    replace("game/server/bmodels.cpp",
+            "\tCreateVPhysics();\n\tVPhysicsGetObject()->EnableCollisions( !m_bDisabled );",
+            "\tCreateVPhysics();\n\tif (!VPhysicsGetObject()) { Warning(\"func_clip_vphysics missing collision solid: %s\\n\", STRING(GetModelName())); UTIL_Remove(this); return; }\n\tVPhysicsGetObject()->EnableCollisions( !m_bDisabled );")
     # The old monolithic Xbox branch concatenates an unexpanded function macro.
     # This stage contains one server game; use the ordinary unique class name.
     replace("game/shared/gamerules_register.h",

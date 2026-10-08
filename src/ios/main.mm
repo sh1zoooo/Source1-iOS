@@ -283,8 +283,9 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 }
 - (void)viewDidLayoutSubviews {
     [super viewDidLayoutSubviews];self.flashOverlay.frame=self.view.bounds;CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    const CGFloat controlsHeight=MAX(1,area.size.height-42);
     for(UIButton *button in self.gameButtons)if(button.accessibilityIdentifier.length&&[button.accessibilityIdentifier hasPrefix:@"cm_"]){
-        const auto& b=_mobile.buttons[button.tag];button.frame=CGRectMake(area.origin.x+b.x1*area.size.width,area.origin.y+b.y1*area.size.height,(b.x2-b.x1)*area.size.width,(b.y2-b.y1)*area.size.height);
+        const auto& b=_mobile.buttons[button.tag];button.frame=CGRectMake(area.origin.x+b.x1*area.size.width,area.origin.y+std::clamp(b.y1,0.f,1.f)*controlsHeight,(b.x2-b.x1)*area.size.width,(std::clamp(b.y2,0.f,1.f)-std::clamp(b.y1,0.f,1.f))*controlsHeight);
     }
     const CGFloat width=(area.size.width-20)/4;
     for(NSUInteger i=0;i<self.hudPanels.count;++i){
@@ -444,7 +445,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     const auto& player=_runtime.playerState();self.flashOverlay.alpha=player.active?std::clamp(player.flashAlpha,0.f,1.f):0;self.crosshair.hidden=!player.active||_thirdPerson;
     if(player.active){
         NSString *weapon=[NSString stringWithUTF8String:player.weapon];
-        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].hidden=NO;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"%d",player.armor]:name=="HudAmmo"?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:[NSString stringWithFormat:@"$%d",player.money];}
+        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].hidden=NO;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"Armor %d",player.armor]:name=="HudAmmo"?(player.clip>=0?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:player.reserve>0?[NSString stringWithFormat:@"%d",player.reserve]:@"—"):[NSString stringWithFormat:@"$%d",player.money];}
         self.crosshair.text=player.fov<80?@"⊕":@"+";
         self.hud.text=[NSString stringWithFormat:@"HP %d   Armor %d   $%d   Ammo %d / %d\n%@ · %.0f u/s · %@",player.health,player.armor,player.money,player.clip,player.reserve,weapon,std::hypot(player.velocity[0],player.velocity[1]),player.crouched?@"duck":player.grounded?@"ground":@"air"];
     }

@@ -30,5 +30,6 @@ int main(int argc,char** argv){try{
   for(int frame=0;frame<180;++frame){r.frame(1./60);if(frame%30==0)std::cerr<<"Grenade frame "<<frame<<" weapon="<<r.playerState().weapon<<" reserve="<<r.playerState().reserve<<" world="<<r.playerState().worldCount<<" anim="<<r.playerState().viewAnimation<<" cycle="<<r.playerState().viewCycle<<"\n";for(int i=0;i<r.playerState().worldCount;++i)projectile|=r.playerState().world[i].kind==1;}
   require(projectile,"grenade projectile from short tap");step(r,5);
  }
+ bool smoke=false;for(int i=0;i<r.playerState().worldCount;++i)smoke|=r.playerState().world[i].kind==2;require(smoke,"live smoke effect entity");bool alpha=false;for(const auto& v:r.vertices(1.8))alpha|=v.color[3]<1;require(alpha,"smoke billboard geometry");
  r.stopGame();r.stop();std::cerr<<"WORLD GAMEPLAY PASS\n";return 0;
 }catch(const std::exception& e){std::cerr<<"WORLD FAIL: "<<e.what()<<"\n";return 1;}}

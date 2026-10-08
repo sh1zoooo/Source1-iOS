@@ -2,7 +2,16 @@
 #include <iostream>
 #include <filesystem>
 #include <cmath>
+#ifdef __linux__
+#include <execinfo.h>
+#include <csignal>
+#include <unistd.h>
+#endif
 int main(int argc,char** argv){
+
+#ifdef __linux__
+ std::signal(SIGSEGV,[](int){void* frames[40];int count=backtrace(frames,40);backtrace_symbols_fd(frames,count,2);_exit(139);});
+#endif
  if(argc!=3)return 2;source1ios::Runtime r;if(!r.start(std::filesystem::absolute(argv[1])))return 3;
  if(!r.startGame(argv[2])){std::cerr<<r.gameError()<<'\n';return 4;}
  for(int i=0;i<240;++i)r.frame(1./60);
