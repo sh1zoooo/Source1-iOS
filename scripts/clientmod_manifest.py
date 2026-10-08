@@ -23,7 +23,7 @@ def discover(platform="linux"):
     sys.modules["vpc_parser"] = vpc
     result = {"upstream": PIN, "modules": {}}
     for folder in ("vgui2/vgui_controls", "vgui2/matsys_controls", "vgui2/src", "gameui", "game/client",
-                   "vgui2/vgui_surfacelib", "vguimatsurface"):
+                   "vgui2/vgui_surfacelib", "vguimatsurface", "materialsystem/stdshaders"):
         env = SimpleNamespace(DEST_OS=platform, GAMES="cstrike", PREFIX="", LIBDIR="", MSVC_SUBSYSTEM="",
                               INCLUDES_SDL2=[], INCLUDES_FC=[], INCLUDES_FT2=[],
                               DEFINES=["POSIX", "OSX" if platform == "darwin" else "LINUX", "PLATFORM_64BITS", "DISABLE_STEAM", "USE_SDL"],

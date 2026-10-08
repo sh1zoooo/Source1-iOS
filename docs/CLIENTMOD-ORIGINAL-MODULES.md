@@ -21,6 +21,13 @@ client in the IPA**. No new application version or full-port percentage is claim
 `scripts/clientmod_manifest.py` evaluates the pinned Waf/VPC source selections for
 CS:S and checks every translation unit exists. The checked-in JSON must match.
 
+`clientmod-source-comparison.json` records the complete file-level comparison
+against the pinned SDK for nine relevant modules. The public fork changes 21
+client files and adds four GameUI ModMenu source/header files. Its shader C++
+implementations match the SDK; the material-system difference is `CColorCorrection.cpp`.
+That confirms the graphics work requires activating the original rendering path,
+not simply copying a different set of shader source files.
+
 | Archive | Selected objects on native build | Original content |
 | --- | ---: | --- |
 | clientmod_client | 574 | CS:S client prediction, viewmodels, weapon animation, touch, HUD, radar, buy/team/spectator menus |
@@ -30,8 +37,9 @@ CS:S and checks every translation unit exists. The checked-in JSON must match.
 | clientmod_vgui2 | 20 | Original VGUI panel, input, localization, scheme and system implementations |
 | clientmod_vgui_surfacelib | 5 | Original font manager, bitmap fonts and FreeType font rendering |
 | clientmod_vguimatsurface | 10 | Original material-backed VGUI drawing, texture dictionary, input and font atlas |
+| clientmod_stdshader_dx9 | 104 | Original world, viewmodel, sky, water, refraction, blending and effect shader implementations |
 
-Total: 784 source objects. iOS adds one UIKit platform-service object.
+Total: 888 source objects. iOS adds one UIKit platform-service object.
 `memoverride.cpp` is excluded where upstream lists it because the monolithic
 host already owns allocation. GameUI additionally compiles upstream
 `ModMenu/ClientModMainMenu.cpp` and `ClientModMenuWindow.cpp`, omitted from the
@@ -73,9 +81,17 @@ cmake --build build-clientmod --target clientmod_compile_check --parallel 4
 python3 scripts/verify_clientmod_archives.py build-clientmod
 ```
 
-Native compilation and object coverage passed for all seven archives. The first
+Native compilation and object coverage passed for all eight archives. The first
 iPhone ARM64 build identified the unsupported desktop Open in Explorer call;
-the platform adaptation is included and needs repeat ARM64 validation.
+the platform adaptation is included and needs repeat ARM64 validation. The VGUI
+surface's unused macOS Carbon include is also excluded from the iOS build.
+
+The native shader-registry test links the original library separately from the
+dedicated engine and checks `ShaderDLL004`, shader registration and the original
+world/viewmodel/sky/water/refraction families. The check passed with 127 original
+shader registrations. It does not draw on a GPU. Keeping
+this test separate also avoids merging globals owned by different upstream DLLs,
+such as the engine and shader DLL's `mat_fullbright`.
 
 The verifier checks every source object by filename and multiplicity, not just
 archive existence or size. The separate ClientMod workflow repeats this on Linux

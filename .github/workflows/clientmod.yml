@@ -18,8 +18,9 @@ jobs:
           submodules: true
       - run: git -C third_party/source submodule update --init --depth 1 thirdparty ivp
       - run: cmake -S . -B build-clientmod -DCMAKE_BUILD_TYPE=Release -DSOURCE_BUILD_CLIENTMOD=ON
-      - run: cmake --build build-clientmod --target clientmod_compile_check --parallel 4
+      - run: cmake --build build-clientmod --target clientmod_compile_check clientmod_shader_tests --parallel 4
       - run: python3 scripts/verify_clientmod_archives.py build-clientmod
+      - run: ctest --test-dir build-clientmod --output-on-failure -R clientmod_original_shader_registry
   ios:
     name: ClientMod original modules for iPhone ARM64
     runs-on: macos-15
@@ -45,5 +46,8 @@ jobs:
             build-clientmod-ios/Release-iphoneos/libclientmod_*.a
             cmake/clientmod-files.json
             docs/CLIENTMOD-ORIGINAL-MODULES.md
+            third_party/clientmod/README.md
+            third_party/SOURCE1_LICENSE.txt
+            third_party/SOURCE1_THIRD_PARTY_NOTICES.txt
           if-no-files-found: error
           retention-days: 14
