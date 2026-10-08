@@ -4,6 +4,7 @@
 #include "weapon_csbase.h"
 #include "cs_shareddefs.h"
 #include "cs_gamerules.h"
+#include "cs_blackmarket.h"
 #include "baseviewmodel_shared.h"
 #include "vphysics_interface.h"
 #include "tier1/strtools.h"
@@ -43,6 +44,7 @@ void animation(CBaseAnimating* entity,char* name,int size,float& cycle,int& skin
 }
 }
 bool gameBuyInfo(const char* alias,int& price,int& team){
+    if(!V_strcmp(alias,"defuser")){price=DEFUSEKIT_PRICE;team=TEAM_CT;return true;}
     auto* info=GetWeaponInfo(AliasToWeaponID(GetTranslatedWeaponAlias(alias)));if(!info)return false;
     price=info->GetWeaponPrice();team=info->m_iTeam;return price>=0;
 }
