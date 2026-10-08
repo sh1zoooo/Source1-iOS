@@ -51,7 +51,7 @@ bool vtfResourceRangesValid(const std::vector<std::uint8_t>& bytes){
     const size_t fixed=base.version[1]>=3?sizeof(VTFFileHeader_t):base.version[1]==2?sizeof(VTFFileHeaderV7_2_t):sizeof(VTFFileHeaderV7_1_t);
     if(bytes.size()<fixed||base.headerSize<int(fixed)||size_t(base.headerSize)>bytes.size())return false;
     VTFFileHeader_t header{};std::memcpy(&header,bytes.data(),fixed);
-    if(!header.width||!header.height||header.width>2048||header.height>2048||header.numFrames!=1||(base.version[1]>=2&&header.depth!=1))return false;
+    if(!header.width||!header.height||header.width>4096||header.height>4096||header.numFrames!=1||(base.version[1]>=2&&header.depth!=1))return false;
     if(base.version[1]<3)return true;
     if(header.numResources>32)return false;
     const size_t end=fixed+size_t(header.numResources)*sizeof(ResourceEntryInfo);
@@ -106,7 +106,13 @@ bool vmtBaseTexture(std::string name,std::string& base){
             include.resize(include.size()-4);name=std::move(include);continue;
         }
         bool exists=kv->FindKey("$basetexture")!=nullptr;base=kv->GetString("$basetexture","");kv->deleteThis();
-        if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric"))return false;
+        // These shader families all expose a base texture. This is only their
+        // albedo path; blend weights, normals and specular need separate passes.
+        if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric")
+            &&V_stricmp(shader.c_str(),"WorldVertexTransition")&&V_stricmp(shader.c_str(),"Lightmapped_4WayBlend")
+            &&V_stricmp(shader.c_str(),"LightmappedReflective")&&V_stricmp(shader.c_str(),"Cable")&&V_stricmp(shader.c_str(),"UnlitTwoTexture")){
+            Warning("Source material unsupported shader: %s (%s)\n",path.c_str(),shader.c_str());return false;
+        }
         if(hasInsert){base=insert;exists=true;}if(hasReplace&&exists)base=replace;
         return normalizeMaterialPath(base);
     }return false;
@@ -115,8 +121,11 @@ bool decodeTexture(const std::string& base,source1ios::SourceTexture& texture){
     if(!materialPath(base))return false;std::vector<std::uint8_t> vtf;
     if(!readBounded(("materials/"+base+".vtf").c_str(),"GAME",16*1024*1024,vtf)||!vtfResourceRangesValid(vtf))return false;
     auto* image=CreateVTFTexture();if(!image)return false;CUtlBuffer buffer(vtf.data(),vtf.size(),CUtlBuffer::READ_ONLY);
-    bool ok=image->Unserialize(buffer,true)&&image->Width()>0&&image->Height()>0&&image->Width()<=2048&&image->Height()<=2048&&image->Depth()==1&&image->FrameCount()==1&&image->FaceCount()==1;
-    if(ok){buffer.SeekGet(CUtlBuffer::SEEK_HEAD,0);ok=image->Unserialize(buffer);}
+    bool ok=image->Unserialize(buffer,true)&&image->Width()>0&&image->Height()>0&&image->Width()<=4096&&image->Height()<=4096&&image->Depth()==1&&image->FrameCount()==1&&image->FaceCount()==1;
+    // Read a supplied mip for 4K assets instead of allocating the full image.
+    int skip=0;
+    if(ok){int width=image->Width(),height=image->Height();while(width>2048||height>2048){width=std::max(1,width/2);height=std::max(1,height/2);++skip;}
+        ok=image->MipCount()>skip;if(ok){buffer.SeekGet(CUtlBuffer::SEEK_HEAD,0);ok=image->Unserialize(buffer,false,skip);}}
     if(ok){image->ConvertImageFormat(IMAGE_FORMAT_RGBA8888,false);texture.width=image->Width();texture.height=image->Height();const auto* data=image->ImageData(0,0,0);ok=data!=nullptr;if(ok)texture.pixels.assign(data,data+size_t(texture.width)*texture.height*4);}
     DestroyVTFTexture(image);return ok;
 }
@@ -312,7 +321,7 @@ source1ios::SourceTexture bspAtlas(const BspMaterials& materials,const source1io
     source1ios::SourceTexture atlas;unsigned count=0;
     std::vector<bool> written(materials.slotCount,false);
     for(size_t i=0;i<materials.names.size();++i){const unsigned slot=materials.slots[i];if(written[slot])continue;written[slot]=true;source1ios::SourceTexture decoded;
-        if(!decodeMaterial({materials.names[i]},decoded,"BSP"))decoded=fallback;
+        if(!decodeMaterial({materials.names[i]},decoded,"BSP")){Warning("Source BSP material fallback: %s\n",materials.names[i].c_str());decoded=fallback;}
         if(slot!=count||!source1ios::appendTextureTile(atlas,count,decoded))return {};
 
     }return atlas;
@@ -780,6 +789,9 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         for(size_t face=0;face<faces.size();++face){const auto& f=faces[face];
             if(f.numedges<3 || f.numedges>256 || f.firstedge<0 || size_t(f.firstedge)>surfedges.size() || size_t(f.numedges)>surfedges.size()-size_t(f.firstedge))return false;
             if(f.texinfo<0||size_t(f.texinfo)>=materials.infos.size())return false;const auto& texinfo=materials.infos[f.texinfo];const auto& texdata=materials.data[texinfo.texdata];
+            // Tool surfaces remain in the engine collision BSP, never in the
+            // visible mesh. In particular toolsskybox is a mask, not sky art.
+            if(texinfo.flags&(SURF_SKY|SURF_SKY2D|SURF_NODRAW|SURF_HINT|SURF_SKIP))continue;
             unsigned lx=0,ly=0,lw=0,lh=0;if(!lightmaps.add(f,texinfo,lighting,lx,ly,lw,lh)){Warning("Source BSP rejected %s: invalid lightmap range or atlas capacity; face=%zu\n",filename,face);return false;}
             std::vector<Vector> polygon;
             for(int i=0;i<f.numedges;++i){const int se=surfedges[f.firstedge+i];if(se==std::numeric_limits<int>::min())return false;

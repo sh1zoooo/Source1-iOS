@@ -220,6 +220,9 @@ replace("tier0/platform_posix.cpp", "( now.tv_nsec * 1e-9 )",
         "( (now.tv_nsec - start_time.tv_nsec) * 1e-9 )")
 replace("filesystem/filesystem_stdio.cpp", "CFileSystem_Stdio g_FileSystem_Stdio;",
         "CFileSystem_Stdio g_FileSystem_Stdio;\nCreateInterfaceFn SourceFileSystem_GetFactory() { return Sys_GetFactoryThis(); }")
+# iOS/APFS is case-sensitive; enable the same fallback used on Linux.
+replace_all("filesystem/filesystem_stdio.cpp", "#if defined(LINUX) || defined(PLATFORM_BSD)",
+            "#if defined(LINUX) || defined(PLATFORM_BSD) || defined(SOURCE_IOS)", 3)
 # Windows caches contain mixed-case directory names as well as file names.
 # Resolve each component; the upstream helper only checks the final directory.
 case_source = (args.upstream / "filesystem/linux_support.cpp").read_text()
