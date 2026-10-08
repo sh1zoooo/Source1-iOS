@@ -66,7 +66,7 @@ bool SourcePlayer::action(const std::string& action){
 #ifdef SOURCE_GAME_LINK
     if(!active())return false;
     if(action=="team2"||action=="team3"){
-        const int team=action.back()-'0';buttons_=0;forward_=right_=0;
+        const int team=action.back()-'0';buttons_=pendingPressed_=0;forward_=right_=0;
         if(!gamePlayerSpawn(opponent_,team==2?3:2)||!gamePlayerSpawn(entity_,team))return false;
         gamePlayerRead(entity_,state_);yaw_=state_.angles[1];pitch_=state_.angles[0];return true;
     }
@@ -76,7 +76,7 @@ bool SourcePlayer::action(const std::string& action){
 #endif
 }
 void SourcePlayer::stop() {
-    entity_=opponent_=controller_=nullptr;state_={};forward_=right_=0;buttons_=0;
+    entity_=opponent_=controller_=nullptr;state_={};forward_=right_=0;buttons_=pendingPressed_=0;
 #ifdef SOURCE_GAME_LINK
     if(ownsLevel_&&serverGameDLL){
         HostState_GameShutdown();
@@ -102,7 +102,7 @@ void SourcePlayer::look(float yaw,float pitch) {
 }
 void SourcePlayer::button(unsigned flag,bool pressed) {
     flag&=PlayerJump|PlayerDuck|PlayerAttack|PlayerReload|PlayerAttack2|PlayerUse;
-    if(pressed)buttons_|=flag;else buttons_&=~flag;
+    if(pressed){buttons_|=flag;pendingPressed_|=flag;}else buttons_&=~flag;
 }
 void SourcePlayer::step() {
 #ifdef SOURCE_GAME_LINK
@@ -114,13 +114,14 @@ void SourcePlayer::step() {
     command.viewangles=QAngle(pitch_,yaw_,0);
     const float length=std::max(1.f,std::sqrt(forward_*forward_+right_*right_));
     command.forwardmove=forward_*400/length;command.sidemove=right_*400/length;
-    if(buttons_&PlayerJump)command.buttons|=IN_JUMP;
-    if(buttons_&PlayerDuck)command.buttons|=IN_DUCK;
-    if(buttons_&PlayerAttack)command.buttons|=IN_ATTACK;
-    if(buttons_&PlayerReload)command.buttons|=IN_RELOAD;
-    if(buttons_&PlayerAttack2)command.buttons|=IN_ATTACK2;
-    if(buttons_&PlayerUse)command.buttons|=IN_USE;
+    if((buttons_|pendingPressed_)&PlayerJump)command.buttons|=IN_JUMP;
+    if((buttons_|pendingPressed_)&PlayerDuck)command.buttons|=IN_DUCK;
+    if((buttons_|pendingPressed_)&PlayerAttack)command.buttons|=IN_ATTACK;
+    if((buttons_|pendingPressed_)&PlayerReload)command.buttons|=IN_RELOAD;
+    if((buttons_|pendingPressed_)&PlayerAttack2)command.buttons|=IN_ATTACK2;
+    if((buttons_|pendingPressed_)&PlayerUse)command.buttons|=IN_USE;
     static_cast<IBotController*>(controller_)->RunPlayerMove(&command);
+    pendingPressed_=0;gamePlayerAdvanceView(entity_,tickInterval());
     gamePlayerRead(entity_,state_);
 #endif
 }

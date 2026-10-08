@@ -214,8 +214,8 @@ bool parseStudioModel(const std::vector<std::uint8_t>& mdl,const std::vector<std
     for(int slot=0;slot<mh->numtextures;++slot){std::string name;size_t offset=0;
         if(!addRelative(size_t(mh->textureindex)+size_t(slot)*sizeof(mstudiotexture_t),textures[slot].sznameindex,offset)||!stringAt(offset,name)||!normalizeStudioPath(name,false))return fail("invalid studio material name");
         std::vector<std::string> paths;if(!mh->numcdtextures)paths.push_back(name);
-        for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory)||!normalizeStudioPath(directory,true))return fail("invalid studio material directory");paths.push_back(directory+name);}
-        result.materials.push_back(std::move(paths));}
+        for(int d=0;d<mh->numcdtextures;++d){std::string directory;if(directories[d]<0||!stringAt(size_t(directories[d]),directory))return fail("invalid studio material directory");if(normalizeStudioPath(directory,true))paths.push_back(directory+name);}
+        if(paths.empty())paths.push_back(name);result.materials.push_back(std::move(paths));}
     if(!result.materials.empty())result.materialPaths=result.materials.front();
     if(mh->numskinref<0||mh->numskinref>256||mh->numskinfamilies<0||mh->numskinfamilies>256||(mh->numskinref==0)!=(mh->numskinfamilies==0))return fail("invalid skin table counts");
     const short* skinRefs=nullptr;

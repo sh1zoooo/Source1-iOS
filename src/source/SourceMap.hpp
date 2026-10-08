@@ -14,7 +14,7 @@ public:
     ~SourceMap();
     bool start(const std::filesystem::path& root);
     void stop();
-    bool load(const char* filename, const char* pathID = "GAME");
+    bool load(const char* filename, const char* pathID = "GAME", bool gameLevel=false);
     bool resetMap();
     bool demoTerrain();
     bool demoMaterials();

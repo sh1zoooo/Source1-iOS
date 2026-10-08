@@ -7,12 +7,12 @@
 static const char *const shaderSource = R"metal(
 #include <metal_stdlib>
 using namespace metal;
-struct Output { float4 position [[position]]; float3 color; float2 uv; float3 lightmap; int material [[flat]]; uint materialCount [[flat]]; };
+struct Output { float4 position [[position]]; float4 color; float2 uv; float3 lightmap; int material [[flat]]; uint materialCount [[flat]]; };
 struct Input { float4 position; float4 color; float2 uv; float2 material; float4 lightmap; };
 vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffer(0)]]) {
     Output out;
     out.position = vertices[id].position;
-    out.color = vertices[id].color.xyz;
+    out.color = vertices[id].color;
     out.uv = vertices[id].uv;
     out.material = int(vertices[id].material.x);
     out.materialCount = max(1u,uint(vertices[id].material.y));
@@ -22,7 +22,7 @@ vertex Output vertexMain(uint id [[vertex_id]], constant Input *vertices [[buffe
 fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[texture(0)]], texture2d<float> modelTexture [[texture(1)]], texture2d<float> lightmapTexture [[texture(2)]]) {
     constexpr sampler repeatSample(coord::normalized,address::repeat,filter::linear);
     bool model=in.material<0;
-    if (model && in.materialCount==1u) return float4(in.color,1) * modelTexture.sample(repeatSample,in.uv);
+    if (model && in.materialCount==1u) return in.color * modelTexture.sample(repeatSample,in.uv);
     constexpr sampler clampSample(coord::normalized,address::clamp_to_edge,filter::linear);
     uint columns=min(16u,in.materialCount),rows=(in.materialCount+columns-1u)/columns;
     float tile=float(model?modelTexture.get_width():texture.get_width())/float(columns);
@@ -30,7 +30,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     uint slot=model?uint(-in.material-1):uint(in.material);
     float2 atlasUV=float2((float(slot%columns)+local.x)/float(columns),(float(slot/columns)+local.y)/float(rows));
     float3 light=in.lightmap.z > 0.5 ? lightmapTexture.sample(clampSample,in.lightmap.xy).rgb : float3(1);
-    return float4(in.color*light,1) * (model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV));
+    return float4(in.color.rgb*light,in.color.a) * (model?modelTexture.sample(clampSample,atlasUV):texture.sample(clampSample,atlasUV));
 }
 )metal";
 
@@ -71,6 +71,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
 @property(nonatomic, strong) NSArray<NSLayoutConstraint *> *diagnosticLayout;
 @property(nonatomic, strong) NSArray<NSLayoutConstraint *> *gameLayout;
 @property(nonatomic, strong) UILabel *crosshair;
+@property(nonatomic, strong) UIView *flashOverlay;
 @property(nonatomic, strong) NSMutableArray<UILabel *> *hudPanels;
 @property(nonatomic, strong) UIButton *play;
 @end
@@ -212,6 +213,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     self.metalView.preferredFramesPerSecond = 60;
     self.metalView.paused = YES;
     [self.view insertSubview:self.metalView atIndex:0];
+    self.flashOverlay=[[UIView alloc] initWithFrame:self.view.bounds];self.flashOverlay.backgroundColor=UIColor.whiteColor;self.flashOverlay.userInteractionEnabled=NO;self.flashOverlay.alpha=0;[self.view insertSubview:self.flashOverlay aboveSubview:self.metalView];
     [NSLayoutConstraint activateConstraints:@[
         [self.metalView.topAnchor constraintEqualToAnchor:safe.topAnchor],
         [self.metalView.bottomAnchor constraintEqualToAnchor:safe.bottomAnchor],
@@ -226,6 +228,11 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     descriptor.vertexFunction = [library newFunctionWithName:@"vertexMain"];
     descriptor.fragmentFunction = [library newFunctionWithName:@"fragmentMain"];
     descriptor.colorAttachments[0].pixelFormat = self.metalView.colorPixelFormat;
+    descriptor.colorAttachments[0].blendingEnabled=YES;
+    descriptor.colorAttachments[0].sourceRGBBlendFactor=MTLBlendFactorSourceAlpha;
+    descriptor.colorAttachments[0].destinationRGBBlendFactor=MTLBlendFactorOneMinusSourceAlpha;
+    descriptor.colorAttachments[0].sourceAlphaBlendFactor=MTLBlendFactorOne;
+    descriptor.colorAttachments[0].destinationAlphaBlendFactor=MTLBlendFactorOneMinusSourceAlpha;
     descriptor.depthAttachmentPixelFormat = self.metalView.depthStencilPixelFormat;
     self.pipeline = [device newRenderPipelineStateWithDescriptor:descriptor error:&error];
     if (!self.pipeline) { [self fail:error.localizedDescription ?: @"Pipeline creation failed"]; return; }
@@ -275,20 +282,19 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     }@catch(NSException *exception){self.diagnostics.text=@"Use Share diagnostic log to export the full log.";}@finally{[file closeFile];}
 }
 - (void)viewDidLayoutSubviews {
-    [super viewDidLayoutSubviews];CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
+    [super viewDidLayoutSubviews];self.flashOverlay.frame=self.view.bounds;CGRect area=self.view.safeAreaLayoutGuide.layoutFrame;
     for(UIButton *button in self.gameButtons)if(button.accessibilityIdentifier.length&&[button.accessibilityIdentifier hasPrefix:@"cm_"]){
         const auto& b=_mobile.buttons[button.tag];button.frame=CGRectMake(area.origin.x+b.x1*area.size.width,area.origin.y+b.y1*area.size.height,(b.x2-b.x1)*area.size.width,(b.y2-b.y1)*area.size.height);
     }
-    CGFloat scale=area.size.height/480.;
-    for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& panel=_mobile.hud[i];
-        auto coordinate=[&](const std::string& value,CGFloat origin,CGFloat length){const char* text=value.c_str();if(*text=='r')return origin+length-atof(text+1)*scale;if(*text=='c')return origin+length/2+atof(text+1)*scale;return origin+atof(text)*scale;};
-        self.hudPanels[i].frame=CGRectMake(coordinate(panel.x,area.origin.x,area.size.width),coordinate(panel.y,area.origin.y,area.size.height),panel.width*scale,panel.height*scale);
-        self.hudPanels[i].font=[UIFont boldSystemFontOfSize:MAX(14,24*scale)];
+    const CGFloat width=(area.size.width-20)/4;
+    for(NSUInteger i=0;i<self.hudPanels.count;++i){
+        self.hudPanels[i].frame=CGRectMake(area.origin.x+4+i*(width+4),CGRectGetMaxY(area)-38,width,34);
+        self.hudPanels[i].font=[UIFont boldSystemFontOfSize:20];
     }
 }
 - (void)installMobileControls {
     _editTouch=NO;
-    _mobile=_runtime.mobileResources();if(_mobile.buttons.empty())return;
+    _mobile=_runtime.mobileResources();
     NSDictionary *positions=[NSUserDefaults.standardUserDefaults dictionaryForKey:@"ClientModTouchPositions"];
     for(auto& button:_mobile.buttons){NSArray *saved=positions[[NSString stringWithUTF8String:button.name.c_str()]];if(saved.count==4){float x1=[saved[0] floatValue],y1=[saved[1] floatValue],x2=[saved[2] floatValue],y2=[saved[3] floatValue];if(std::isfinite(x1)&&std::isfinite(y1)&&std::isfinite(x2)&&std::isfinite(y2)&&x1>=0&&y1>=0&&x2<=1&&y2<=1&&x2>x1&&y2>y1){button.x1=x1;button.y1=y1;button.x2=x2;button.y2=y2;}}}
     for(UIButton *button in self.gameButtons)[button removeFromSuperview];[self.gameButtons removeAllObjects];
@@ -435,10 +441,10 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
         const bool good=self.menu.window!=nil&&self.mapTable.window!=nil&&self.metalView.hidden&&!_runtime.playerState().active;
         _runtime.log(good?"iOS menu UI checks: PASS":"iOS menu UI checks: FAIL");
     }
-    const auto& player=_runtime.playerState();self.crosshair.hidden=!player.active||_thirdPerson;
+    const auto& player=_runtime.playerState();self.flashOverlay.alpha=player.active?std::clamp(player.flashAlpha,0.f,1.f):0;self.crosshair.hidden=!player.active||_thirdPerson;
     if(player.active){
         NSString *weapon=[NSString stringWithUTF8String:player.weapon];
-        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"%d",player.armor]:name=="HudAmmo"?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:[NSString stringWithFormat:@"$%d",player.money];}
+        for(NSUInteger i=0;i<self.hudPanels.count;++i){const auto& name=_mobile.hud[i].name;self.hudPanels[i].hidden=NO;self.hudPanels[i].text=name=="HudHealth"?[NSString stringWithFormat:@"HP %d",player.health]:name=="HudArmor"?[NSString stringWithFormat:@"%d",player.armor]:name=="HudAmmo"?[NSString stringWithFormat:@"%d / %d",player.clip,player.reserve]:[NSString stringWithFormat:@"$%d",player.money];}
         self.crosshair.text=player.fov<80?@"⊕":@"+";
         self.hud.text=[NSString stringWithFormat:@"HP %d   Armor %d   $%d   Ammo %d / %d\n%@ · %.0f u/s · %@",player.health,player.armor,player.money,player.clip,player.reserve,weapon,std::hypot(player.velocity[0],player.velocity[1]),player.crouched?@"duck":player.grounded?@"ground":@"air"];
     }
