@@ -1,4 +1,7 @@
 #include "Runtime.hpp"
+#include "SourceMap.hpp"
+#include "vtf/vtf.h"
+#include "tier1/utlbuffer.h"
 #include "BspLzmaFixture.hpp"
 #include "tier0/platform.h"
 #include "filesystem.h"
@@ -38,6 +41,17 @@ int main() {
         auto iconFile=g_pFullFileSystem->Open("materials/rbtouch/shoot.txt","rb","GAME");
         check(iconFile!=nullptr,"Mixed-case cache directory was not resolved");char iconBytes[6];
         check(g_pFullFileSystem->Read(iconBytes,6,iconFile)==6&&!std::memcmp(iconBytes,"button",6),"Mixed-case cache content mismatch");g_pFullFileSystem->Close(iconFile);
+
+        // Imported terrain shader albedo must resolve rather than show checker.
+        auto gameMaterials=directory/"Source1IOS/game/materials";
+        std::ofstream(gameMaterials/"terrain_test.vmt")<<"WorldVertexTransition { \"$basetexture\" \"debug/debugblue\" }";
+        source1ios::SourceTexture terrainTexture;
+        check(source1ios::sourceDecodeUITexture("terrain_test",terrainTexture)&&terrainTexture.width==64,"Terrain shader base texture rejected");
+        auto* large=CreateVTFTexture();check(large&&large->Init(4096,4096,1,IMAGE_FORMAT_DXT1,0,1),"4K test VTF initialization failed");
+        CUtlBuffer largeBytes;check(large->Serialize(largeBytes),"4K mip VTF serialization failed");DestroyVTFTexture(large);
+        {std::ofstream out(gameMaterials/"large_mip.vtf",std::ios::binary);out.write(static_cast<const char*>(largeBytes.Base()),largeBytes.TellPut());}
+        source1ios::SourceTexture largeTexture;
+        check(source1ios::sourceDecodeUITexture("large_mip",largeTexture)&&largeTexture.width==2048&&largeTexture.height==2048&&largeTexture.pixels.size()==2048*2048*4,"4K mip texture did not decode with bounded dimensions");
 
         const auto bspTexture=host.texture();const auto bspTextureRevision=host.textureRevision();
         check(bspTexture.width==128&&bspTexture.height==64&&bspTexture.pixels.size()==128*64*4,"BSP material atlas missing");
@@ -317,6 +331,14 @@ int main() {
         const unsigned char compressedNames[]={76,90,77,65,34,0,0,0,33,0,0,0,93,0,0,1,0,0,50,25,72,110,4,71,75,143,54,22,99,82,67,204,200,57,88,183,107,100,195,203,141,72,114,70,255,255,171,164,0,0};
         std::ifstream materialSource(maps/"imported.bsp",std::ios::binary);bsp.assign(std::istreambuf_iterator<char>(materialSource),{});
         const auto originalMaterials=bsp;
+        uint32_t toolInfoOffset=0;std::memcpy(&toolInfoOffset,bsp.data()+8+6*16,4);
+        // texinfo flags at byte 64: three distinct source surface masks.
+        for(const uint32_t mask:{uint32_t(4),uint32_t(128),uint32_t(2)}){
+            bsp=originalMaterials;put32(toolInfoOffset+64,mask);writeBsp("tool-surfaces.bsp");
+            check(host.executeSource("source_bsp_load maps/tool-surfaces.bsp"),"Tool-mask map rejected");
+            check(host.vertices(1).size()<imported.size(),"Sky or nodraw tool surfaces rendered as walls");
+        }
+        bsp=originalMaterials;writeBsp("restored-surfaces.bsp");check(host.executeSource("source_bsp_load maps/restored-surfaces.bsp")&&host.vertices(1).size()==imported.size(),"Tool-mask filtering damaged ordinary faces");
         uint32_t facesOffset=0;std::memcpy(&facesOffset,bsp.data()+8+7*16,4);
         // Source dface_t.lightofs is byte 20. Rejected lighting must retain
         // the last valid CPU scene and both GPU upload inputs.

@@ -308,7 +308,7 @@ fragment float4 fragmentMain(Output in [[stage_in]], texture2d<float> texture [[
     }
     UIButton *perspective=[UIButton buttonWithType:UIButtonTypeSystem];perspective.frame=CGRectMake(self.view.safeAreaLayoutGuide.layoutFrame.size.width/2,8,44,36);[perspective setTitle:_thirdPerson?@"1P":@"3P" forState:UIControlStateNormal];[perspective addTarget:self action:@selector(togglePerspective:) forControlEvents:UIControlEventTouchUpInside];[self.gameButtons addObject:perspective];[self.view addSubview:perspective];
     for(UILabel *label in self.hudPanels)[label removeFromSuperview];self.hudPanels=[NSMutableArray array];
-    for(const auto& panel:_mobile.hud){UILabel *label=[[UILabel alloc] init];label.textColor=UIColor.whiteColor;label.backgroundColor=[UIColor colorWithWhite:0 alpha:96./255.];label.textAlignment=NSTextAlignmentCenter;[self.hudPanels addObject:label];[self.view addSubview:label];}
+    for(const auto& panel:_mobile.hud){UILabel *label=[[UILabel alloc] init];label.textColor=UIColor.whiteColor;label.backgroundColor=[UIColor colorWithWhite:0 alpha:96./255.];label.textAlignment=NSTextAlignmentCenter;label.adjustsFontSizeToFitWidth=YES;label.minimumScaleFactor=.45;label.lineBreakMode=NSLineBreakByClipping;[self.hudPanels addObject:label];[self.view addSubview:label];}
     self.hud.hidden=self.hudPanels.count>0;[self.view setNeedsLayout];
 }
 - (void)editTouchPosition:(UIPanGestureRecognizer *)gesture {

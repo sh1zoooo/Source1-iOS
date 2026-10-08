@@ -214,6 +214,14 @@ bool SourceFiles::selfTest() {
     passed &= fs->FileExists("roundtrip.txt", "PORT_TEST")
         && !fs->FileExists("roundtrip.txt", "GAME")
         && !fs->FileExists("missing-port-file.bin", "PORT_TEST");
+    // Run on the Apple binary too: Windows-cache icon folders have mixed
+    // case, but Source normalizes requested relative paths to lowercase.
+    std::error_code caseError;const auto caseDirectory=root_/"selftest/RBTouch";
+    std::filesystem::create_directories(caseDirectory,caseError);
+    {std::ofstream native(caseDirectory/"Shoot.txt",std::ios::binary);native.write(payload,length);passed &= bool(native);}
+    file=fs->Open("rbtouch/shoot.txt","rb","PORT_TEST");
+    passed &= !caseError&&file&&fs->Read(bytes,length,file)==length&&!std::memcmp(bytes,payload,length);
+    if(file)fs->Close(file);
     report("search paths", passed); all &= passed;
     auto* kv = new KeyValues("SourcePort");
     kv->SetString("platform", "ios"); kv->SetInt("bits", 64);
