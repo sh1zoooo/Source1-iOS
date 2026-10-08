@@ -36,7 +36,7 @@
 namespace {
 constexpr int idStudioHeader=(('T'<<24)+('S'<<16)+('D'<<8)+'I');
 constexpr size_t maximumFile = 128 * 1024 * 1024;
-constexpr size_t maximumVertices = 1500000;
+constexpr size_t maximumVertices = 3000000; // 192 MB maximum expanded GPU vertex payload.
 bool readBounded(const char* path,const char* pathID,size_t limit,std::vector<std::uint8_t>& bytes){
     auto file=g_pFullFileSystem->Open(path,"rb",pathID);if(!file)return false;const unsigned size=g_pFullFileSystem->Size(file);bool ok=size>0&&size<=limit;if(ok){bytes.resize(size);ok=g_pFullFileSystem->Read(bytes.data(),size,file)==int(size);}g_pFullFileSystem->Close(file);if(!ok)bytes.clear();return ok;
 }
@@ -110,7 +110,7 @@ bool vmtBaseTexture(std::string name,std::string& base){
         // albedo path; blend weights, normals and specular need separate passes.
         if(V_stricmp(shader.c_str(),"VertexLitGeneric")&&V_stricmp(shader.c_str(),"UnlitGeneric")&&V_stricmp(shader.c_str(),"LightmappedGeneric")
             &&V_stricmp(shader.c_str(),"WorldVertexTransition")&&V_stricmp(shader.c_str(),"Lightmapped_4WayBlend")
-            &&V_stricmp(shader.c_str(),"LightmappedReflective")&&V_stricmp(shader.c_str(),"Cable")&&V_stricmp(shader.c_str(),"UnlitTwoTexture")){
+            &&V_stricmp(shader.c_str(),"LightmappedReflective")&&V_stricmp(shader.c_str(),"Sky")&&V_stricmp(shader.c_str(),"sky_dx9")&&V_stricmp(shader.c_str(),"Cable")&&V_stricmp(shader.c_str(),"UnlitTwoTexture")){
             Warning("Source material unsupported shader: %s (%s)\n",path.c_str(),shader.c_str());return false;
         }
         if(hasInsert){base=insert;exists=true;}if(hasReplace&&exists)base=replace;
@@ -526,7 +526,7 @@ struct SourceMap::Impl {
     bool gameView=false,viewModel=false,gameModelReady=false;int gamePoseTick=-1;
     float gameFov=90;bool zoomed=false;Vector lastFacing=Vector(1,0,0);bool facingReady=false;float bobTime=0,lastBobTime=0,bobSpeed=0;
     StudioMesh studio;double poseTime=0;unsigned animation=0;bool animationPlaying=false;
-    std::vector<MeshPoint> mesh,modelMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
+    std::vector<MeshPoint> mesh,modelMesh,skyMesh;Collision collision, fixtureCollision;std::unique_ptr<PhysicsScene> scene;
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,entityModelInstances=0,entityModelCandidates=0;
     std::vector<PropCollision> propCollisions;
     std::vector<std::unique_ptr<PortCDispCollTree>> displacementCollision;
@@ -765,8 +765,8 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     if(!entityBytes.empty()&&g_pFullFileSystem->Read(entityBytes.data(),entityBytes.size(),file)!=int(entityBytes.size())){g_pFullFileSystem->Close(file);return false;}
     if(entityLump.uncompressedSize){std::vector<unsigned char> expanded;const char* reason="";
         if(!decodeLump(entityBytes,entitySize,expanded,reason)){g_pFullFileSystem->Close(file);return false;}entityBytes=std::move(expanded);}
-    std::vector<PreviewSpawn> spawns;std::vector<PreviewProp> entityModels;
-    if(!parsePreviewSpawns(std::string(entityBytes.begin(),entityBytes.end()),spawns,&entityModels)){g_pFullFileSystem->Close(file);Warning("Source BSP: malformed entity text, player spawn or model\n");return false;}
+    std::vector<PreviewSpawn> spawns;std::vector<PreviewProp> entityModels;std::string skyName;
+    if(!parsePreviewSpawns(std::string(entityBytes.begin(),entityBytes.end()),spawns,&entityModels,&skyName)){g_pFullFileSystem->Close(file);Warning("Source BSP: malformed entity text, player spawn or model\n");return false;}
     std::vector<PreviewProp> props;if(!readProps(file,h,props)){g_pFullFileSystem->Close(file);Warning("Source BSP: invalid or unsupported static prop lump\n");return false;}
     const size_t staticPropCount=props.size();props.insert(props.end(),entityModels.begin(),entityModels.end());
     g_pFullFileSystem->Close(file);
@@ -823,6 +823,26 @@ bool SourceMap::load(const char* filename,const char* pathID) {
         }
     }
     if(mesh.empty())return false;
+    std::vector<MeshPoint> skyMesh;
+    if(!skyName.empty()&&stagedMaterialCount<=506){
+        // Match Source MakeSkyVec axes and skytexorder; a direction cube is
+        // camera-relative and writes far depth, never collision geometry.
+        const char* suffixes[]={"rt","lf","bk","ft","up","dn"};
+        const int axes[6][3]={{3,-1,2},{-3,1,2},{1,3,2},{-1,-3,2},{-2,-1,3},{2,-1,-3}};
+        unsigned imported=0;
+        for(unsigned face=0;face<6;++face){SourceTexture image;const std::string name="skybox/"+skyName+suffixes[face];
+            if(decodeMaterial({name},image,"skybox")||decodeTexture(name,image))++imported;
+            else{image={64,64,std::vector<std::uint8_t>(64*64*4)};
+                for(unsigned y=0;y<64;++y)for(unsigned x=0;x<64;++x){float horizon=face==4?0.f:face==5?1.f:float(y)/63;auto* p=image.pixels.data()+(y*64+x)*4;
+                    p[0]=70+100*horizon;p[1]=125+75*horizon;p[2]=190+40*horizon;p[3]=255;}}
+            const unsigned slot=appendAtlasTile(stagedMapTexture,stagedMaterialCount,image);if(slot==std::numeric_limits<unsigned>::max())return false;
+            const float st[4][2]={{-1,-1},{-1,1},{1,1},{1,-1}};
+            for(unsigned corner:{0u,1u,2u,0u,2u,3u}){const float b[3]={st[corner][0],st[corner][1],1};Vector direction;
+                for(unsigned i=0;i<3;++i){const int axis=axes[face][i];direction[i]=axis<0?-b[-axis-1]:b[axis-1];}
+                skyMesh.push_back({direction,{1,1,1},{std::clamp((st[corner][0]+1)*.5f,1.f/512,511.f/512),std::clamp((1-st[corner][1])*.5f,1.f/512,511.f/512)},slot});}
+        }
+        Msg("Source skybox ready: %s; %u/6 imported faces, camera-relative far depth\n",skyName.c_str(),imported);
+    }
     std::vector<MeshPoint> propsMesh;unsigned propInstances=0,skipped=0,collisionSkipped=0;std::vector<PropCollision> propCollisions;
     struct CachedProp {std::string name;StudioMesh mesh;PhyGeometry phy;std::vector<std::pair<float,Collision>> shapes;std::vector<unsigned> slots;bool valid=false,phyRead=false;};std::vector<CachedProp> cached;
     size_t cachedVertices=0,modelBytes=0,phyPoints=0,propIndex=0;unsigned phyInstances=0,entityInstances=0;
@@ -890,7 +910,7 @@ bool SourceMap::load(const char* filename,const char* pathID) {
     for(auto& vertex:mesh)vertex.lightmap[1]*=1024.f/lightmaps.texture.height;
     impl_->lightmapTexture=std::move(lightmaps.texture);impl_->lightmappedFaces=lightmaps.faces;impl_->hdrLighting=selectedLighting.hdr;
     Msg("Source BSP %s lightmap atlas ready: %u faces, %ux%u RGBA\n",impl_->hdrLighting?"HDR preview":"LDR",impl_->lightmappedFaces,impl_->lightmapTexture.width,impl_->lightmapTexture.height);
-    impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
+    impl_->skyMesh=std::move(skyMesh);impl_->mesh=std::move(mesh);impl_->collision=std::move(collision);impl_->texture=std::move(stagedMapTexture);impl_->mapMaterialCount=stagedMaterialCount;++impl_->textureRevision;impl_->builtinActive=impl_->builtin==filename;resetCamera();
     Msg("Source BSP polygons loaded: %zu triangles from %s\n",impl_->mesh.size()/3,filename);return true;
 }
 void SourceMap::resetCamera(){if(impl_){impl_->camera=impl_->spawnCamera;impl_->angles=impl_->spawnAngles;}}
@@ -982,13 +1002,15 @@ void SourceMap::frame(float seconds){if(!impl_||seconds<=0||!std::isfinite(secon
         if(sampleStudioAnimation(impl_->studio,impl_->animation,impl_->poseTime,pose)&&skinStudioModel(impl_->studio,pose.rotations,posed,pose.positions)){for(size_t i=0;i<posed.size();++i){impl_->modelMesh[i].position=posed[i].position+Vector(0,64,0);const auto& n=posed[i].normal;const float light=.35f+.65f*std::abs(n.z*.8f+n.x*.3f+n.y*.2f);for(float& channel:impl_->modelMesh[i].color)channel=light;}}}
 }
 std::vector<SourceVertex> SourceMap::vertices(float aspect) const {
-    std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
+    std::vector<SourceVertex> out;if(!impl_)return out;out.reserve(impl_->mesh.size()+impl_->modelMesh.size()+impl_->skyMesh.size());Vector f,r,u;AngleVectors(impl_->angles,&f,&r,&u);
     const float a=std::max(aspect,.01f),scale=impl_->gameView&&impl_->viewModel?1.3f/std::tan(impl_->gameFov*3.14159265358979323846f/360):1.3f,near=1,far=8192;
-    auto append=[&](const MeshPoint& v,bool model=false){Vector relative=v.position-impl_->camera;float depth=DotProduct(relative,f);
+    auto append=[&](const MeshPoint& v,bool model=false,bool sky=false){Vector relative=sky?v.position:v.position-impl_->camera;float depth=DotProduct(relative,f);
         const bool weapon=model&&impl_->viewModel;
         float x=DotProduct(relative,r)*scale/a,y=DotProduct(relative,u)*scale,z=depth*far/(far-near)-near*far/(far-near);
+        if(sky)z=depth*.99999f;
         if(weapon){depth=v.position.x;x=-v.position.y*1.96f/a;y=v.position.z*1.96f;z=.001f*depth-.0005f;}
         out.push_back({{x,y,z,depth},{v.color[0],v.color[1],v.color[2],1.f},{v.uv[0],v.uv[1]},{model?-float(v.material+1):float(v.material),float(model?impl_->modelMaterialCount:impl_->mapMaterialCount)},{v.lightmap[0],v.lightmap[1],v.lightmap[2],0}});};
+    for(const auto& v:impl_->skyMesh)append(v,false,true);
     for(const auto& v:impl_->mesh)append(v);
     for(const auto& v:impl_->propsMesh)append(v);
     if(!impl_->gameView||(impl_->gameModelReady&&!impl_->zoomed))for(const auto& v:impl_->modelMesh)append(v,true);

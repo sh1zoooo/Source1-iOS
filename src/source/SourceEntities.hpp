@@ -10,7 +10,7 @@ namespace source1ios {
 struct PreviewSpawn { std::array<float,3> origin{}, angles{}; std::string classname; };
 // Data-only BSP entity reader. No entity factories, outputs or configs run.
 inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& output,
-                               std::vector<PreviewProp>* modelOutput=nullptr) {
+                               std::vector<PreviewProp>* modelOutput=nullptr,std::string* skyOutput=nullptr) {
     if(text.size()>1024*1024)return false;
     if(!text.empty()&&text.back()=='\0')text.pop_back();
     if(text.find('\0')!=std::string::npos)return false;
@@ -41,19 +41,23 @@ inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& outpu
             if(i+1<count&&(!*p||static_cast<unsigned char>(*p)>32))return false;
         }while(*p&&static_cast<unsigned char>(*p)<=32)++p;return !*p;
     };
-    std::vector<PreviewSpawn> staged;std::vector<PreviewProp> models;std::string key,value;unsigned entities=0;
+    std::vector<PreviewSpawn> staged;std::vector<PreviewProp> models;std::string key,value;unsigned entities=0;std::string stagedSky;
     while(token(key)){
         if(key!="{"||++entities>8192)return false;
-        std::string classname,origin,angles,angle,model,skin,scale,body;unsigned pairs=0;bool closed=false;
+        std::string classname,origin,angles,angle,model,skin,scale,body,sky;unsigned pairs=0;bool closed=false;
         while(token(key)){
             if(key=="}"){closed=true;break;}
             if(key=="{"||++pairs>256||!token(value)||value=="{"||value=="}")return false;
             if(key=="classname")classname=value;else if(key=="origin")origin=value;
             else if(key=="angles")angles=value;else if(key=="angle")angle=value;
-            else if(key=="model")model=value;else if(key=="skin")skin=value;
+            else if(key=="skyname")sky=value;else if(key=="model")model=value;else if(key=="skin")skin=value;
             else if(key=="modelscale")scale=value;else if(key=="body")body=value;
         }
         if(!closed)return false;
+        if(classname=="worldspawn"&&!sky.empty()){
+            if(sky.size()>128||sky.find("..")!=std::string::npos||sky.find_first_not_of("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")!=std::string::npos)return false;
+            stagedSky=sky;
+        }
         if(classname=="prop_dynamic"||classname=="prop_dynamic_override"){
             PreviewProp prop;prop.model=model;
             if(model.size()<11||model.size()>239||model.compare(0,7,"models/")||model.substr(model.size()-4)!=".mdl"
@@ -82,6 +86,6 @@ inline bool parsePreviewSpawns(std::string text,std::vector<PreviewSpawn>& outpu
         if(staged.size()>=512)return false;staged.push_back(std::move(spawn));
     }
     if(failed)return false;
-    output=std::move(staged);if(modelOutput)*modelOutput=std::move(models);return true;
+    output=std::move(staged);if(modelOutput)*modelOutput=std::move(models);if(skyOutput)*skyOutput=std::move(stagedSky);return true;
 }
 }
