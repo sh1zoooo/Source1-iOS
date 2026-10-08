@@ -28,8 +28,10 @@ CS:S and checks every translation unit exists. The checked-in JSON must match.
 | clientmod_vgui_controls | 77 | Original panels, labels, buttons, layout, property dialogs |
 | clientmod_matsys_controls | 21 | Material/model/animation panels |
 | clientmod_vgui2 | 20 | Original VGUI panel, input, localization, scheme and system implementations |
+| clientmod_vgui_surfacelib | 5 | Original font manager, bitmap fonts and FreeType font rendering |
+| clientmod_vguimatsurface | 10 | Original material-backed VGUI drawing, texture dictionary, input and font atlas |
 
-Total: 769 source objects. iOS adds one UIKit platform-service object.
+Total: 784 source objects. iOS adds one UIKit platform-service object.
 `memoverride.cpp` is excluded where upstream lists it because the monolithic
 host already owns allocation. GameUI additionally compiles upstream
 `ModMenu/ClientModMainMenu.cpp` and `ClientModMenuWindow.cpp`, omitted from the
@@ -51,6 +53,8 @@ copies them into the build directory and applies explicit compatibility changes:
    declaration guard. Local achievement code remains selected.
 4. VGUI uses its existing SDL clipboard code on iOS instead of Carbon.
    Opening URLs uses `UIApplication` on the main queue instead of desktop `fork`.
+   The original file dialog's Open in Explorer action opens an iOS document
+   browser at the requested directory, rather than invoking macOS `system`.
 5. An absent, unused `ClientModInfo.h` include is removed. No invented replacement
    class or behavior is supplied.
 6. ClientMod's original `IMatSystemSurface` extension, `DrawFilledPolygon`, is
@@ -69,6 +73,10 @@ cmake --build build-clientmod --target clientmod_compile_check --parallel 4
 python3 scripts/verify_clientmod_archives.py build-clientmod
 ```
 
+Native compilation and object coverage passed for all seven archives. The first
+iPhone ARM64 build identified the unsupported desktop Open in Explorer call;
+the platform adaptation is included and needs repeat ARM64 validation.
+
 The verifier checks every source object by filename and multiplicity, not just
 archive existence or size. The separate ClientMod workflow repeats this on Linux
 and builds/verifies the archives for iPhone ARM64. Its downloadable artifact is
@@ -77,7 +85,7 @@ labelled **compilation**, not IPA or playable ClientMod.
 The current IPA still uses the dedicated CS:S host, custom Metal preview and
 replacement UIKit UI. To activate the original modules, remaining work includes
 the non-dedicated graphical engine and client loop, real shader/material backend,
-SDL iOS window/input integration, original VGUI material surface/fonts, module
+SDL iOS window/input integration, activating the original VGUI surface/fonts, module
 factories, audio and runtime dependency wiring. Device checks must then cover
 actual imported maps, translucency, viewmodel animation, grenade effects,
 dropped-weapon collision and frame times. Archive coverage cannot validate those

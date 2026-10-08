@@ -16,15 +16,17 @@ def discover(platform="linux"):
     actual = subprocess.check_output(["git", "-C", str(SOURCE), "rev-parse", "HEAD"], text=True).strip()
     if actual != PIN:
         raise RuntimeError(f"ClientMod revision mismatch: {actual}")
-    sys.modules["waflib"] = SimpleNamespace(Utils=SimpleNamespace())
+    sys.modules["waflib"] = SimpleNamespace(Utils=SimpleNamespace(), Configure=SimpleNamespace())
     spec = importlib.util.spec_from_file_location("vpc_parser", SOURCE / "scripts/waifulib/vpc_parser.py")
     vpc = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(vpc)
     sys.modules["vpc_parser"] = vpc
     result = {"upstream": PIN, "modules": {}}
-    for folder in ("vgui2/vgui_controls", "vgui2/matsys_controls", "vgui2/src", "gameui", "game/client"):
+    for folder in ("vgui2/vgui_controls", "vgui2/matsys_controls", "vgui2/src", "gameui", "game/client",
+                   "vgui2/vgui_surfacelib", "vguimatsurface"):
         env = SimpleNamespace(DEST_OS=platform, GAMES="cstrike", PREFIX="", LIBDIR="", MSVC_SUBSYSTEM="",
-                              INCLUDES_SDL2=[], DEFINES=["POSIX", "OSX" if platform == "darwin" else "LINUX", "PLATFORM_64BITS", "DISABLE_STEAM", "USE_SDL"],
+                              INCLUDES_SDL2=[], INCLUDES_FC=[], INCLUDES_FT2=[],
+                              DEFINES=["POSIX", "OSX" if platform == "darwin" else "LINUX", "PLATFORM_64BITS", "DISABLE_STEAM", "USE_SDL"],
                               SUBPROJECT_PATH=[str(SOURCE / folder)])
         captured = []
         bld = SimpleNamespace(env=env, stlib=lambda **kw: captured.append(kw),

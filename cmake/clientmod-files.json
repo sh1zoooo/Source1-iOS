@@ -899,6 +899,61 @@
         "RT",
         "ZLIB"
       ]
+    },
+    "vgui_surfacelib": {
+      "source": [
+        "vgui2/vgui_surfacelib/BitmapFont.cpp",
+        "vgui2/vgui_surfacelib/FontAmalgam.cpp",
+        "vgui2/vgui_surfacelib/FontManager.cpp",
+        "vgui2/vgui_surfacelib/FontEffects.cpp",
+        "vgui2/vgui_surfacelib/linuxfont.cpp"
+      ],
+      "includes": [
+        "vgui2/vgui_surfacelib",
+        "public",
+        "public/tier0",
+        "public/tier1",
+        "common"
+      ],
+      "defines": [],
+      "dependencies": []
+    },
+    "vguimatsurface": {
+      "source": [
+        "vguimatsurface/Clip2D.cpp",
+        "vguimatsurface/Cursor.cpp",
+        "public/filesystem_helpers.cpp",
+        "vguimatsurface/FontTextureCache.cpp",
+        "vguimatsurface/Input.cpp",
+        "vguimatsurface/MatSystemSurface.cpp",
+        "vguimatsurface/asanstubs.cpp",
+        "vguimatsurface/TextureDictionary.cpp",
+        "vgui2/src/vgui_key_translation.cpp",
+        "public/vgui_controls/vgui_controls.cpp",
+        "public/tier0/memoverride.cpp"
+      ],
+      "includes": [
+        "vguimatsurface",
+        "public",
+        "public/tier0",
+        "public/tier1",
+        "common"
+      ],
+      "defines": [],
+      "dependencies": [
+        "bitmap",
+        "mathlib",
+        "tier0",
+        "vgui_controls",
+        "tier1",
+        "vstdlib",
+        "tier2",
+        "tier3",
+        "vgui_surfacelib",
+        "FT2",
+        "FC",
+        "SDL2"
+      ]
     }
   }
 }

@@ -21,13 +21,14 @@ lock = (args.output / ".prepare.lock").open("w")
 fcntl.flock(lock, fcntl.LOCK_EX)
 paths = ["gameui/ModMenu/ClientModMenuWindow.cpp", "game/client/cdll_client_int.cpp",
          "game/shared/gamerules_register.h", "vgui2/src/system_posix.cpp",
-         "game/shared/cstrike/achievements_cs.cpp"]
+         "game/shared/cstrike/achievements_cs.cpp",
+         "vgui2/vgui_controls/FileOpenDialog.cpp"]
 previous = {}
 for path in paths:
     file = args.output / path
     if file.exists():
         previous[path] = (file.read_bytes(), file.stat().st_mtime_ns)
-for folder in ("game", "gameui", "vgui2", "common", "public"):
+for folder in ("game", "gameui", "vgui2", "vguimatsurface", "common", "public"):
     shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
 # ClientMod extends this interface with its original filled radar polygon method.
 # Preserve that interface for the paired ClientMod surface implementation.
@@ -79,6 +80,8 @@ replace(paths[3], '\tpid_t pid = fork();',
         '#ifdef SOURCE_IOS\n\tClientModIOSOpenURL(file);\n#else\n\tpid_t pid = fork();')
 replace(paths[3], '\t\tAssert( !"execlp failed" );\n\t}\n}',
         '\t\tAssert( !"execlp failed" );\n\t}\n#endif\n}')
+replace(paths[5], '#elif defined( OSX )',
+        '#elif defined(SOURCE_IOS)\n\tvgui::system()->ShellExecute("open", pCurrentDirectory);\n#elif defined( OSX )')
 
 # Reconfiguration must not recompile unchanged patched translation units.
 for path, (data, modified) in previous.items():
