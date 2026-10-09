@@ -19,7 +19,12 @@ void buyNodes(KeyValues* node,MobileResources& out,const char* category,std::set
   if(command.ArgC()==2&&!strcmp(command[0],"buy")){
    std::string alias=command[1];int price=0,restricted=0;
    if(alias.find_first_not_of("abcdefghijklmnopqrstuvwxyz0123456789_")==std::string::npos&&gameBuyInfo(alias.c_str(),price,restricted)&&(restricted==0||restricted==team)&&seen.insert(alias).second){
-    std::string label=child->GetString("labelText",alias.c_str());if(label.rfind("#Cstrike_",0)==0)label=label.substr(9);out.buy.push_back({alias,label,category,price});
+    std::string label=child->GetString("labelText",alias.c_str());
+    // ClientMod's radial menu stores the weapon name beside its price button.
+    std::string key=child->GetName();const auto suffix=key.rfind("_price");
+    if(suffix!=std::string::npos&&suffix+6==key.size())
+     if(auto* name=node->FindKey((key.substr(0,suffix)+"_name").c_str()))label=name->GetString("labelText",alias.c_str());
+    if(label.rfind("#Cstrike_",0)==0)label=label.substr(9);out.buy.push_back({alias,label,category,price});
    }
   }
   buyNodes(child,out,category,seen,team,depth+1);
@@ -51,10 +56,12 @@ MobileResources loadMobileResources(int team){
  }
  for(const char* name:{"HudHealth","HudArmor","HudAccount","HudAmmo"})if(std::none_of(out.hud.begin(),out.hud.end(),[&](const auto& panel){return panel.name==name;}))out.hud.push_back({name,"0","r40",150,36});
  const bool ct=team==3;std::set<std::string> seen;
- for(const auto& entry:{std::pair<const char*,std::string>{"Pistols",ct?"buypistols_ct":"buypistols_ter"},{"Rifles",ct?"buyrifles_ct":"buyrifles_ter"},{"SMG",ct?"buysubmachineguns_ct":"buysubmachineguns_ter"},{"Shotguns","buyshotguns"},{"Machine guns","buymachineguns"},{"Equipment",ct?"buyequipment_ct":"buyequipment_ter"}}){
+ for(const auto& entry:{std::pair<const char*,std::string>{"Pistols",ct?"buypistols_ct":"buypistols_ter"},{"Rifles",ct?"buyrifles_ct":"buyrifles_ter"},{"SMG",ct?"buysubmachineguns_ct":"buysubmachineguns_ter"},{"Heavy",ct?"buyheavy_ct":"buyheavy_ter"},{"Shotguns","buyshotguns"},{"Machine guns","buymachineguns"},{"Grenades",ct?"buygrenades_ct":"buygrenades_ter"},{"Equipment",ct?"buyequipment_ct":"buyequipment_ter"}}){
   const auto path="resource/ui/"+entry.second+".res";std::string res;
-  if(!text(path.c_str(),res)||res.find("#include")!=std::string::npos||res.find("#base")!=std::string::npos)continue;
-  auto* kv=new KeyValues("buy");if(kv->LoadFromBuffer(path.c_str(),res.c_str()))buyNodes(kv,out,entry.first,seen,team);kv->deleteThis();
+  if(!text(path.c_str(),res))continue;
+  auto* kv=new KeyValues("buy");
+  if(kv->LoadFromBuffer(path.c_str(),res.c_str(),g_pFullFileSystem,"GAME"))buyNodes(kv,out,entry.first,seen,team);
+  kv->deleteThis();
  }
  return out;
 }

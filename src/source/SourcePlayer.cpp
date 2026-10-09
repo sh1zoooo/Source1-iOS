@@ -32,6 +32,12 @@ bool SourcePlayer::start(const std::string& map) {
     auto factory=Sys_GetFactoryThis();
     auto* bots=static_cast<IBotManager*>(factory(INTERFACEVERSION_PLAYERBOTMANAGER,nullptr));
     if(!bots){error_="Original player-control interface missing";return false;}
+    // Imported configs and console experiments must not leave offline practice
+    // running with a fixed frame duration or an accelerated simulation clock.
+    // Use float setters: SetValue(int 0) leaves fractional host_framerate values
+    // untouched when ConVar's cached integer value already equals zero.
+    if(auto* var=g_pCVar->FindVar("host_framerate"))var->SetValue(0.0f);
+    if(auto* var=g_pCVar->FindVar("host_timescale"))var->SetValue(1.0f);
     for(const auto& setting:{std::pair<const char*,int>{"mp_freezetime",0},{"mp_ignore_round_win_conditions",1},{"mp_autoteambalance",0},{"mp_limitteams",0},{"mp_startmoney",16000},{"mp_buytime",99},{"bot_quota",0},{"sv_hibernate_when_empty",0}})
         if(auto* var=g_pCVar->FindVar(setting.first))var->SetValue(setting.second);
     auto name=map;ownsLevel_=true;
@@ -39,6 +45,8 @@ bool SourcePlayer::start(const std::string& map) {
     // UIKit owns offline practice commands; Android menu/autoexec commands must
     // not change maps underneath the controlled player and its camera.
     Cbuf_Init();
+    if(auto* var=g_pCVar->FindVar("host_framerate"))var->SetValue(0.0f);
+    if(auto* var=g_pCVar->FindVar("host_timescale"))var->SetValue(1.0f);
     entity_=bots->CreateBot("iOS local player");
     auto* opponent=bots->CreateBot("iOS practice opponent");opponent_=opponent;
     if(!entity_||!opponent||!gamePlayerSpawn(entity_,2)||!gamePlayerSpawn(opponent,3)){

@@ -1,0 +1,156 @@
+{
+  "sdk_revision": "ed8209cc35c61fbd8ddff8480962a01c981eef2f",
+  "clientmod_revision": "5f8bea18c72467601d7919ba86d57b06e5e2d677",
+  "modules": {
+    "game/client": {
+      "unchanged_files": 1050,
+      "changed_files": [
+        "c_baseanimating.cpp",
+        "c_baseplayer.h",
+        "cdll_client_int.cpp",
+        "cstrike/VGUI/cstrikespectatorgui.cpp",
+        "cstrike/VGUI/cstrikespectatorgui.h",
+        "cstrike/c_cs_player.cpp",
+        "cstrike/c_cs_player.h",
+        "cstrike/clientmode_csnormal.cpp",
+        "cstrike/cs_hud_health.cpp",
+        "cstrike/cs_hud_scope.cpp",
+        "cstrike/cs_view_scene.cpp",
+        "cstrike/hud_armor.cpp",
+        "cstrike/hud_radar.cpp",
+        "cstrike/hud_radar.h",
+        "game_controls/MapOverview.cpp",
+        "game_controls/mapoverview.h",
+        "game_controls/teammenu.cpp",
+        "hud.h",
+        "touch.cpp",
+        "touch.h",
+        "vgui_netgraphpanel.cpp"
+      ],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    },
+    "game/shared": {
+      "unchanged_files": 548,
+      "changed_files": [
+        "baseviewmodel_shared.cpp",
+        "baseviewmodel_shared.h",
+        "cstrike/cs_gamemovement.cpp",
+        "cstrike/cs_gamerules.cpp",
+        "cstrike/cs_gamerules.h",
+        "cstrike/weapon_awp.cpp",
+        "cstrike/weapon_csbase.cpp",
+        "cstrike/weapon_csbase.h",
+        "cstrike/weapon_csbasegun.cpp",
+        "cstrike/weapon_csbasegun.h",
+        "cstrike/weapon_g3sg1.cpp",
+        "cstrike/weapon_scout.cpp",
+        "cstrike/weapon_sg550.cpp",
+        "eventlist.cpp",
+        "eventlist.h",
+        "gamerules.h",
+        "multiplay_gamerules.cpp",
+        "multiplay_gamerules.h",
+        "predicted_viewmodel.cpp",
+        "predicted_viewmodel.h",
+        "singleplay_gamerules.cpp",
+        "singleplay_gamerules.h",
+        "teamplay_gamerules.cpp",
+        "teamplay_gamerules.h",
+        "voice_gamemgr.cpp"
+      ],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    },
+    "gameui": {
+      "unchanged_files": 148,
+      "changed_files": [
+        "GameUI.vpc",
+        "OptionsSubVideo.cpp"
+      ],
+      "clientmod_only_files": [
+        "ModMenu/ClientModMainMenu.cpp",
+        "ModMenu/ClientModMainMenu.h",
+        "ModMenu/ClientModMenuWindow.cpp",
+        "ModMenu/ClientModMenuWindow.h"
+      ],
+      "sdk_only_files": []
+    },
+    "vgui2": {
+      "unchanged_files": 198,
+      "changed_files": [
+        "src/system_posix.cpp",
+        "vgui_controls/FileOpenDialog.cpp"
+      ],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    },
+    "vguimatsurface": {
+      "unchanged_files": 16,
+      "changed_files": [
+        "Input.cpp",
+        "MatSystemSurface.cpp",
+        "MatSystemSurface.h"
+      ],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    },
+    "materialsystem": {
+      "unchanged_files": 1667,
+      "changed_files": [
+        "CColorCorrection.cpp"
+      ],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    },
+    "engine": {
+      "unchanged_files": 531,
+      "changed_files": [
+        "NetworkStringTableItem.cpp",
+        "baseclient.cpp",
+        "cdll_engine_int.cpp",
+        "cl_demo.cpp",
+        "cl_null.cpp",
+        "cmodel.cpp",
+        "cmodel_private.h",
+        "common.cpp",
+        "console.cpp",
+        "downloadthread.cpp",
+        "host.cpp",
+        "l_studio.cpp",
+        "masterserver.cpp",
+        "pure_server.cpp",
+        "spatialpartition.cpp",
+        "staticpropmgr.cpp",
+        "sv_main.cpp",
+        "sys_dll.cpp",
+        "sys_mainwind.cpp",
+        "vengineserver_impl.cpp",
+        "vgui_drawtreepanel.cpp",
+        "wscript"
+      ],
+      "clientmod_only_files": [
+        "sys_linuxwind.cpp"
+      ],
+      "sdk_only_files": [
+        "sys_stubwind.cpp"
+      ]
+    },
+    "inputsystem": {
+      "unchanged_files": 9,
+      "changed_files": [
+        "inputsystem.cpp",
+        "inputsystem.h",
+        "touch_sdl.cpp"
+      ],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    },
+    "togles": {
+      "unchanged_files": 23,
+      "changed_files": [],
+      "clientmod_only_files": [],
+      "sdk_only_files": []
+    }
+  }
+}

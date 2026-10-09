@@ -23,6 +23,7 @@ fcntl.flock(prepare_lock, fcntl.LOCK_EX)
 # unchanged. Remember previously prepared files before copying original input.
 patched_paths = set(re.findall(r'replace(?:_all)?\("([^"\n]+)"', Path(__file__).read_text()))
 patched_paths.update(("public/dispcoll_preview.h", "public/dispcoll_preview.cpp",
+                      "public/appframework/ilaunchermgr.h",
                       "tier2/tier2.cpp", "tier3/tier3.cpp",
                       "game/shared/gamemovement.cpp", "game/shared/weapon_parse.cpp",
                       "game/shared/props_shared.cpp", "game/shared/mapentities_shared.cpp"))
@@ -44,6 +45,26 @@ for name, pin in {
 args.output.mkdir(parents=True, exist_ok=True)
 for folder in ("public", "common", "tier0", "tier1", "mathlib", "vstdlib", "filesystem", "vpklib", "tier2", "appframework", "engine", "tier3", "bitmap", "utils/lzma/C", "utils/bzip2", "datacache", "studiorender", "vtf", "materialsystem", "vphysics", "ivp"):
     shutil.copytree(args.upstream / folder, args.output / folder, dirs_exist_ok=True)
+
+# SDL UIKit uses the same portable keyboard-event method as the SDL launcher.
+# Keep its declaration identical in every module sharing this interface.
+launcher_interface = args.output / "public/appframework/ilaunchermgr.h"
+launcher_interface.write_text(launcher_interface.read_text().replace(
+    "#if defined(LINUX) || defined(PLATFORM_BSD)",
+    "#if defined(LINUX) || defined(PLATFORM_BSD) || defined(SOURCE_IOS)"))
+module_loader = args.output / "tier1/interface.cpp"
+module_loader.write_text(module_loader.read_text().replace(
+    '\tHMODULE hDLL = NULL;\n\n\tif ( !Q_IsAbsolutePath( pModuleName ) )',
+    '''\tHMODULE hDLL = NULL;
+#ifdef SOURCE_IOS
+\t// Executable modules reside in the signed app bundle, separate from content.
+\tconst char *bundleModules = getenv("SOURCE_CLIENTMOD_LIBDIR");
+\tchar bundledModule[2048];
+\tif (bundleModules && foundLibraryWithPrefix(bundledModule, sizeof(bundledModule),
+\t\tbundleModules, V_UnqualifiedFileName(pModuleName)))
+\t\treturn reinterpret_cast<CSysModule *>(Sys_LoadLibrary(bundledModule, flags));
+#endif
+\n\tif ( !Q_IsAbsolutePath( pModuleName ) )'''))
 
 if args.cstrike:
     for folder in ("game", "particles", "dmxloader", "choreoobjects", "soundemittersystem", "scenefilecache", "utils/common"):

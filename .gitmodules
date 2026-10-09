@@ -1,3 +1,6 @@
 [submodule "third_party/source"]
 	path = third_party/source
 	url = https://github.com/nillerusr/source-engine.git
+[submodule "third_party/clientmod"]
+	path = third_party/clientmod
+	url = https://github.com/jeffcwj/clientmod-android.git
