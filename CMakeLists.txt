@@ -78,7 +78,8 @@ else()
       endforeach()
       foreach(entry "filesystem_stdio|VFileSystem022" "datacache|VDataCache003"
           "datacache|MDLCache004" "datacache|VStudioDataCache005"
-          "studiorender|VStudioRender025" "vphysics|VPhysics031")
+          "studiorender|VStudioRender025" "vphysics|VPhysics031"
+          "server|ServerGameDLL010" "soundemittersystem|VSoundEmitter002" "scenefilecache|SceneFileCache002")
         string(REPLACE "|" ";" parts "${entry}")
         list(GET parts 0 module)
         list(GET parts 1 interface)

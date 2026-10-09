@@ -16,7 +16,7 @@ lock = (a.output / ".prepare.lock").open("w")
 fcntl.flock(lock, fcntl.LOCK_EX)
 previous = {str(f.relative_to(a.output)): (f.read_bytes(), f.stat().st_mtime_ns)
             for f in a.output.rglob('*') if f.is_file()}
-for folder in ('engine', 'inputsystem', 'launcher', 'togles', 'video', 'datamodel', 'appframework', 'utils/bzip2', 'utils/common', 'filesystem', 'datacache', 'studiorender', 'vphysics'):
+for folder in ('engine', 'inputsystem', 'launcher', 'togles', 'video', 'datamodel', 'appframework', 'utils/bzip2', 'utils/common', 'filesystem', 'datacache', 'studiorender', 'vphysics', 'soundemittersystem', 'scenefilecache'):
     shutil.copytree(a.upstream / folder, a.output / folder, dirs_exist_ok=True)
 for folder in ('engine', 'materialsystem', 'common', 'public', 'filesystem', 'datacache', 'studiorender', 'vphysics'):
     for prepared in (a.prepared_sdk / folder).rglob('*'):
@@ -97,6 +97,17 @@ replace('engine/host.cpp', 'STEAMREMOTESTORAGE_INTERFACE_VERSION ):NULL;',
         'STEAMREMOTESTORAGE_INTERFACE_VERSION ):NULL;\n#endif', count=2)
 replace('engine/host.cpp', '\t\t\t\tSteamAPI_RunCallbacks();',
         '#ifndef NO_STEAM\n\t\t\t\tSteamAPI_RunCallbacks();\n#endif')
+for operation in ('Init', 'Clear'):
+    replace('game/server/gameinterface.cpp', f'#ifndef _X360\n\ts_SteamAPIContext.{operation}();',
+            f'#if !defined(_X360) && !defined(NO_STEAM)\n\ts_SteamAPIContext.{operation}();')
+# Reuse audited SDK offline patches for account-bound server votes/statistics.
+for path in ('game/server/vote_controller.cpp', 'game/server/cstrike/cs_gamestats.cpp'):
+    prepared, baseline, target = a.prepared_sdk / path, a.sdk / path, a.output / path
+    if prepared.is_file():
+        merged = subprocess.run(['git', 'merge-file', '-p', str(prepared), str(baseline), str(target)], capture_output=True)
+        if merged.returncode:
+            raise RuntimeError(f'Conflicting offline account adaptation: {path}')
+        target.write_bytes(merged.stdout)
 # Offline profile must not initialize an unavailable Steam controller API.
 replace('inputsystem/inputsystem.cpp', 'if ( !m_bSkipControllerInitialization && SteamAPI_InitSafe() )',
         '#ifndef NO_STEAM\n\tif ( !m_bSkipControllerInitialization && SteamAPI_InitSafe() )')
@@ -120,17 +131,29 @@ f.write_text(s)
 # CGL/Carbon paths are desktop macOS services. On iOS retain the original
 # portable SDL paths and use SDL's UIKit/EAGL context provider.
 import re
-for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appframework', 'public/togl', 'public/togles', 'video'):
+for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appframework', 'public/togl', 'public/togles', 'video', 'materialsystem/shaderapidx9'):
     for f in (a.output / folder).rglob('*'):
         if f.suffix not in ('.h', '.cpp', '.inl'):
             continue
         text = f.read_text()
+        text = re.sub(r'#ifndef\s+OSX\b', '#if !defined(OSX) || defined(SOURCE_IOS)', text)
         text = re.sub(r'#ifdef\s+OSX\b', '#if defined(OSX) && !defined(SOURCE_IOS)', text)
         text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
+        if folder != 'materialsystem/shaderapidx9':
+            text = re.sub(r'defined\(\s*(_?LINUX)\s*\)', r'(defined(\1) || defined(SOURCE_IOS))', text)
         f.write_text(text)
 f = a.output / 'engine/audio/voice_mixer_controls_openal.cpp'
 text = f.read_text().replace('#ifdef OSX', '#if defined(OSX) && !defined(SOURCE_IOS)').replace('#ifndef OSX', '#if !defined(OSX) || defined(SOURCE_IOS)')
 f.write_text(text)
+replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>')
+replace('togles/linuxwin/glmgrbasics.cpp', '\tsystem( temp );',
+        '#ifndef SOURCE_IOS\n\tsystem( temp );\n#else\n\tWarning("Desktop shader editor is unavailable on iOS.\\n");\n#endif')
+replace('launcher/launcher.cpp', '\t\t\t\tsystem( szOpenLine );',
+        '#ifndef SOURCE_IOS\n\t\t\t\tsystem( szOpenLine );\n#else\n\t\t\t\tWarning("Desktop process relaunch is unavailable on iOS.\\n");\n#endif')
+replace('engine/sys_mainwind.cpp', '#ifdef OSX\n\tid nsWindow',
+        '#ifdef SOURCE_IOS\n\treturn (void*)pInfo.info.uikit.window;\n#elif defined(OSX)\n\tid nsWindow')
+replace('video/videoservices.cpp', '\tconst EPlatform_t\tthisPlatform = PLATFORM_LINUX;',
+        '\tconst EPlatform_t\tthisPlatform = PLATFORM_LINUX;')
 replace('appframework/sdlmgr.cpp', 'if (SDL_GL_LoadLibrary("libGLESv3.so") == -1)',
         '#ifdef SOURCE_IOS\n\t\tif (SDL_GL_LoadLibrary(NULL) == -1)\n#else\n\t\tif (SDL_GL_LoadLibrary("libGLESv3.so") == -1)\n#endif')
 replace('appframework/sdlmgr.cpp', '#ifdef TOGLES\n\tl_egl = dlopen("libEGL.so", RTLD_LAZY);',

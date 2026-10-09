@@ -98,6 +98,18 @@ replace('game/shared/steamworks_gamestats.cpp', 'void CSteamWorksGameStatsUpload
 replace('game/shared/steamworks_gamestats.cpp', '\tm_ServiceTicking = false;\n}\n\n#endif',
         '\tm_ServiceTicking = false;\n}')
 
+replace('game/shared/steamworks_gamestats.cpp',
+        '\tif ( steamapicontext && steamapicontext->SteamUtils() )\n\t\treturn steamapicontext->SteamUtils()->GetServerRealTime();\n\telse',
+        '#ifndef NO_STEAM\n\tif ( steamapicontext && steamapicontext->SteamUtils() )\n\t\treturn steamapicontext->SteamUtils()->GetServerRealTime();\n\telse\n#endif')
+replace('game/shared/steamworks_gamestats.cpp', 'bool CSteamWorksGameStatsUploader::AccessToSteamAPI( void )\n{',
+        'bool CSteamWorksGameStatsUploader::AccessToSteamAPI( void )\n{\n#ifdef NO_STEAM\n\treturn false;\n#else')
+replace('game/shared/steamworks_gamestats.cpp', '\treturn false;\n}\n\n//-----------------------------------------------------------------------------\n// Purpose: There\'s no guarantee',
+        '\treturn false;\n#endif\n}\n\n//-----------------------------------------------------------------------------\n// Purpose: There\'s no guarantee')
+replace('game/shared/steamworks_gamestats.cpp', 'ISteamGameStats* CSteamWorksGameStatsUploader::GetInterface( void )\n{',
+        'ISteamGameStats* CSteamWorksGameStatsUploader::GetInterface( void )\n{\n#ifdef NO_STEAM\n\treturn NULL;\n#else')
+replace('game/shared/steamworks_gamestats.cpp', '// If we haven\'t returned already, then we can\'t get access to the interface\n\treturn NULL;\n}',
+        '// If we haven\'t returned already, then we can\'t get access to the interface\n\treturn NULL;\n#endif\n}')
+
 # Rec 1.4's original GameMenu.res sends this command, but the public fork left
 # its settings page unconnected. Wire that command to the original dialog.
 replace(paths[8], '#include "BasePanel.h"',
