@@ -149,6 +149,12 @@ for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appf
 f = a.output / 'engine/audio/voice_mixer_controls_openal.cpp'
 text = f.read_text().replace('#ifdef OSX', '#if defined(OSX) && !defined(SOURCE_IOS)').replace('#ifndef OSX', '#if !defined(OSX) || defined(SOURCE_IOS)')
 f.write_text(text)
+for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
+    f = a.output / path
+    text = f.read_text()
+    text = re.sub(r'#ifdef\s+OSX\b', '#if defined(OSX) && !defined(SOURCE_IOS)', text)
+    text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
+    f.write_text(text)
 replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>')
 replace('togles/linuxwin/glmgrbasics.cpp', '\tsystem( temp );',
         '#ifndef SOURCE_IOS\n\tsystem( temp );\n#else\n\tWarning("Desktop shader editor is unavailable on iOS.\\n");\n#endif')

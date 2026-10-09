@@ -53,3 +53,4 @@ jobs:
           -DSOURCE_BUILD_CLIENTMOD_RUNTIME=ON
           -DSOURCE_CLIENTMOD_IOS_APP=ON
       - run: cmake --build build-runtime-ios --target Source1IOS --parallel 4 -- -k
+      - run: python3 scripts/verify_clientmod_bundle.py build-runtime-ios/Source1IOS.app

@@ -73,6 +73,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_compile_options(Source1IOS PRIVATE -fobjc-arc)
   set_target_properties(Source1IOS PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/ios/Info.plist"
+    MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.sh1zoooo.source1ios"
     XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "io.github.sh1zoooo.source1ios"
     XCODE_ATTRIBUTE_TARGETED_DEVICE_FAMILY "1,2"
     XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED "NO"

@@ -31,6 +31,7 @@ static int runClientMod(int, char **) {
         std::fprintf(stdout, "Original ClientMod runtime; content: %s\n", content.path.UTF8String);
         NSString *libraries = [[NSBundle mainBundle].bundlePath stringByAppendingPathComponent:@"Frameworks"];
         setenv("SOURCE_CLIENTMOD_LIBDIR", libraries.fileSystemRepresentation, 1);
+        SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
         NSString *launcherPath = [libraries stringByAppendingPathComponent:@"liblauncher.dylib"];
         void *launcher = dlopen(launcherPath.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
         if (!launcher) { std::fprintf(stderr, "ClientMod launcher load failed: %s\n", dlerror()); return 1; }
