@@ -178,7 +178,7 @@ for path, count in (('togles/linuxwin/dxabstract.cpp', 1),
 for path in ('graphics-compat/togles/linuxwin/glfuncs.h',):
     replace(path, '#if 1 //ifndef OSX', '#if !defined(SOURCE_IOS)')
     # Fixed-function desktop state is unused by the original GLES shaders.
-    for name in ('glAlphaFunc', 'glColor4f'):
+    for name in ('glAlphaFunc', 'glColor4f', 'glClientActiveTexture', 'glGetTexLevelParameteriv'):
         f = a.output / path
         text = f.read_text()
         lines = text.splitlines(keepends=True)
