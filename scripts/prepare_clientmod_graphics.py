@@ -163,7 +163,7 @@ for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
     text = re.sub(r'#ifdef\s+OSX\b', '#if defined(OSX) && !defined(SOURCE_IOS)', text)
     text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
     f.write_text(text)
-replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>')
+replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>\n#ifdef SOURCE_IOS\n#include "SDL_syswm.h"\n#endif')
 # UIKit owns a nonzero drawable FBO and requires its color renderbuffer at swap.
 # Keep the original texture resolve; only adapt the final SDL presentation.
 replace('togles/linuxwin/glmgr.cpp', '\t\tif ( (gl_blitmode.GetInt() != 0) )',
