@@ -6,6 +6,7 @@
 #include <cstdio>
 #include <cstdlib>
 #include <vector>
+#include <unistd.h>
 
 // UIKit/EAGL startup only. Menus, HUD, input and the game loop belong to the
 // original launcher/engine/client modules, with no preview runtime linked here.
@@ -19,6 +20,15 @@ static int runClientMod(int, char **) {
             NSLog(@"ClientMod content directory: %@", error);
             return 1;
         }
+        NSString *logPath = [[content URLByDeletingLastPathComponent].path stringByAppendingPathComponent:@"ClientMod-native.log"];
+        if (FILE *log = std::fopen(logPath.fileSystemRepresentation, "w")) {
+            dup2(fileno(log), STDOUT_FILENO);
+            dup2(fileno(log), STDERR_FILENO);
+            std::fclose(log);
+            setvbuf(stdout, nullptr, _IOLBF, 0);
+            setvbuf(stderr, nullptr, _IOLBF, 0);
+        }
+        std::fprintf(stdout, "Original ClientMod runtime; content: %s\n", content.path.UTF8String);
         NSString *libraries = [[NSBundle mainBundle].bundlePath stringByAppendingPathComponent:@"Frameworks"];
         setenv("SOURCE_CLIENTMOD_LIBDIR", libraries.fileSystemRepresentation, 1);
         NSString *launcherPath = [libraries stringByAppendingPathComponent:@"liblauncher.dylib"];

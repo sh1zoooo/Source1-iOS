@@ -42,10 +42,11 @@ The content root must already contain the imported `cm`, `cstrike`, `hl2` and
 `platform` directories. Its initial launch uses `-noip` for offline verification.
 
 The eight-module original compilation workflow passed for ARM64 at commit
-88b919909e1d647fae877047bf5a658f0fe2861a. The larger graphical profile still failed
-in video-service platform selection and SDL launcher interface declarations;
-the next adaptation addresses those two remaining compile errors. The full
-dynamic iOS application has its own CI job. Full graphical/client/server lifecycle,
+88b919909e1d647fae877047bf5a658f0fe2861a. The larger graphical archive profile also
+passed ARM64 CI at 35b51cb4283c58ff0dce5eaf2d2d474dcdaf7dfb after fixing video-service
+platform selection and SDL launcher declarations. The full dynamic iOS application
+has its own CI job and writes startup diagnostics to `Source1IOS/ClientMod-native.log`.
+Full graphical/client/server lifecycle,
 content compatibility and sound codecs remain unverified. No on-device original
 shader/HUD or server connection has been demonstrated. No application version bump
 accompanies these checks.
