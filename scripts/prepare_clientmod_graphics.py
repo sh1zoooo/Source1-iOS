@@ -194,6 +194,17 @@ replace('togles/linuxwin/glmgr.cpp', '(int)indicesActual + (int)pIndexBuf->m_pPs
         '(uintptr_t)indicesActual + (uintptr_t)pIndexBuf->m_pPseudoBuf')
 replace('togles/linuxwin/glmgr.cpp', '(int)indicesActual + (int)pIndexBuf->m_nPersistentBufferStartOffset',
         '(uintptr_t)indicesActual + (uintptr_t)pIndexBuf->m_nPersistentBufferStartOffset')
+# Keep real GPU buffers, but use ClientMod's existing CPU staging/SubData
+# upload path for bounded vertex/index writes on iOS, including initial writes.
+# Client-side pseudo buffers are not suitable for GLES vertex attributes.
+replace('togles/linuxwin/cglmbuffer.cpp', '\tchar *resultPtr = NULL;',
+        '\tchar *resultPtr = NULL;\n#ifdef SOURCE_IOS\n\t*pAddressOut = NULL;\n\tif (m_bMapped || pParams->m_nOffset >= m_nSize || pParams->m_nSize > m_nSize - pParams->m_nOffset)\n\t\tWarning("iOS GL buffer lock rejected: handle=%u mapped=%d buffer=%u offset=%u size=%u\\n", m_nHandle, m_bMapped, m_nSize, pParams->m_nOffset, pParams->m_nSize);\n#endif')
+replace('togles/linuxwin/cglmbuffer.cpp',
+        'else if ( !g_bDisableStaticBuffer && ( pParams->m_bDiscard || pParams->m_bNoOverwrite ) && ( pParams->m_nSize <= GL_STATIC_BUFFER_SIZE ) )',
+        'else if (\n#ifdef SOURCE_IOS\n\t\t( m_type == kGLMVertexBuffer || m_type == kGLMIndexBuffer ) &&\n#else\n\t\t!g_bDisableStaticBuffer && ( pParams->m_bDiscard || pParams->m_bNoOverwrite ) &&\n#endif\n\t\t( pParams->m_nSize <= GL_STATIC_BUFFER_SIZE ) )')
+replace('togles/linuxwin/cglmbuffer.cpp',
+        '\t\tmapPtr = (char*)gGL->glMapBufferRange( m_buffGLTarget, pParams->m_nOffset, pParams->m_nSize, parms);',
+        '\t\tmapPtr = (char*)gGL->glMapBufferRange( m_buffGLTarget, pParams->m_nOffset, pParams->m_nSize, parms);\n#ifdef SOURCE_IOS\n\t\tif (!mapPtr) {\n\t\t\tWarning("iOS GL buffer map failed: handle=%u target=0x%x buffer=%u offset=%u size=%u flags=0x%x error=0x%x\\n", m_nHandle, m_buffGLTarget, m_nSize, pParams->m_nOffset, pParams->m_nSize, parms, gGL->glGetError());\n\t\t\t*pAddressOut = NULL;\n\t\t\treturn;\n\t\t}\n#endif')
 replace('togles/linuxwin/glmgrbasics.cpp', '\tsystem( temp );',
         '#ifndef SOURCE_IOS\n\tsystem( temp );\n#else\n\tWarning("Desktop shader editor is unavailable on iOS.\\n");\n#endif')
 replace('launcher/launcher.cpp', '\t\t\t\tsystem( szOpenLine );',
