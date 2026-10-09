@@ -28,7 +28,7 @@ static int runClientMod(int, char **) {
             setvbuf(stdout, nullptr, _IOLBF, 0);
             setvbuf(stderr, nullptr, _IOLBF, 0);
         }
-        std::fprintf(stdout, "Original ClientMod runtime; content: %s\n", content.path.UTF8String);
+        std::fprintf(stdout, "Original ClientMod runtime %s; content: %s\n", [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] UTF8String], content.path.UTF8String);
         // Source's POSIX singleton lock must live in the iOS container. The
         // desktop /tmp path is outside our sandbox and reports a false duplicate.
         NSString *temporaryDirectory = NSTemporaryDirectory();

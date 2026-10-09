@@ -164,6 +164,65 @@ for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
     text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
     f.write_text(text)
 replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>')
+# UIKit owns a nonzero drawable FBO and requires its color renderbuffer at swap.
+# Keep the original texture resolve; only adapt the final SDL presentation.
+replace('togles/linuxwin/glmgr.cpp', '\t\tif ( (gl_blitmode.GetInt() != 0) )',
+        '\t\tif (\n#ifdef SOURCE_IOS\n\t\t\tfalse // SDL UIKit performs the final drawable blit.\n#else\n\t\t\t(gl_blitmode.GetInt() != 0)\n#endif\n\t\t)')
+replace('appframework/sdlmgr.cpp', '\tif (params->m_onlySyncView)\n\t\treturn;', '''\tif (params->m_onlySyncView)
+\t\treturn;
+#ifdef SOURCE_IOS
+\tSDL_SysWMinfo info;
+\tSDL_VERSION(&info.version);
+\tif (!SDL_GetWindowWMInfo(m_Window, &info) || info.subsystem != SDL_SYSWM_UIKIT) {
+\t\tWarning("iOS presentation: UIKit drawable unavailable: %s\\n", SDL_GetError());
+\t\treturn;
+\t}
+\tint width = 0, height = 0;
+\tSDL_GL_GetDrawableSize(m_Window, &width, &height);
+\tGLint readFBO = 0, drawFBO = 0, renderbuffer = 0;
+\tgGL->glGetIntegerv(GL_READ_FRAMEBUFFER_BINDING, &readFBO);
+\tgGL->glGetIntegerv(GL_DRAW_FRAMEBUFFER_BINDING, &drawFBO);
+\tgGL->glGetIntegerv(GL_RENDERBUFFER_BINDING, &renderbuffer);
+\tGLboolean scissor = GL_FALSE, colorMask[4];
+\tgGL->glGetBooleanv(GL_SCISSOR_TEST, &scissor);
+\tgGL->glGetBooleanv(GL_COLOR_WRITEMASK, colorMask);
+\tgGL->glDisable(GL_SCISSOR_TEST);
+\tgGL->glColorMask(GL_TRUE, GL_TRUE, GL_TRUE, GL_TRUE);
+\tgGL->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_readFBO);
+\tgGL->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0,
+\t\tGL_TEXTURE_2D, params->m_srcTexName, 0);
+\tgGL->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, info.info.uikit.framebuffer);
+\tGLenum readStatus = gGL->glCheckFramebufferStatus(GL_READ_FRAMEBUFFER);
+\tGLenum drawStatus = gGL->glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
+\tif (readStatus == GL_FRAMEBUFFER_COMPLETE && drawStatus == GL_FRAMEBUFFER_COMPLETE && width > 0 && height > 0)
+\t\tgGL->glBlitFramebuffer(0, 0, params->m_width, params->m_height,
+\t\t\t0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+\tGLenum blitError = gGL->glGetError();
+\tgGL->glBindRenderbuffer(GL_RENDERBUFFER, info.info.uikit.colorbuffer);
+\tCFastTimer timer;
+\ttimer.Start();
+\tSDL_GL_SwapWindow(m_Window);
+\tm_flPrevGLSwapWindowTime = timer.GetDurationInProgress().GetMillisecondsF();
+\tGLenum swapError = gGL->glGetError();
+\tstatic unsigned frame = 0;
+\t++frame;
+\tif (frame <= 3 || frame == 120 || (frame % 3600) == 0)
+\t\tWarning("iOS present: frame=%u texture=%u source=%dx%d drawable=%dx%d fbo=%u color=%u read=0x%x draw=0x%x blit=0x%x swap=0x%x\\n",
+\t\t\tframe, params->m_srcTexName, params->m_width, params->m_height, width, height,
+\t\t\tinfo.info.uikit.framebuffer, info.info.uikit.colorbuffer, readStatus, drawStatus, blitError, swapError);
+\tgGL->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_readFBO);
+\tgGL->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
+\tgGL->glBindFramebuffer(GL_READ_FRAMEBUFFER, readFBO);
+\tgGL->glBindFramebuffer(GL_DRAW_FRAMEBUFFER, drawFBO);
+\tgGL->glBindRenderbuffer(GL_RENDERBUFFER, renderbuffer);
+\tgGL->glColorMask(colorMask[0], colorMask[1], colorMask[2], colorMask[3]);
+\tif (scissor) gGL->glEnable(GL_SCISSOR_TEST);
+\treturn;
+#endif''')
+replace('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{',
+        'void CEngine::Frame( void )\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS engine frame: %u\\n", iosFrame);\n#endif')
+replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
+        'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
 # Use the same GLES entry-point layout as the linked ToGLES library on iOS.
 replace('appframework/sdlmgr.cpp', '#include "togl/rendermechanism.h"',
         '#ifdef SOURCE_IOS\n#include "togles/rendermechanism.h"\n#else\n#include "togl/rendermechanism.h"\n#endif')
