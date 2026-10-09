@@ -16,9 +16,9 @@ lock = (a.output / ".prepare.lock").open("w")
 fcntl.flock(lock, fcntl.LOCK_EX)
 previous = {str(f.relative_to(a.output)): (f.read_bytes(), f.stat().st_mtime_ns)
             for f in a.output.rglob('*') if f.is_file()}
-for folder in ('engine', 'inputsystem', 'launcher', 'togles', 'video', 'datamodel', 'appframework', 'utils/bzip2'):
+for folder in ('engine', 'inputsystem', 'launcher', 'togles', 'video', 'datamodel', 'appframework', 'utils/bzip2', 'utils/common', 'filesystem', 'datacache', 'studiorender', 'vphysics'):
     shutil.copytree(a.upstream / folder, a.output / folder, dirs_exist_ok=True)
-for folder in ('engine', 'materialsystem', 'common', 'public'):
+for folder in ('engine', 'materialsystem', 'common', 'public', 'filesystem', 'datacache', 'studiorender', 'vphysics'):
     for prepared in (a.prepared_sdk / folder).rglob('*'):
         relative = prepared.relative_to(a.prepared_sdk)
         baseline, target = a.sdk / relative, a.output / relative
@@ -36,6 +36,11 @@ for folder in ('engine', 'materialsystem', 'common', 'public'):
 compat = a.output / 'graphics-compat'
 shutil.copytree(a.upstream / 'public/togl', compat / 'togl', dirs_exist_ok=True)
 shutil.copytree(a.upstream / 'public/togles', compat / 'togles', dirs_exist_ok=True)
+# ToGLES uses desktop GL enums/types as its Direct3D compatibility ABI. Keep
+# SDL's original declarations on iOS; actual GL calls still use SDL/EAGL.
+text = (a.sdk / 'thirdparty/SDL-src/include/SDL_opengl.h').read_text()
+text = text.replace('#ifndef __IPHONEOS__  /* No OpenGL on iOS. */', '#if 1 /* GL declarations for the ToGLES compatibility ABI. */')
+(compat / 'SDL_opengl.h').write_text(text)
 # SDL's pinned EGL headers predate the no-X11 header option. Native checks
 # use opaque EGL handles; no X11 calls are compiled in this SDL build.
 shutil.copytree(a.sdk / 'thirdparty/SDL-src/src/video/khronos/EGL', compat / 'EGL', dirs_exist_ok=True)
@@ -69,6 +74,16 @@ start = s.index('bool CInputSystem::GetTouchAccumulators(')
 end = s.index('\n}', start) + 2
 f.write_text(s[:start] + s[end:])
 replace('utils/bzip2/bzlib_private.h', '__inline__ Int32 BZ2_indexIntoF', 'static __inline__ Int32 BZ2_indexIntoF')
+replace('datacache/datacache.cpp', 'extern ConVar developer;',
+        'ConVar developer( "developer", "0", FCVAR_INTERNAL_USE );')
+replace('datacache/mdlcache.cpp', '#ifndef SOURCE_ENGINE_PORT\nconst studiohdr_t *studiohdr_t::FindModel',
+        'const studiohdr_t *studiohdr_t::FindModel')
+replace('datacache/mdlcache.cpp', 'return g_MDLCache.GetStudioHdr( VoidPtrToMDLHandle( cache ) );\n}\n#endif',
+        'return g_MDLCache.GetStudioHdr( VoidPtrToMDLHandle( cache ) );\n}')
+replace('studiorender/studiorendercontext.cpp', '#ifndef SOURCE_ENGINE_PORT\nconst vertexFileHeader_t * mstudiomodel_t::CacheVertexData',
+        'const vertexFileHeader_t * mstudiomodel_t::CacheVertexData')
+replace('studiorender/studiorendercontext.cpp', 'return g_pStudioDataCache->CacheVertexData( (studiohdr_t *)pModelData );\n}\n#endif',
+        'return g_pStudioDataCache->CacheVertexData( (studiohdr_t *)pModelData );\n}')
 # Each graphical DLL owns its original material convars independently.
 replace('materialsystem/cmaterialsystem.cpp', 'extern ConVar mat_debugalttab;',
         'ConVar mat_debugalttab( "mat_debugalttab", "0", FCVAR_CHEAT );')
@@ -105,7 +120,7 @@ f.write_text(s)
 # CGL/Carbon paths are desktop macOS services. On iOS retain the original
 # portable SDL paths and use SDL's UIKit/EAGL context provider.
 import re
-for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appframework'):
+for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appframework', 'public/togl', 'public/togles', 'video'):
     for f in (a.output / folder).rglob('*'):
         if f.suffix not in ('.h', '.cpp', '.inl'):
             continue
@@ -113,6 +128,9 @@ for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appf
         text = re.sub(r'#ifdef\s+OSX\b', '#if defined(OSX) && !defined(SOURCE_IOS)', text)
         text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
         f.write_text(text)
+f = a.output / 'engine/audio/voice_mixer_controls_openal.cpp'
+text = f.read_text().replace('#ifdef OSX', '#if defined(OSX) && !defined(SOURCE_IOS)').replace('#ifndef OSX', '#if !defined(OSX) || defined(SOURCE_IOS)')
+f.write_text(text)
 replace('appframework/sdlmgr.cpp', 'if (SDL_GL_LoadLibrary("libGLESv3.so") == -1)',
         '#ifdef SOURCE_IOS\n\t\tif (SDL_GL_LoadLibrary(NULL) == -1)\n#else\n\t\tif (SDL_GL_LoadLibrary("libGLESv3.so") == -1)\n#endif')
 replace('appframework/sdlmgr.cpp', '#ifdef TOGLES\n\tl_egl = dlopen("libEGL.so", RTLD_LAZY);',

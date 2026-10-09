@@ -76,6 +76,15 @@ else()
         add_test(NAME clientmod_${module}_factory COMMAND clientmod_module_factory
           $<TARGET_FILE:clientmod_runtime_${module}> ${interface})
       endforeach()
+      foreach(entry "filesystem_stdio|VFileSystem022" "datacache|VDataCache003"
+          "datacache|MDLCache004" "datacache|VStudioDataCache005"
+          "studiorender|VStudioRender025" "vphysics|VPhysics031")
+        string(REPLACE "|" ";" parts "${entry}")
+        list(GET parts 0 module)
+        list(GET parts 1 interface)
+        add_test(NAME clientmod_${module}_${interface}_factory COMMAND clientmod_module_factory
+          $<TARGET_FILE:clientmod_runtime_${module}> ${interface})
+      endforeach()
     endif()
     add_executable(touch_slots_tests tests/touch_slots_tests.cpp)
     target_include_directories(touch_slots_tests PRIVATE src/source)

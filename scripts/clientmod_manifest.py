@@ -23,7 +23,8 @@ def discover(platform="linux", graphics=False):
     sys.modules["vpc_parser"] = vpc
     result = {"upstream": PIN, "modules": {}}
     folders = ("engine", "materialsystem", "materialsystem/shaderapidx9", "togles",
-               "inputsystem", "launcher", "video", "datamodel", "appframework") if graphics else (
+               "inputsystem", "launcher", "video", "datamodel", "appframework",
+               "filesystem", "datacache", "studiorender", "vphysics") if graphics else (
                "vgui2/vgui_controls", "vgui2/matsys_controls", "vgui2/src", "gameui", "game/client",
                "vgui2/vgui_surfacelib", "vguimatsurface", "materialsystem/stdshaders")
     for folder in folders:

@@ -539,6 +539,145 @@
       ],
       "defines": [],
       "dependencies": []
+    },
+    "filesystem_stdio": {
+      "source": [
+        "filesystem/basefilesystem.cpp",
+        "filesystem/packfile.cpp",
+        "filesystem/filetracker.cpp",
+        "filesystem/filesystem_async.cpp",
+        "filesystem/filesystem_stdio.cpp",
+        "public/kevvaluescompiler.cpp",
+        "public/zip_utils.cpp",
+        "filesystem/QueuedLoader.cpp",
+        "public/tier0/memoverride.cpp",
+        "filesystem/linux_support.cpp"
+      ],
+      "includes": [
+        "filesystem",
+        "public",
+        "public/tier0",
+        "public/tier1",
+        "common"
+      ],
+      "defines": [],
+      "dependencies": [
+        "tier0",
+        "vpklib",
+        "tier1",
+        "tier2",
+        "vstdlib"
+      ]
+    },
+    "datacache": {
+      "source": [
+        "datacache/datacache.cpp",
+        "datacache/mdlcache.cpp",
+        "public/studio.cpp",
+        "public/studio_virtualmodel.cpp",
+        "common/studiobyteswap.cpp",
+        "public/tier0/memoverride.cpp"
+      ],
+      "includes": [
+        "datacache",
+        "public",
+        "public/tier0",
+        "public/tier1",
+        "common"
+      ],
+      "defines": [],
+      "dependencies": [
+        "tier0",
+        "tier1",
+        "tier2",
+        "tier3"
+      ]
+    },
+    "studiorender": {
+      "source": [
+        "studiorender/studiorender.cpp",
+        "studiorender/studiorendercontext.cpp",
+        "studiorender/flexrenderdata.cpp",
+        "studiorender/r_studio.cpp",
+        "studiorender/r_studiodecal.cpp",
+        "studiorender/r_studiodraw.cpp",
+        "studiorender/r_studiodraw_computeflexedvertex.cpp",
+        "studiorender/r_studioflex.cpp",
+        "studiorender/r_studiogettriangles.cpp",
+        "studiorender/r_studiolight.cpp",
+        "studiorender/r_studiostats.cpp",
+        "public/tier0/memoverride.cpp"
+      ],
+      "includes": [
+        "studiorender",
+        "public",
+        "public/tier0",
+        "public/tier1"
+      ],
+      "defines": [],
+      "dependencies": [
+        "tier0",
+        "tier1",
+        "tier2",
+        "tier3",
+        "vstdlib",
+        "mathlib",
+        "bitmap"
+      ]
+    },
+    "vphysics": {
+      "source": [
+        "vphysics/convert.cpp",
+        "public/filesystem_helpers.cpp",
+        "vphysics/ledgewriter.cpp",
+        "vphysics/main.cpp",
+        "vphysics/physics_airboat.cpp",
+        "vphysics/physics_collide.cpp",
+        "vphysics/physics_constraint.cpp",
+        "vphysics/physics_controller_raycast_vehicle.cpp",
+        "vphysics/physics_environment.cpp",
+        "vphysics/physics_fluid.cpp",
+        "vphysics/physics_friction.cpp",
+        "vphysics/physics_material.cpp",
+        "vphysics/physics_motioncontroller.cpp",
+        "vphysics/physics_object.cpp",
+        "vphysics/physics_shadow.cpp",
+        "vphysics/physics_spring.cpp",
+        "vphysics/physics_vehicle.cpp",
+        "vphysics/physics_virtualmesh.cpp",
+        "vphysics/trace.cpp",
+        "vphysics/vcollide_parse.cpp",
+        "vphysics/vphysics_saverestore.cpp",
+        "public/tier0/memoverride.cpp"
+      ],
+      "includes": [
+        "vphysics",
+        "public",
+        "public/tier0",
+        "public/tier1",
+        "ivp/ivp_intern",
+        "ivp/ivp_collision",
+        "ivp/ivp_physics",
+        "ivp/ivp_surface_manager",
+        "ivp/ivp_utility",
+        "ivp/ivp_controller",
+        "ivp/ivp_compact_builder",
+        "ivp/havana/havok",
+        "ivp/havana"
+      ],
+      "defines": [],
+      "dependencies": [
+        "tier0",
+        "havana_constraints",
+        "hk_math",
+        "hk_base",
+        "ivp_compactbuilder",
+        "ivp_physics",
+        "tier1",
+        "tier2",
+        "vstdlib",
+        "mathlib"
+      ]
     }
   }
 }

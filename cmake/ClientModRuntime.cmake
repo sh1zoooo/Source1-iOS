@@ -57,7 +57,7 @@ add_library(clientmod_steam_offline STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/sour
 target_link_libraries(clientmod_steam_offline PRIVATE source_settings)
 set_target_properties(clientmod_steam_offline PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(runtime_modules)
-foreach(module engine materialsystem shaderapidx9 togl inputsystem launcher video_services client GameUI vgui2 vguimatsurface stdshader_dx9)
+foreach(module engine materialsystem shaderapidx9 togl inputsystem launcher video_services filesystem_stdio datacache studiorender vphysics client GameUI vgui2 vguimatsurface stdshader_dx9)
   add_library(clientmod_runtime_${module} SHARED "${SOURCE_ROOT}/tier1/interface.cpp")
   target_link_libraries(clientmod_runtime_${module} PRIVATE source_settings
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,clientmod_${module}>"
@@ -69,6 +69,12 @@ foreach(module engine materialsystem shaderapidx9 togl inputsystem launcher vide
   endif()
   if(module STREQUAL "client")
     list(APPEND helpers source_particles source_dmxloader source_choreoobjects source_soundemittersystem source_scenefilecache)
+  endif()
+  if(module STREQUAL "filesystem_stdio")
+    list(APPEND helpers source_vpklib clientmod_bzip2)
+  endif()
+  if(module STREQUAL "vphysics")
+    list(APPEND helpers source_ivp_physics source_ivp_compactbuilder source_havana_constraints source_hk_base source_hk_math)
   endif()
   if(module STREQUAL "engine")
     list(APPEND helpers clientmod_datamodel source_dmxloader clientmod_graphics_helpers clientmod_bzip2)
