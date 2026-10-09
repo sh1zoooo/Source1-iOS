@@ -17,7 +17,7 @@ modules = ('engine', 'client', 'server', 'GameUI', 'vgui2', 'vguimatsurface',
            'materialsystem', 'shaderapidx9', 'stdshader_dx9', 'togl', 'inputsystem',
            'launcher', 'video_services', 'filesystem_stdio', 'datacache',
            'studiorender', 'vphysics', 'soundemittersystem', 'scenefilecache',
-           'tier0', 'vstdlib')
+           'tier0', 'vstdlib', 'serverbrowser')
 for module in modules:
     if not (libraries / f'lib{module}.dylib').is_file():
         raise SystemExit(f'Missing original runtime module: {module}')

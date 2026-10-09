@@ -82,14 +82,14 @@ add_library(clientmod_steam_offline STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/sour
 target_link_libraries(clientmod_steam_offline PRIVATE source_settings)
 set_target_properties(clientmod_steam_offline PROPERTIES POSITION_INDEPENDENT_CODE ON)
 set(runtime_modules)
-foreach(module engine materialsystem shaderapidx9 togl inputsystem launcher video_services filesystem_stdio datacache studiorender vphysics server soundemittersystem scenefilecache client GameUI vgui2 vguimatsurface stdshader_dx9)
+foreach(module engine materialsystem shaderapidx9 togl inputsystem launcher video_services filesystem_stdio datacache studiorender vphysics server soundemittersystem scenefilecache client GameUI vgui2 vguimatsurface stdshader_dx9 ServerBrowser)
   add_library(clientmod_runtime_${module} SHARED "${SOURCE_ROOT}/tier1/interface.cpp")
   target_link_libraries(clientmod_runtime_${module} PRIVATE source_settings
     "$<LINK_LIBRARY:WHOLE_ARCHIVE,clientmod_${module}>"
     clientmod_runtime_tier0 clientmod_runtime_vstdlib SDL2 dl pthread)
   set(helpers source_tier1 source_tier2 source_tier3 source_mathlib source_bitmap source_vtf
     clientmod_appframework source_shaderlib source_offline clientmod_graphics_helpers clientmod_steam_offline)
-  if(module MATCHES "^(client|GameUI|engine|vgui2|vguimatsurface)$")
+  if(module MATCHES "^(client|GameUI|ServerBrowser|engine|vgui2|vguimatsurface)$")
     list(APPEND helpers clientmod_vgui_controls clientmod_matsys_controls)
   endif()
   if(module MATCHES "^(client|server)$")
@@ -120,6 +120,9 @@ foreach(module engine materialsystem shaderapidx9 togl inputsystem launcher vide
   set_target_properties(clientmod_runtime_${module} PROPERTIES CXX_STANDARD 14 OUTPUT_NAME ${module}
     CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON
     LIBRARY_OUTPUT_DIRECTORY "${CMAKE_CURRENT_BINARY_DIR}/clientmod-runtime" BUILD_RPATH "$ORIGIN")
+  if(module STREQUAL "ServerBrowser")
+    set_target_properties(clientmod_runtime_${module} PROPERTIES OUTPUT_NAME serverbrowser)
+  endif()
   list(APPEND runtime_modules clientmod_runtime_${module})
 endforeach()
 add_custom_target(clientmod_runtime_link_check DEPENDS ${runtime_modules})

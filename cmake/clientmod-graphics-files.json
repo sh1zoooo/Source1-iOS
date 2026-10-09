@@ -1331,6 +1331,46 @@
         "tier0",
         "tier1"
       ]
+    },
+    "ServerBrowser": {
+      "source": [
+        "serverbrowser/BaseGamesPage.cpp",
+        "serverbrowser/DialogAddServer.cpp",
+        "serverbrowser/DialogGameInfo.cpp",
+        "serverbrowser/DialogServerPassword.cpp",
+        "serverbrowser/FavoriteGames.cpp",
+        "serverbrowser/HistoryGames.cpp",
+        "serverbrowser/InternetGames.cpp",
+        "serverbrowser/LanGames.cpp",
+        "serverbrowser/ModList.cpp",
+        "serverbrowser/ServerBrowser.cpp",
+        "serverbrowser/ServerBrowserDialog.cpp",
+        "serverbrowser/ServerContextMenu.cpp",
+        "serverbrowser/ServerListCompare.cpp",
+        "serverbrowser/VACBannedConnRefusedDialog.cpp",
+        "serverbrowser/QuickListPanel.cpp",
+        "public/vgui_controls/vgui_controls.cpp",
+        "common/ServerBrowser/blacklisted_server_manager.cpp",
+        "public/tier0/memoverride.cpp"
+      ],
+      "includes": [
+        "serverbrowser",
+        "public",
+        "public/tier0",
+        "public/tier1",
+        "common"
+      ],
+      "defines": [],
+      "dependencies": [
+        "tier0",
+        "vgui_controls",
+        "mathlib",
+        "tier1",
+        "tier2",
+        "tier3",
+        "vstdlib",
+        "steam_api"
+      ]
     }
   }
 }

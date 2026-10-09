@@ -107,7 +107,7 @@ else()
         add_test(NAME clientmod_${module}_factory COMMAND clientmod_module_factory
           $<TARGET_FILE:clientmod_runtime_${module}> ${interface})
       endforeach()
-      foreach(entry "filesystem_stdio|VFileSystem022" "datacache|VDataCache003"
+      foreach(entry "ServerBrowser|ServerBrowser005" "ServerBrowser|VGuiModuleServerBrowser001" "filesystem_stdio|VFileSystem022" "datacache|VDataCache003"
           "datacache|MDLCache004" "datacache|VStudioDataCache005"
           "studiorender|VStudioRender025" "vphysics|VPhysics031"
           "server|ServerGameDLL010" "soundemittersystem|VSoundEmitter002" "scenefilecache|SceneFileCache002")

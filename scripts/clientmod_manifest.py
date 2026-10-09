@@ -25,7 +25,7 @@ def discover(platform="linux", graphics=False):
     folders = ("engine", "materialsystem", "materialsystem/shaderapidx9", "togles",
                "inputsystem", "launcher", "video", "datamodel", "appframework",
                "filesystem", "datacache", "studiorender", "vphysics",
-               "game/server", "soundemittersystem", "scenefilecache") if graphics else (
+               "game/server", "soundemittersystem", "scenefilecache", "serverbrowser") if graphics else (
                "vgui2/vgui_controls", "vgui2/matsys_controls", "vgui2/src", "gameui", "game/client",
                "vgui2/vgui_surfacelib", "vguimatsurface", "materialsystem/stdshaders")
     for folder in folders:

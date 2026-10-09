@@ -16,7 +16,7 @@ lock = (a.output / ".prepare.lock").open("w")
 fcntl.flock(lock, fcntl.LOCK_EX)
 previous = {str(f.relative_to(a.output)): (f.read_bytes(), f.stat().st_mtime_ns)
             for f in a.output.rglob('*') if f.is_file()}
-for folder in ('engine', 'inputsystem', 'launcher', 'togles', 'video', 'datamodel', 'appframework', 'utils/bzip2', 'utils/common', 'filesystem', 'datacache', 'studiorender', 'vphysics', 'soundemittersystem', 'scenefilecache'):
+for folder in ('engine', 'inputsystem', 'launcher', 'togles', 'video', 'datamodel', 'appframework', 'utils/bzip2', 'utils/common', 'filesystem', 'datacache', 'studiorender', 'vphysics', 'soundemittersystem', 'scenefilecache', 'serverbrowser'):
     shutil.copytree(a.upstream / folder, a.output / folder, dirs_exist_ok=True)
 for folder in ('engine', 'materialsystem', 'common', 'public', 'filesystem', 'datacache', 'studiorender', 'vphysics'):
     for prepared in (a.prepared_sdk / folder).rglob('*'):
@@ -91,6 +91,14 @@ replace('materialsystem/cmaterialsystem.cpp', 'extern ConVar mat_debugalttab;',
         'ConVar mat_debugalttab( "mat_debugalttab", "0", FCVAR_CHEAT );')
 replace('gameui/GameUI_Interface.cpp', '\tsteamapicontext->Init();',
         '#ifndef NO_STEAM\n\tsteamapicontext->Init();\n#endif')
+# Preserve original platform UI and resolve its desktop module names for iOS.
+replace('gameui/VGuiSystemModuleLoader.cpp', '\t\tif ( IsOSX() )',
+        '#ifdef SOURCE_IOS\n\t\tchar iosModule[MAX_PATH];\n\t\tV_FileBase(it->GetString("dll_osx", it->GetString("dll")), iosModule, sizeof(iosModule));\n\t\tV_strlower(iosModule);\n\t\tV_strncat(iosModule, DLL_EXT_STRING, sizeof(iosModule));\n\t\tdllPath = iosModule;\n#else\n\t\tif ( IsOSX() )')
+replace('gameui/VGuiSystemModuleLoader.cpp', '\n\n\t\t// load the module',
+        '\n#endif\n\n\t\t// load the module')
+replace('gameui/VGuiSystemModuleLoader.cpp', 'it->GetString("dll"));', 'dllPath);')
+replace('serverbrowser/ServerBrowser.cpp', '\tSteamAPI_InitSafe();\n\tSteamAPI_SetTryCatchCallbacks( false ); // We don\'t use exceptions, so tell steam not to use try/catch in callback handlers\n\tsteamapicontext->Init();',
+        '#ifndef NO_STEAM\n\tSteamAPI_InitSafe();\n\tSteamAPI_SetTryCatchCallbacks( false ); // We don\'t use exceptions, so tell steam not to use try/catch in callback handlers\n\tsteamapicontext->Init();\n#endif')
 replace('engine/audio/voice.cpp', '\t\tsteamapicontext->Init();',
         '#ifndef NO_STEAM\n\t\tsteamapicontext->Init();\n#endif')
 replace('engine/host.cpp', '\tISteamRemoteStorage *pRemoteStorage = SteamClient()?',
