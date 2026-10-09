@@ -156,6 +156,44 @@ for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
     text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
     f.write_text(text)
 replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>')
+# Use the same GLES entry-point layout as the linked ToGLES library on iOS.
+replace('appframework/sdlmgr.cpp', '#include "togl/rendermechanism.h"',
+        '#ifdef SOURCE_IOS\n#include "togles/rendermechanism.h"\n#else\n#include "togl/rendermechanism.h"\n#endif')
+# ShaderAPI includes the desktop-named umbrella as well; it must share the
+# GLES class layouts and inline methods with the linked renderer.
+f = compat / 'togl/rendermechanism.h'
+f.write_text('#ifdef SOURCE_IOS\n#include "togles/rendermechanism.h"\n#else\n' + f.read_text() + '\n#endif\n')
+f = compat / 'togles/linuxwin/dxabstract.h'
+text = f.read_text()
+marker = text.index('// required for 10.6 support')
+guard = text.rfind('#if ', 0, marker)
+end = text.index('\n', guard)
+f.write_text(text[:guard] + '#if defined(OSX) || defined(SOURCE_IOS)' + text[end:])
+# GLES 3.0 has no desktop base-vertex draw entry point. Select ClientMod's
+# existing path that offsets vertex bindings before glDrawRangeElements.
+for path, count in (('togles/linuxwin/dxabstract.cpp', 1),
+                    ('togles/linuxwin/glmgr.cpp', 1),
+                    ('graphics-compat/togles/linuxwin/glmgr.h', 2)):
+    replace(path, '#if 1 //ifndef OSX', '#if !defined(SOURCE_IOS) // desktop base-vertex path', count)
+for path in ('graphics-compat/togles/linuxwin/glfuncs.h',):
+    replace(path, '#if 1 //ifndef OSX', '#if !defined(SOURCE_IOS)')
+    # Fixed-function desktop state is unused by the original GLES shaders.
+    for name in ('glAlphaFunc', 'glColor4f'):
+        f = a.output / path
+        text = f.read_text()
+        lines = text.splitlines(keepends=True)
+        matches = [i for i, line in enumerate(lines) if f'GL_FUNC_VOID(OpenGL,true,{name},' in line]
+        if len(matches) != 1:
+            raise RuntimeError(f'GLES legacy state context changed: {path}: {name}')
+        i = matches[0]
+        lines[i] = '#ifndef SOURCE_IOS\n' + lines[i] + '#endif\n'
+        f.write_text(''.join(lines))
+replace('togles/linuxwin/glentrypoints.cpp', '\tconst int NEED_MINOR = 2;',
+        '#ifdef SOURCE_IOS\n\tconst int NEED_MINOR = 0; // OpenGL ES 3.0\n#else\n\tconst int NEED_MINOR = 2;\n#endif')
+replace('togles/linuxwin/glmgr.cpp', '(int)indicesActual + (int)pIndexBuf->m_pPseudoBuf',
+        '(uintptr_t)indicesActual + (uintptr_t)pIndexBuf->m_pPseudoBuf')
+replace('togles/linuxwin/glmgr.cpp', '(int)indicesActual + (int)pIndexBuf->m_nPersistentBufferStartOffset',
+        '(uintptr_t)indicesActual + (uintptr_t)pIndexBuf->m_nPersistentBufferStartOffset')
 replace('togles/linuxwin/glmgrbasics.cpp', '\tsystem( temp );',
         '#ifndef SOURCE_IOS\n\tsystem( temp );\n#else\n\tWarning("Desktop shader editor is unavailable on iOS.\\n");\n#endif')
 replace('launcher/launcher.cpp', '\t\t\t\tsystem( szOpenLine );',

@@ -54,7 +54,9 @@ static int runClientMod(int, char **) {
         for (NSString *argument in arguments) argv.push_back(const_cast<char *>(argument.UTF8String));
         argv.push_back(nullptr);
         NSLog(@"Starting original ClientMod LauncherMain; content %@", content.path);
-        return launch(static_cast<int>(arguments.count), argv.data());
+        const int result = launch(static_cast<int>(arguments.count), argv.data());
+        std::fprintf(stderr, "Original ClientMod LauncherMain returned: %d\n", result);
+        return result;
     }
 }
 
