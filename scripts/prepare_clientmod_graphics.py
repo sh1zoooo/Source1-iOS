@@ -177,6 +177,8 @@ replace('appframework/sdlmgr.cpp', '\tif (params->m_onlySyncView)\n\t\treturn;',
 \t\tWarning("iOS presentation: UIKit drawable unavailable: %s\\n", SDL_GetError());
 \t\treturn;
 \t}
+\tGLenum priorError = gGL->glGetError();
+\tfor (int i = 0; i < 8 && gGL->glGetError() != GL_NO_ERROR; ++i) {}
 \tint width = 0, height = 0;
 \tSDL_GL_GetDrawableSize(m_Window, &width, &height);
 \tGLint readFBO = 0, drawFBO = 0, renderbuffer = 0;
@@ -196,7 +198,7 @@ replace('appframework/sdlmgr.cpp', '\tif (params->m_onlySyncView)\n\t\treturn;',
 \tGLenum drawStatus = gGL->glCheckFramebufferStatus(GL_DRAW_FRAMEBUFFER);
 \tif (readStatus == GL_FRAMEBUFFER_COMPLETE && drawStatus == GL_FRAMEBUFFER_COMPLETE && width > 0 && height > 0)
 \t\tgGL->glBlitFramebuffer(0, 0, params->m_width, params->m_height,
-\t\t\t0, 0, width, height, GL_COLOR_BUFFER_BIT, GL_LINEAR);
+\t\t\t0, height, width, 0, GL_COLOR_BUFFER_BIT, GL_LINEAR);
 \tGLenum blitError = gGL->glGetError();
 \tgGL->glBindRenderbuffer(GL_RENDERBUFFER, info.info.uikit.colorbuffer);
 \tCFastTimer timer;
@@ -207,9 +209,9 @@ replace('appframework/sdlmgr.cpp', '\tif (params->m_onlySyncView)\n\t\treturn;',
 \tstatic unsigned frame = 0;
 \t++frame;
 \tif (frame <= 3 || frame == 120 || (frame % 3600) == 0)
-\t\tWarning("iOS present: frame=%u texture=%u source=%dx%d drawable=%dx%d fbo=%u color=%u read=0x%x draw=0x%x blit=0x%x swap=0x%x\\n",
+\t\tWarning("iOS present: frame=%u texture=%u source=%dx%d drawable=%dx%d fbo=%u color=%u read=0x%x draw=0x%x prior=0x%x blit=0x%x swap=0x%x\\n",
 \t\t\tframe, params->m_srcTexName, params->m_width, params->m_height, width, height,
-\t\t\tinfo.info.uikit.framebuffer, info.info.uikit.colorbuffer, readStatus, drawStatus, blitError, swapError);
+\t\t\tinfo.info.uikit.framebuffer, info.info.uikit.colorbuffer, readStatus, drawStatus, priorError, blitError, swapError);
 \tgGL->glBindFramebuffer(GL_READ_FRAMEBUFFER, m_readFBO);
 \tgGL->glFramebufferTexture2D(GL_READ_FRAMEBUFFER, GL_COLOR_ATTACHMENT0, GL_TEXTURE_2D, 0, 0);
 \tgGL->glBindFramebuffer(GL_READ_FRAMEBUFFER, readFBO);
@@ -223,6 +225,29 @@ replace('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{',
         'void CEngine::Frame( void )\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS engine frame: %u\\n", iosFrame);\n#endif')
 replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
         'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
+# Startup can stop before the frame loop. Record original initialization calls
+# without skipping any systems or replacing their behavior.
+replace('engine/traceinit.cpp', 'void TraceInit( const char *i, const char *s, int listnum )\n{',
+        'void TraceInit( const char *i, const char *s, int listnum )\n{\n#ifdef SOURCE_IOS\n\tWarning("iOS host init: %s\\n", i);\n#endif')
+for statement in ('gTouch.Init();', 'g_pClientMode->Init();', 'g_pClientMode->Enable();',
+                  'view->Init();', 'vieweffects->Init();', 'C_BaseTempEntity::PrecacheTempEnts();',
+                  'input->Init_All();', 'VGui_CreateGlobalPanels();', 'InitSmokeFogOverlay();',
+                  'CUserMessageRegister::RegisterAll();', 'ClientVoiceMgr_Init();', 'ClientWorldFactoryInit();',
+                  'C_BaseAnimating::InitBoneSetupThreadPool();'):
+    replace('game/client/cdll_client_int.cpp', '\t' + statement,
+            '#ifdef SOURCE_IOS\n\tWarning("iOS client begin: ' + statement + '\\n");\n#endif\n\t' + statement +
+            '\n#ifdef SOURCE_IOS\n\tWarning("iOS client end: ' + statement + '\\n");\n#endif')
+replace('game/shared/igamesystem.cpp', 'bool IGameSystem::InitAllSystems()\n{',
+        'bool IGameSystem::InitAllSystems()\n{\n#ifdef SOURCE_IOS\n\tWarning("iOS game systems: registration begin\\n");\n#endif')
+replace('game/shared/igamesystem.cpp', '\t\tbool valid = sys->Init();',
+        '#ifdef SOURCE_IOS\n\t\tWarning("iOS game system begin: index=%d name=%s\\n", i, sys->Name());\n#endif\n\t\tbool valid = sys->Init();\n#ifdef SOURCE_IOS\n\t\tWarning("iOS game system end: index=%d name=%s result=%d\\n", i, sys->Name(), valid);\n#endif')
+# Log before the MDL lock as well, so a lock wait is distinguishable from Init.
+replace('game/shared/igamesystem.cpp', '\t\tMDLCACHE_CRITICAL_SECTION();\n\n\t\tIGameSystem *sys = s_GameSystems[i];',
+        '#ifdef SOURCE_IOS\n\t\tWarning("iOS game system lock: index=%d\\n", i);\n#endif\n\t\tMDLCACHE_CRITICAL_SECTION();\n\n\t\tIGameSystem *sys = s_GameSystems[i];')
+for statement in ('Host_ReadConfiguration();', 'Host_PostInit();', 'EndLoadingUpdates( );'):
+    replace('engine/host.cpp', '\t' + statement,
+            '#ifdef SOURCE_IOS\n\tWarning("iOS host begin: ' + statement + '\\n");\n#endif\n\t' + statement +
+            '\n#ifdef SOURCE_IOS\n\tWarning("iOS host end: ' + statement + '\\n");\n#endif')
 # Use the same GLES entry-point layout as the linked ToGLES library on iOS.
 replace('appframework/sdlmgr.cpp', '#include "togl/rendermechanism.h"',
         '#ifdef SOURCE_IOS\n#include "togles/rendermechanism.h"\n#else\n#include "togl/rendermechanism.h"\n#endif')
