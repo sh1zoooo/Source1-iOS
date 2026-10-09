@@ -31,13 +31,14 @@ SOURCE_BUILD_CLIENTMOD_GRAPHICS, SOURCE_BUILD_CLIENTMOD and SOURCE_BUILD_CSTRIKE
 The `clientmod_runtime_link_check` target links all graphical DLLs without
 unresolved symbols. Factory tests are named `clientmod_*_factory`.
 
-The existing IPA still launches the dedicated CS:S host plus Metal preview.
 An optional `SOURCE_CLIENTMOD_IOS_APP=ON` application now enters the original
 `LauncherMain` through SDL's UIKit entry point. It bundles the separate modules
 and sets their lookup directory independently of `Documents/Source1IOS/content`.
 It does not link the preview runtime. Original menus/HUD/game loop are owned by
-the original modules. This path remains under ARM64 build verification and has
-not been demonstrated on a device; it is not enabled in the released IPA workflow.
+the original modules. At d8b3d94d9d5c87ea3b0e94b9ba0bfbd0e246f2ea, the complete ARM64 app
+build and bundle validation passed; all 21 native module checks passed in CI.
+The IPA workflow now enables this path for version 0.46. Actual graphical startup
+and gameplay have not yet been demonstrated on a device.
 The content root must already contain the imported `cm`, `cstrike`, `hl2` and
 `platform` directories. Its initial launch uses `-noip` for offline verification.
 
@@ -48,5 +49,5 @@ platform selection and SDL launcher declarations. The full dynamic iOS applicati
 has its own CI job and writes startup diagnostics to `Source1IOS/ClientMod-native.log`.
 Full graphical/client/server lifecycle,
 content compatibility and sound codecs remain unverified. No on-device original
-shader/HUD or server connection has been demonstrated. No application version bump
-accompanies these checks.
+shader/HUD or server connection has been demonstrated. Version 0.46 packages the
+original dynamic application; prior IPAs used the dedicated host and Metal preview.
