@@ -23,7 +23,7 @@ paths = ["gameui/ModMenu/ClientModMenuWindow.cpp", "game/client/cdll_client_int.
          "game/shared/gamerules_register.h", "vgui2/src/system_posix.cpp",
          "game/shared/cstrike/achievements_cs.cpp",
          "vgui2/vgui_controls/FileOpenDialog.cpp", "vguimatsurface/MatSystemSurface.cpp",
-         "vguimatsurface/FontTextureCache.cpp", "gameui/BasePanel.cpp", "gameui/BasePanel.h"]
+         "vguimatsurface/FontTextureCache.cpp", "gameui/BasePanel.cpp", "gameui/BasePanel.h", "gameui/ModMenu/ClientModMainMenu.cpp"]
 previous = {}
 for path in paths:
     file = args.output / path
@@ -86,6 +86,17 @@ replace(paths[5], '#elif defined( OSX )',
 for path in paths[6:8]:
     replace(path, '#include <Carbon/Carbon.h>',
             '#ifndef SOURCE_IOS\n#include <Carbon/Carbon.h>\n#endif')
+
+# The upstream settings class declares this handler but never defines it.
+# Reuse its existing modified-control behavior for the original handedness combo.
+replace(paths[10], 'void ClientModMainMenu::OnControlModified()\n{',
+        'void ClientModMainMenu::OnTextChanged(vgui::Panel *panel)\n{\n\tif (panel == m_pWeaponPos && m_pWeaponPos->HasBeenModified())\n\t\tOnControlModified();\n}\n\nvoid ClientModMainMenu::OnControlModified()\n{')
+
+# Upstream placed a virtual method definition inside its Steam callback guard.
+replace('game/shared/steamworks_gamestats.cpp', 'void CSteamWorksGameStatsUploader::FrameUpdatePostEntityThink()',
+        '#endif // NO_STEAM callbacks\nvoid CSteamWorksGameStatsUploader::FrameUpdatePostEntityThink()')
+replace('game/shared/steamworks_gamestats.cpp', '\tm_ServiceTicking = false;\n}\n\n#endif',
+        '\tm_ServiceTicking = false;\n}')
 
 # Rec 1.4's original GameMenu.res sends this command, but the public fork left
 # its settings page unconnected. Wire that command to the original dialog.

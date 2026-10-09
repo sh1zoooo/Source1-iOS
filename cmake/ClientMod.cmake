@@ -31,6 +31,11 @@ foreach(module IN ITEMS vgui_controls matsys_controls vgui2 GameUI client vgui_s
   endif()
   add_library(clientmod_${module} STATIC ${sources})
   set_target_properties(clientmod_${module} PROPERTIES CXX_STANDARD 14)
+  if(SOURCE_BUILD_CLIENTMOD_RUNTIME)
+    set_target_properties(clientmod_${module} PROPERTIES POSITION_INDEPENDENT_CODE ON
+      CXX_VISIBILITY_PRESET hidden VISIBILITY_INLINES_HIDDEN ON)
+    target_compile_options(clientmod_${module} PRIVATE -U_STATIC_LINKED)
+  endif()
   target_link_libraries(clientmod_${module} PRIVATE source_settings)
   target_compile_options(clientmod_${module} PRIVATE -w)
   string(JSON count LENGTH "${CLIENTMOD_MANIFEST}" modules ${module} includes)
