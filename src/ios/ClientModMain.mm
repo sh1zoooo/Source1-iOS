@@ -29,6 +29,15 @@ static int runClientMod(int, char **) {
             setvbuf(stderr, nullptr, _IOLBF, 0);
         }
         std::fprintf(stdout, "Original ClientMod runtime; content: %s\n", content.path.UTF8String);
+        // Source's POSIX singleton lock must live in the iOS container. The
+        // desktop /tmp path is outside our sandbox and reports a false duplicate.
+        NSString *temporaryDirectory = NSTemporaryDirectory();
+        if (temporaryDirectory.length == 0 ||
+            setenv("TMPDIR", temporaryDirectory.fileSystemRepresentation, 1) != 0) {
+            std::fprintf(stderr, "ClientMod sandbox temporary directory unavailable\n");
+            return 1;
+        }
+        std::fprintf(stdout, "ClientMod singleton lock directory: %s\n", temporaryDirectory.fileSystemRepresentation);
         NSString *libraries = [[NSBundle mainBundle].bundlePath stringByAppendingPathComponent:@"Frameworks"];
         setenv("SOURCE_CLIENTMOD_LIBDIR", libraries.fileSystemRepresentation, 1);
         SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");

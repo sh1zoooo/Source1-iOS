@@ -160,6 +160,10 @@ replace('togles/linuxwin/glmgrbasics.cpp', '\tsystem( temp );',
         '#ifndef SOURCE_IOS\n\tsystem( temp );\n#else\n\tWarning("Desktop shader editor is unavailable on iOS.\\n");\n#endif')
 replace('launcher/launcher.cpp', '\t\t\t\tsystem( szOpenLine );',
         '#ifndef SOURCE_IOS\n\t\t\t\tsystem( szOpenLine );\n#else\n\t\t\t\tWarning("Desktop process relaunch is unavailable on iOS.\\n");\n#endif')
+# iOS cannot open the desktop /tmp singleton lock. Retain the original POSIX
+# fcntl lock and TMPDIR selection inside the application's sandbox.
+replace('launcher/launcher.cpp', '#elif defined (LINUX) || defined(PLATFORM_BSD)',
+        '#elif defined (LINUX) || defined(PLATFORM_BSD) || defined(SOURCE_IOS)')
 replace('engine/sys_mainwind.cpp', '#ifdef OSX\n\tid nsWindow',
         '#ifdef SOURCE_IOS\n\treturn (void*)pInfo.info.uikit.window;\n#elif defined(OSX)\n\tid nsWindow')
 replace('appframework/sdlmgr.cpp', 'if (SDL_GL_LoadLibrary("libGLESv3.so") == -1)',
