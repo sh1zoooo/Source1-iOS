@@ -9,6 +9,10 @@ set(CMAKE_OBJCXX_EXTENSIONS OFF)
 
 include(cmake/SourceModules.cmake)
 option(SOURCE_BUILD_CLIENTMOD_RUNTIME "Strict-link original modules as separate dynamic libraries" OFF)
+option(SOURCE_CLIENTMOD_IOS_APP "Launch original ClientMod through SDL UIKit instead of the preview" OFF)
+if(SOURCE_CLIENTMOD_IOS_APP AND (NOT CMAKE_SYSTEM_NAME STREQUAL "iOS" OR NOT SOURCE_BUILD_CLIENTMOD_RUNTIME))
+  message(FATAL_ERROR "SOURCE_CLIENTMOD_IOS_APP requires iOS and SOURCE_BUILD_CLIENTMOD_RUNTIME")
+endif()
 option(SOURCE_BUILD_CLIENTMOD "Compile pinned original ClientMod graphical modules" OFF)
 if(SOURCE_BUILD_CLIENTMOD)
   include(cmake/ClientMod.cmake)
@@ -40,11 +44,30 @@ endif()
 
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   enable_language(OBJCXX)
-  add_executable(Source1IOS MACOSX_BUNDLE src/ios/main.mm)
+  if(SOURCE_CLIENTMOD_IOS_APP)
+    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm)
+    target_link_libraries(Source1IOS PRIVATE SDL2)
+    set_target_properties(Source1IOS PROPERTIES BUILD_RPATH "@executable_path/Frameworks")
+    foreach(module IN LISTS runtime_modules)
+      add_dependencies(Source1IOS ${module})
+    endforeach()
+    set(bundle_modules ${runtime_modules} clientmod_runtime_tier0 clientmod_runtime_vstdlib SDL2)
+    foreach(module IN LISTS bundle_modules)
+      add_custom_command(TARGET Source1IOS POST_BUILD
+        COMMAND ${CMAKE_COMMAND} -E make_directory "$<TARGET_BUNDLE_DIR:Source1IOS>/Frameworks"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${module}>"
+          "$<TARGET_BUNDLE_DIR:Source1IOS>/Frameworks/$<TARGET_FILE_NAME:${module}>"
+        COMMAND ${CMAKE_COMMAND} -E copy_if_different "$<TARGET_FILE:${module}>"
+          "$<TARGET_BUNDLE_DIR:Source1IOS>/Frameworks/$<TARGET_SONAME_FILE_NAME:${module}>")
+    endforeach()
+  else()
+    add_executable(Source1IOS MACOSX_BUNDLE src/ios/main.mm)
+    target_link_libraries(Source1IOS PRIVATE port_runtime)
+  endif()
   set(SOURCE_NOTICES third_party/SOURCE1_LICENSE.txt third_party/SOURCE1_THIRD_PARTY_NOTICES.txt)
   set_source_files_properties(${SOURCE_NOTICES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
   target_sources(Source1IOS PRIVATE ${SOURCE_NOTICES})
-  target_link_libraries(Source1IOS PRIVATE port_runtime
+  target_link_libraries(Source1IOS PRIVATE
     "-framework UIKit" "-framework Foundation" "-framework CoreGraphics"
     "-framework QuartzCore" "-framework Metal" "-framework MetalKit")
   target_compile_options(Source1IOS PRIVATE -fobjc-arc)
@@ -61,6 +84,13 @@ else()
   include(CTest)
   if(BUILD_TESTING)
     if(SOURCE_BUILD_CLIENTMOD_RUNTIME)
+      add_executable(clientmod_module_lifecycle tests/clientmod_module_lifecycle.cpp)
+      target_link_libraries(clientmod_module_lifecycle PRIVATE source_settings
+        clientmod_runtime_tier0 clientmod_runtime_vstdlib SDL2 dl)
+      add_test(NAME clientmod_module_lifecycle COMMAND clientmod_module_lifecycle
+        $<TARGET_FILE:clientmod_runtime_vstdlib> $<TARGET_FILE:clientmod_runtime_filesystem_stdio>
+        $<TARGET_FILE:clientmod_runtime_inputsystem> $<TARGET_FILE:clientmod_runtime_vphysics>
+        $<TARGET_FILE:clientmod_runtime_soundemittersystem> $<TARGET_FILE:clientmod_runtime_scenefilecache>)
       add_executable(clientmod_module_factory tests/clientmod_module_factory.cpp)
       target_link_libraries(clientmod_module_factory PRIVATE dl)
       add_test(NAME clientmod_input_factory COMMAND clientmod_module_factory

@@ -20,8 +20,8 @@ jobs:
           cmake -S . -B build-runtime -DCMAKE_BUILD_TYPE=Release
           -DSOURCE_BUILD_CSTRIKE=ON -DSOURCE_BUILD_CLIENTMOD=ON
           -DSOURCE_BUILD_CLIENTMOD_GRAPHICS=ON -DSOURCE_BUILD_CLIENTMOD_RUNTIME=ON
-      - run: cmake --build build-runtime --target clientmod_runtime_link_check clientmod_module_factory touch_slots_tests --parallel 4
-      - run: ctest --test-dir build-runtime --output-on-failure -R 'clientmod_.*_factory|touch_64bit'
+      - run: cmake --build build-runtime --target clientmod_runtime_link_check clientmod_module_factory clientmod_module_lifecycle touch_slots_tests --parallel 4
+      - run: ctest --test-dir build-runtime --output-on-failure -R 'clientmod_.*_factory|clientmod_module_lifecycle|touch_64bit'
   ios-graphics:
     runs-on: macos-15
     timeout-minutes: 45
@@ -36,3 +36,20 @@ jobs:
           -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
           -DCMAKE_BUILD_TYPE=Release -DSOURCE_BUILD_CLIENTMOD=ON -DSOURCE_BUILD_CLIENTMOD_GRAPHICS=ON
       - run: cmake --build build-graphics-ios --target clientmod_graphics_compile_check --parallel 4 -- -k
+  ios-runtime:
+    runs-on: macos-15
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: true
+      - run: git -C third_party/source submodule update --init --depth 1 thirdparty ivp
+      - run: >-
+          cmake -S . -B build-runtime-ios -G "Unix Makefiles"
+          -DCMAKE_SYSTEM_NAME=iOS -DCMAKE_OSX_SYSROOT=iphoneos
+          -DCMAKE_OSX_ARCHITECTURES=arm64 -DCMAKE_OSX_DEPLOYMENT_TARGET=17.0
+          -DCMAKE_BUILD_TYPE=Release -DSOURCE_BUILD_CSTRIKE=ON
+          -DSOURCE_BUILD_CLIENTMOD=ON -DSOURCE_BUILD_CLIENTMOD_GRAPHICS=ON
+          -DSOURCE_BUILD_CLIENTMOD_RUNTIME=ON
+          -DSOURCE_CLIENTMOD_IOS_APP=ON
+      - run: cmake --build build-runtime-ios --target Source1IOS --parallel 4 -- -k

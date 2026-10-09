@@ -73,6 +73,8 @@ s = f.read_text()
 start = s.index('bool CInputSystem::GetTouchAccumulators(')
 end = s.index('\n}', start) + 2
 f.write_text(s[:start] + s[end:])
+replace('inputsystem/inputsystem.cpp', '\tBaseClass::Shutdown();',
+        '\tShutdownTouch();\n\tBaseClass::Shutdown();')
 replace('utils/bzip2/bzlib_private.h', '__inline__ Int32 BZ2_indexIntoF', 'static __inline__ Int32 BZ2_indexIntoF')
 replace('datacache/datacache.cpp', 'extern ConVar developer;',
         'ConVar developer( "developer", "0", FCVAR_INTERNAL_USE );')
@@ -97,12 +99,14 @@ replace('engine/host.cpp', 'STEAMREMOTESTORAGE_INTERFACE_VERSION ):NULL;',
         'STEAMREMOTESTORAGE_INTERFACE_VERSION ):NULL;\n#endif', count=2)
 replace('engine/host.cpp', '\t\t\t\tSteamAPI_RunCallbacks();',
         '#ifndef NO_STEAM\n\t\t\t\tSteamAPI_RunCallbacks();\n#endif')
+shutil.copy2(a.upstream / 'game/server/gameinterface.cpp', a.output / 'game/server/gameinterface.cpp')
 for operation in ('Init', 'Clear'):
     replace('game/server/gameinterface.cpp', f'#ifndef _X360\n\ts_SteamAPIContext.{operation}();',
             f'#if !defined(_X360) && !defined(NO_STEAM)\n\ts_SteamAPIContext.{operation}();')
 # Reuse audited SDK offline patches for account-bound server votes/statistics.
 for path in ('game/server/vote_controller.cpp', 'game/server/cstrike/cs_gamestats.cpp'):
     prepared, baseline, target = a.prepared_sdk / path, a.sdk / path, a.output / path
+    shutil.copy2(a.upstream / path, target)
     if prepared.is_file():
         merged = subprocess.run(['git', 'merge-file', '-p', str(prepared), str(baseline), str(target)], capture_output=True)
         if merged.returncode:
@@ -140,7 +144,7 @@ for folder in ('graphics-compat/togl', 'graphics-compat/togles', 'togles', 'appf
         text = re.sub(r'#ifdef\s+OSX\b', '#if defined(OSX) && !defined(SOURCE_IOS)', text)
         text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
         if folder != 'materialsystem/shaderapidx9':
-            text = re.sub(r'defined\(\s*(_?LINUX)\s*\)', r'(defined(\1) || defined(SOURCE_IOS))', text)
+            text = re.sub(r'defined\s*\(\s*(_?LINUX)\s*\)', r'(defined(\1) || defined(SOURCE_IOS))', text)
         f.write_text(text)
 f = a.output / 'engine/audio/voice_mixer_controls_openal.cpp'
 text = f.read_text().replace('#ifdef OSX', '#if defined(OSX) && !defined(SOURCE_IOS)').replace('#ifndef OSX', '#if !defined(OSX) || defined(SOURCE_IOS)')
@@ -152,8 +156,6 @@ replace('launcher/launcher.cpp', '\t\t\t\tsystem( szOpenLine );',
         '#ifndef SOURCE_IOS\n\t\t\t\tsystem( szOpenLine );\n#else\n\t\t\t\tWarning("Desktop process relaunch is unavailable on iOS.\\n");\n#endif')
 replace('engine/sys_mainwind.cpp', '#ifdef OSX\n\tid nsWindow',
         '#ifdef SOURCE_IOS\n\treturn (void*)pInfo.info.uikit.window;\n#elif defined(OSX)\n\tid nsWindow')
-replace('video/videoservices.cpp', '\tconst EPlatform_t\tthisPlatform = PLATFORM_LINUX;',
-        '\tconst EPlatform_t\tthisPlatform = PLATFORM_LINUX;')
 replace('appframework/sdlmgr.cpp', 'if (SDL_GL_LoadLibrary("libGLESv3.so") == -1)',
         '#ifdef SOURCE_IOS\n\t\tif (SDL_GL_LoadLibrary(NULL) == -1)\n#else\n\t\tif (SDL_GL_LoadLibrary("libGLESv3.so") == -1)\n#endif')
 replace('appframework/sdlmgr.cpp', '#ifdef TOGLES\n\tl_egl = dlopen("libEGL.so", RTLD_LAZY);',
