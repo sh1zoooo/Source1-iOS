@@ -227,6 +227,20 @@ replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
         'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
 # Startup can stop before the frame loop. Record original initialization calls
 # without skipping any systems or replacing their behavior.
+replace('engine/sys_dll.cpp', '#include "quakedef.h"',
+        '#include "quakedef.h"\n#ifdef SOURCE_IOS\n#include <stdio.h>\n#endif')
+replace('engine/sys_dll.cpp', 'SpewRetval_t Sys_SpewFunc( SpewType_t spewType, const char *pMsg )\n{',
+        'SpewRetval_t Sys_SpewFunc( SpewType_t spewType, const char *pMsg )\n{\n#ifdef SOURCE_IOS\n\tfputs(pMsg, stderr);\n#endif')
+# Warning() starts going to the original VGUI console once Sys_SpewFunc is
+# installed. Mirror it above so startup/frame diagnostics reach the device log.
+replace('appframework/sdlmgr.cpp', 'void CSDLMgr::PumpWindowsMessageLoop()\n{',
+        'void CSDLMgr::PumpWindowsMessageLoop()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosPump = 0;\n\tconst bool iosTracePump = ++iosPump <= 3;\n\tif (iosTracePump) Warning("iOS SDL pump begin: %u\\n", iosPump);\n#endif')
+f = a.output / 'appframework/sdlmgr.cpp'
+text = f.read_text()
+start = text.index('void CSDLMgr::PumpWindowsMessageLoop()')
+end = text.index('\n}', start)
+text = text[:end] + '\n#ifdef SOURCE_IOS\n\tif (iosTracePump) Warning("iOS SDL pump end: %u events=%d\\n", iosPump, nEventsProcessed);\n#endif' + text[end:]
+f.write_text(text)
 replace('engine/traceinit.cpp', 'void TraceInit( const char *i, const char *s, int listnum )\n{',
         'void TraceInit( const char *i, const char *s, int listnum )\n{\n#ifdef SOURCE_IOS\n\tWarning("iOS host init: %s\\n", i);\n#endif')
 for statement in ('gTouch.Init();', 'g_pClientMode->Init();', 'g_pClientMode->Enable();',
