@@ -97,6 +97,11 @@ replace('gameui/VGuiSystemModuleLoader.cpp', '\t\tif ( IsOSX() )',
 replace('gameui/VGuiSystemModuleLoader.cpp', '\n\n\t\t// load the module',
         '\n#endif\n\n\t\t// load the module')
 replace('gameui/VGuiSystemModuleLoader.cpp', 'it->GetString("dll"));', 'dllPath);')
+# Mobile packs need not ship Steam's desktop platform-module manifest. Finish
+# the empty module lifecycle so BasePanel can leave BACKGROUND_INITIAL.
+replace('gameui/VGuiSystemModuleLoader.cpp',
+        '\t\tkv->deleteThis();\n\t\treturn false;\n\t}\n\n\t// walk the platform menu',
+        '\t\tkv->deleteThis();\n#ifdef SOURCE_IOS\n\t\tWarning("iOS GameUI: no platform manifest; initializing local menu\\n");\n\t\treturn InitializeAllModules(factorylist, factorycount);\n#else\n\t\treturn false;\n#endif\n\t}\n\n\t// walk the platform menu')
 replace('serverbrowser/ServerBrowser.cpp', '\tSteamAPI_InitSafe();\n\tSteamAPI_SetTryCatchCallbacks( false ); // We don\'t use exceptions, so tell steam not to use try/catch in callback handlers\n\tsteamapicontext->Init();',
         '#ifndef NO_STEAM\n\tSteamAPI_InitSafe();\n\tSteamAPI_SetTryCatchCallbacks( false ); // We don\'t use exceptions, so tell steam not to use try/catch in callback handlers\n\tsteamapicontext->Init();\n#endif')
 replace('engine/audio/voice.cpp', '\t\tsteamapicontext->Init();',
