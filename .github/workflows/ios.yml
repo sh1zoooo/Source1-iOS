@@ -42,6 +42,10 @@ jobs:
           -DCMAKE_BUILD_TYPE=Release -DSOURCE_BUILD_CSTRIKE=ON
           -DSOURCE_BUILD_CLIENTMOD=ON -DSOURCE_BUILD_CLIENTMOD_GRAPHICS=ON
           -DSOURCE_BUILD_CLIENTMOD_RUNTIME=ON -DSOURCE_CLIENTMOD_IOS_APP=ON
+      - name: Compile app sources and link UIKit context adapter first
+        run: |
+          cmake --build build-ios --target src/ios/ClientModMain.mm.o src/runtime/CrashDiagnostics.cpp.o --parallel 2
+          cmake --build build-ios --target clientmod_runtime_launcher --parallel 4
       - name: Build original client app and modules
         run: cmake --build build-ios --target Source1IOS --parallel 4
       - name: Verify original module bundle and ARM64 dependencies

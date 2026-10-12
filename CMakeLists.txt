@@ -45,7 +45,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   enable_language(OBJCXX)
   if(SOURCE_CLIENTMOD_IOS_APP)
-    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm)
+    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm src/runtime/CrashDiagnostics.cpp)
     target_link_libraries(Source1IOS PRIVATE SDL2)
     set(clientmod_fonts resources/fonts/DejaVuSans.ttf resources/fonts/DejaVuSans-Bold.ttf
       resources/fonts/DejaVuSansMono.ttf resources/fonts/LICENSE.txt)
@@ -74,7 +74,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_link_libraries(Source1IOS PRIVATE
     "-framework UIKit" "-framework Foundation" "-framework CoreGraphics"
     "-framework QuartzCore" "-framework Metal" "-framework MetalKit")
-  target_compile_options(Source1IOS PRIVATE -fobjc-arc)
+  target_compile_options(Source1IOS PRIVATE "$<$<COMPILE_LANGUAGE:OBJCXX>:-fobjc-arc>")
   set_target_properties(Source1IOS PROPERTIES
     MACOSX_BUNDLE_INFO_PLIST "${CMAKE_CURRENT_SOURCE_DIR}/src/ios/Info.plist"
     MACOSX_BUNDLE_GUI_IDENTIFIER "io.github.sh1zoooo.source1ios"

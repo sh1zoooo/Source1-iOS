@@ -177,7 +177,7 @@ replace('appframework/sdlmgr.cpp', '\tif (params->m_onlySyncView)\n\t\treturn;',
 \t\treturn;
 #ifdef SOURCE_IOS
 \t// SDL UIKit swaps the current context; a NULL context leaves the old frame.
-\tif (SDL_GL_MakeCurrent(m_Window, m_GLContext) != 0) {
+\tif (!MakeContextCurrent((PseudoGLContextPtr)m_GLContext)) {
 \t\tWarning("iOS presentation: context activation failed: %s\\n", SDL_GetError());
 \t\treturn;
 \t}
@@ -235,6 +235,22 @@ replace('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{',
         'void CEngine::Frame( void )\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS engine frame: %u\\n", iosFrame);\n#endif')
 replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
         'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
+# Resource creation happens before BeginFrame too. The upstream CheckCurrent
+# is a release-build NOP, allowing shader/texture handles to become zero.
+for path in ('public/togles/linuxwin/glmgr.h', 'graphics-compat/togles/linuxwin/glmgr.h'):
+    replace(path, 'FORCEINLINE void CheckCurrent( void ) { }',
+            'FORCEINLINE void CheckCurrent( void ) {\n#ifdef SOURCE_IOS\n\t\t\tMakeCurrent(true);\n#endif\n\t\t}')
+# UIKit may change EAGL behind SDL's TLS cache. Restore both layers.
+replace('appframework/sdlmgr.cpp', '#include "SDL_syswm.h"',
+        '#include "SDL_syswm.h"\nextern "C" bool ClientModIOSRestoreGLContext(void *context);')
+replace('appframework/sdlmgr.cpp', '\treturn SDL_GL_MakeCurrent(m_Window, (SDL_GLContext)hContext ) == 0;',
+        '\tif (SDL_GL_MakeCurrent(m_Window, (SDL_GLContext)hContext) != 0) return false;\n#ifdef SOURCE_IOS\n\treturn ClientModIOSRestoreGLContext((void *)hContext);\n#else\n\treturn true;\n#endif')
+# The UIKit drawable has one render context. Prevent desktop worker-queue
+# handoffs from detaching it while startup resources or VGUI are using it.
+replace('materialsystem/cmaterialsystem.cpp', '\tint iConVarThreadMode = mat_queue_mode.GetInt();',
+        '#ifdef SOURCE_IOS\n\tint iConVarThreadMode = MATERIAL_SINGLE_THREADED;\n#else\n\tint iConVarThreadMode = mat_queue_mode.GetInt();\n#endif')
+replace('togles/linuxwin/cglmprogram.cpp', '\tglslDesc->m_object.glsl = gGL->glCreateShader( glslStage );;',
+        '\tglslDesc->m_object.glsl = gGL->glCreateShader( glslStage );;\n#ifdef SOURCE_IOS\n\tif (!glslDesc->m_object.glsl) Error("iOS shader creation failed: stage=0x%x error=0x%x\\n", glslStage, gGL->glGetError());\n#endif')
 # Reacquire the real rendering context at frame start, including the single
 # threaded path where desktop MakeCurrent(false) does nothing.
 replace('togles/linuxwin/glmgr.cpp', 'void GLMContext::BeginFrame( void )\n{',
@@ -343,6 +359,8 @@ replace('appframework/sdlmgr.cpp', 'if (SDL_GL_LoadLibrary("libGLESv3.so") == -1
         '#ifdef SOURCE_IOS\n\t\tif (SDL_GL_LoadLibrary(NULL) == -1)\n#else\n\t\tif (SDL_GL_LoadLibrary("libGLESv3.so") == -1)\n#endif')
 replace('appframework/sdlmgr.cpp', '#ifdef TOGLES\n\tl_egl = dlopen("libEGL.so", RTLD_LAZY);',
         '#ifdef SOURCE_IOS\n\t_glGetProcAddress = SDL_GL_GetProcAddress;\n\tSET_GL_ATTR(SDL_GL_CONTEXT_PROFILE_MASK, SDL_GL_CONTEXT_PROFILE_ES);\n\tSET_GL_ATTR(SDL_GL_CONTEXT_MAJOR_VERSION, 3);\n\tSET_GL_ATTR(SDL_GL_CONTEXT_MINOR_VERSION, 0);\n#elif defined(TOGLES)\n\tl_egl = dlopen("libEGL.so", RTLD_LAZY);')
+
+replace('gameui/GameUI_Interface.cpp', '\tBasePanel()->RunFrame();', '#ifdef SOURCE_IOS\n\tif (iosFrame <= 3) Warning("iOS GameUI base panel begin: %u\\n", iosFrame);\n#endif\n\tBasePanel()->RunFrame();\n#ifdef SOURCE_IOS\n\tif (iosFrame <= 3) Warning("iOS GameUI base panel end: %u\\n", iosFrame);\n#endif')
 
 # Keep rebuilds incremental when a configure pass produces identical content.
 import os
