@@ -92,7 +92,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   target_sources(clientmod_appframework PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/ios/ClientModGLContext.mm")
   set_source_files_properties("${CMAKE_CURRENT_SOURCE_DIR}/src/ios/ClientModGLContext.mm"
     PROPERTIES COMPILE_OPTIONS "-fobjc-arc")
-  target_link_libraries(clientmod_appframework PUBLIC "-framework OpenGLES")
+  target_link_libraries(clientmod_appframework PUBLIC "-framework OpenGLES" objc)
 endif()
 target_compile_definitions(clientmod_engine PRIVATE ENGINE_DLL=1 VERSION_SAFE_STEAM_API_INTERFACES=1 USE_BREAKPAD_HANDLER=1)
 target_compile_definitions(clientmod_materialsystem PRIVATE DEFINE_MATERIALSYSTEM_INTERFACE=1 MATERIALSYSTEM_EXPORTS=1)
