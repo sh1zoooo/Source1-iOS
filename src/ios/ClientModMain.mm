@@ -5,8 +5,27 @@
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstdlib>
+#include <cstring>
 #include <vector>
 #include <unistd.h>
+#include "../runtime/CrashDiagnostics.hpp"
+#include <mach-o/dyld.h>
+
+static void reportException(NSException *exception) {
+    std::fprintf(stderr, "iOS exception: %s: %s\n%s\n",
+        exception.name.UTF8String, exception.reason.UTF8String,
+        [exception.callStackSymbols componentsJoinedByString:@"\n"].UTF8String);
+}
+
+static void reportImage(const struct mach_header *header, intptr_t) {
+    for (uint32_t i = 0; i < _dyld_image_count(); ++i) {
+        if (_dyld_get_image_header(i) != header) continue;
+        const char *name = _dyld_get_image_name(i);
+        if (name && std::strstr(name, ".app/"))
+            std::fprintf(stderr, "iOS image: base=%p name=%s\n", (const void *)header, name);
+        break;
+    }
+}
 
 // UIKit/EAGL startup only. Menus, HUD, input and the game loop belong to the
 // original launcher/engine/client modules, with no preview runtime linked here.
@@ -29,6 +48,9 @@ static int runClientMod(int, char **) {
             setvbuf(stderr, nullptr, _IOLBF, 0);
         }
         std::fprintf(stdout, "Original ClientMod runtime %s; content: %s\n", [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] UTF8String], content.path.UTF8String);
+        InstallClientModCrashDiagnostics();
+        NSSetUncaughtExceptionHandler(reportException);
+        _dyld_register_func_for_add_image(reportImage);
         // Source's POSIX singleton lock must live in the iOS container. The
         // desktop /tmp path is outside our sandbox and reports a false duplicate.
         NSString *temporaryDirectory = NSTemporaryDirectory();

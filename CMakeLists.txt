@@ -45,7 +45,7 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   enable_language(OBJCXX)
   if(SOURCE_CLIENTMOD_IOS_APP)
-    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm)
+    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm src/runtime/CrashDiagnostics.cpp)
     target_link_libraries(Source1IOS PRIVATE SDL2)
     set(clientmod_fonts resources/fonts/DejaVuSans.ttf resources/fonts/DejaVuSans-Bold.ttf
       resources/fonts/DejaVuSansMono.ttf resources/fonts/LICENSE.txt)
