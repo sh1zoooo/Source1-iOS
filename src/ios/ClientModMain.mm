@@ -40,6 +40,8 @@ static int runClientMod(int, char **) {
         std::fprintf(stdout, "ClientMod singleton lock directory: %s\n", temporaryDirectory.fileSystemRepresentation);
         NSString *libraries = [[NSBundle mainBundle].bundlePath stringByAppendingPathComponent:@"Frameworks"];
         setenv("SOURCE_CLIENTMOD_LIBDIR", libraries.fileSystemRepresentation, 1);
+        NSString *fonts = [[NSBundle mainBundle].bundlePath stringByAppendingPathComponent:@"Fonts"];
+        setenv("SOURCE_CLIENTMOD_FONTDIR", fonts.fileSystemRepresentation, 1);
         SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
         NSString *launcherPath = [libraries stringByAppendingPathComponent:@"liblauncher.dylib"];
         void *launcher = dlopen(launcherPath.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);

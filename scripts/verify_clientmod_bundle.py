@@ -11,6 +11,9 @@ args = parser.parse_args()
 app = args.app.resolve()
 with (app / 'Info.plist').open('rb') as stream:
     info = plistlib.load(stream)
+for font in ('DejaVuSans.ttf', 'DejaVuSans-Bold.ttf', 'DejaVuSansMono.ttf', 'LICENSE.txt'):
+    if not (app / 'Fonts' / font).is_file():
+        raise SystemExit(f'Missing bundled font resource: {font}')
 executable = app / info['CFBundleExecutable']
 libraries = app / 'Frameworks'
 modules = ('engine', 'client', 'server', 'GameUI', 'vgui2', 'vguimatsurface',

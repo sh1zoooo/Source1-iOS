@@ -136,6 +136,11 @@ replace(paths[9], '\tvoid OnOpenOptionsDialog();',
 replace(paths[9], '\tvgui::DHANDLE<vgui::PropertyDialog> m_hOptionsDialog;',
         '\tvgui::DHANDLE<vgui::PropertyDialog> m_hOptionsDialog;\n\tvgui::DHANDLE<vgui::PropertyDialog> m_hClientModMenuWindow;')
 
+# The device has no Linux font directory. Supply licensed fallback fonts in
+# the app bundle; custom fonts registered from content retain their own loader.
+replace('vgui2/vgui_surfacelib/linuxfont.cpp', '\tstatic char fontFile[MAX_PATH];',
+        '\tstatic char fontFile[MAX_PATH];\n#ifdef SOURCE_IOS\n\tconst char *fontDir = getenv("SOURCE_CLIENTMOD_FONTDIR");\n\tif (!fontDir || !*fontDir) return NULL;\n\tconst char *fontFileName = !strcmp(winFontName, "Courier New") ? "DejaVuSansMono.ttf" : (bBold ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf");\n\tsnprintf(fontFile, sizeof(fontFile), "%s/%s", fontDir, fontFileName);\n\treturn fontFile;\n#endif')
+
 # Reconfiguration must not recompile unchanged patched translation units.
 for path, (data, modified) in previous.items():
     file = args.output / path

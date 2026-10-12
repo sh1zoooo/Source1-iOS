@@ -97,6 +97,11 @@ replace('gameui/VGuiSystemModuleLoader.cpp', '\t\tif ( IsOSX() )',
 replace('gameui/VGuiSystemModuleLoader.cpp', '\n\n\t\t// load the module',
         '\n#endif\n\n\t\t// load the module')
 replace('gameui/VGuiSystemModuleLoader.cpp', 'it->GetString("dll"));', 'dllPath);')
+# Mobile packs need not ship Steam's desktop platform-module manifest. Finish
+# the empty module lifecycle so BasePanel can leave BACKGROUND_INITIAL.
+replace('gameui/VGuiSystemModuleLoader.cpp',
+        '\t\tkv->deleteThis();\n\t\treturn false;\n\t}\n\n\t// walk the platform menu',
+        '\t\tkv->deleteThis();\n#ifdef SOURCE_IOS\n\t\tWarning("iOS GameUI: no platform manifest; initializing local menu\\n");\n\t\treturn InitializeAllModules(factorylist, factorycount);\n#else\n\t\treturn false;\n#endif\n\t}\n\n\t// walk the platform menu')
 replace('serverbrowser/ServerBrowser.cpp', '\tSteamAPI_InitSafe();\n\tSteamAPI_SetTryCatchCallbacks( false ); // We don\'t use exceptions, so tell steam not to use try/catch in callback handlers\n\tsteamapicontext->Init();',
         '#ifndef NO_STEAM\n\tSteamAPI_InitSafe();\n\tSteamAPI_SetTryCatchCallbacks( false ); // We don\'t use exceptions, so tell steam not to use try/catch in callback handlers\n\tsteamapicontext->Init();\n#endif')
 replace('engine/audio/voice.cpp', '\t\tsteamapicontext->Init();',
@@ -171,6 +176,11 @@ replace('togles/linuxwin/glmgr.cpp', '\t\tif ( (gl_blitmode.GetInt() != 0) )',
 replace('appframework/sdlmgr.cpp', '\tif (params->m_onlySyncView)\n\t\treturn;', '''\tif (params->m_onlySyncView)
 \t\treturn;
 #ifdef SOURCE_IOS
+\t// SDL UIKit swaps the current context; a NULL context leaves the old frame.
+\tif (SDL_GL_MakeCurrent(m_Window, m_GLContext) != 0) {
+\t\tWarning("iOS presentation: context activation failed: %s\\n", SDL_GetError());
+\t\treturn;
+\t}
 \tSDL_SysWMinfo info;
 \tSDL_VERSION(&info.version);
 \tif (!SDL_GetWindowWMInfo(m_Window, &info) || info.subsystem != SDL_SYSWM_UIKIT) {
@@ -225,6 +235,14 @@ replace('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{',
         'void CEngine::Frame( void )\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS engine frame: %u\\n", iosFrame);\n#endif')
 replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
         'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
+# Reacquire the real rendering context at frame start, including the single
+# threaded path where desktop MakeCurrent(false) does nothing.
+replace('togles/linuxwin/glmgr.cpp', 'void GLMContext::BeginFrame( void )\n{',
+        'void GLMContext::BeginFrame( void )\n{\n#ifdef SOURCE_IOS\n\tif (!MakeContextCurrent(m_ctx)) Error("iOS render context activation failed\\n");\n#endif')
+# A desktop resource pack may name a background BSP that was not imported.
+# Keep the original menu usable instead of queuing a doomed background load.
+replace('engine/cl_main.cpp', '\t\tchar cmd[_MAX_PATH];\n\t\tQ_snprintf( cmd, sizeof(cmd), "map_background %s\\n", szBackgroundName );',
+        '\t\tchar cmd[_MAX_PATH];\n#ifdef SOURCE_IOS\n\t\tchar mapPath[_MAX_PATH];\n\t\tQ_snprintf(mapPath, sizeof(mapPath), "maps/%s.bsp", szBackgroundName);\n\t\tif (!g_pFullFileSystem->FileExists(mapPath, "GAME")) {\n\t\t\tWarning("iOS startup: missing background %s; activating main menu\\n", mapPath);\n\t\t\tEngineVGui()->ActivateGameUI();\n\t\t\treturn;\n\t\t}\n#endif\n\t\tQ_snprintf( cmd, sizeof(cmd), "map_background %s\\n", szBackgroundName );')
 # Startup can stop before the frame loop. Record original initialization calls
 # without skipping any systems or replacing their behavior.
 replace('engine/sys_dll.cpp', '#include "quakedef.h"',
