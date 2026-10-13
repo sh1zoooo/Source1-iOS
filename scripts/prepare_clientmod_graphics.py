@@ -170,6 +170,10 @@ for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
     f.write_text(text)
 replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>\n#ifdef SOURCE_IOS\n#include "SDL_syswm.h"\n#endif')
 # Device logs show world texture precaching pushes footprint over 1.4 GiB.
+# A gameplay finger must not also click an invisible VGUI panel.
+replace('engine/sys_mainwind.cpp',
+        '\t\t\tg_ClientDLL->IN_TouchEvent( event.m_nType, event.m_nData, event.m_nData2, event.m_nData3 );',
+        '\t\t\tg_ClientDLL->IN_TouchEvent( event.m_nType, event.m_nData, event.m_nData2, event.m_nData3 );\n#ifdef SOURCE_IOS\n\t\tif (!g_pMatSystemSurface || !g_pMatSystemSurface->IsCursorVisible()) break;\n#endif')
 # Select existing smaller VTF mips before file read and GPU decompression.
 replace('materialsystem/ctexture.cpp', '#include "platform.h"',
         '#include "platform.h"\n#include "MobileTextureMips.hpp"\n#ifdef SOURCE_IOS\n#include <atomic>\n#endif')

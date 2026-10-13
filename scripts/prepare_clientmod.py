@@ -164,6 +164,40 @@ replace('vguimatsurface/MatSystemSurface.cpp',
 replace('vgui2/vgui_surfacelib/linuxfont.cpp', '\tstatic char fontFile[MAX_PATH];',
         '\tstatic char fontFile[MAX_PATH];\n#ifdef SOURCE_IOS\n\tconst char *fontDir = getenv("SOURCE_CLIENTMOD_FONTDIR");\n\tif (!fontDir || !*fontDir) return NULL;\n\tconst char *fontFileName = !strcmp(winFontName, "Courier New") ? "DejaVuSansMono.ttf" : (bBold ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf");\n\tsnprintf(fontFile, sizeof(fontFile), "%s/%s", fontDir, fontFileName);\n\treturn fontFile;\n#endif')
 
+# Mobile server admission: unsupported HTML MOTDs must not trap the player
+# before team selection. Queue the normal acknowledgement after viewport setup.
+replace('game/client/cstrike/VGUI/cstriketextwindow.cpp',
+        '\tBaseClass::ShowPanel( bShow );',
+        '\tBaseClass::ShowPanel( bShow );\n#ifdef SOURCE_IOS\n\tif (bShow) {\n\t\tWarning("iOS admission: acknowledging server info\\n");\n\t\tPostMessage(this, new KeyValues("Command", "command", "okay"));\n\t}\n#endif')
+replace('game/client/game_controls/vguitextwindow.cpp',
+        '\t\tWarning( "Blocking HTML info panel',
+        '#ifdef SOURCE_IOS\n\t\tm_pHTMLMessage->SetVisible(false);\n\t\tShowText(m_szMessageFallback);\n\t\treturn;\n#endif\n\t\tWarning( "Blocking HTML info panel')
+replace('game/client/cstrike/VGUI/cstriketeammenu.cpp', '#include "cbase.h"',
+        '#include "IOSGameDialogs.hpp"\n#include "cbase.h"')
+replace('game/client/cstrike/VGUI/cstriketeammenu.cpp',
+        '\tm_backgroundLayoutFinished = false;',
+        '\tm_backgroundLayoutFinished = false;\n#ifdef SOURCE_IOS\n\tCreateIOSTeamButtons(this);\n#endif')
+replace('game/client/cstrike/VGUI/cstriketeammenu.cpp',
+        'void CCSTeamMenu::PerformLayout()\n{',
+        'void CCSTeamMenu::PerformLayout()\n{\n#ifdef SOURCE_IOS\n\tLayoutIOSTeamButtons(this);\n\treturn;\n#endif')
+replace('game/client/cstrike/VGUI/cstriketeammenu.cpp',
+        'void CCSTeamMenu::PaintBackground()\n{',
+        'void CCSTeamMenu::PaintBackground()\n{\n#ifdef SOURCE_IOS\n\tvgui::surface()->DrawSetColor(20,24,30,245);\n\tvgui::surface()->DrawFilledRect(0,0,GetWide(),GetTall());\n#endif')
+replace('game/client/cstrike/VGUI/cstriketeammenu.cpp',
+        'void CCSTeamMenu::OnCommand( const char *command )\n{',
+        'void CCSTeamMenu::OnCommand( const char *command )\n{\n#ifdef SOURCE_IOS\n\tWarning("iOS admission team: %s\\n", command);\n#endif')
+for name in ('TER', 'CT'):
+    replace('game/client/cstrike/VGUI/cstrikeclassmenu.cpp',
+            'void CClassMenu_'+name+'::ShowPanel(bool bShow)\n{',
+            'void CClassMenu_'+name+'::ShowPanel(bool bShow)\n{\n#ifdef SOURCE_IOS\n\tif (bShow) {\n\t\tWarning("iOS admission: selecting default player class\\n");\n\t\tengine->ClientCmd("joinclass 0");\n\t\tBaseClass::ShowPanel(false);\n\t\treturn;\n\t}\n#endif')
+# Gameplay controls must not execute while an in-game dialog owns input.
+replace(paths[1], '#include "cbase.h"',
+        '#include "game/client/iviewport.h"\n#include "cbase.h"')
+replace(paths[1], '\tif( enginevgui->IsGameUIVisible() )\n\t\treturn;',
+        '\tif( enginevgui->IsGameUIVisible() )\n\t\treturn;\n#ifdef SOURCE_IOS\n\tIViewPortPanel *active = gViewPortInterface ? gViewPortInterface->GetActivePanel() : NULL;\n\tif (active && active->IsVisible() && active->HasInputElements()) return;\n#endif')
+replace('game/client/touch.cpp', '#ifdef ANDROID\n#define TOUCH_DEFAULT "1"',
+        '#if defined(ANDROID) || defined(SOURCE_IOS)\n#define TOUCH_DEFAULT "1"')
+
 # Diagnose device-only map loading without changing map/game behavior.
 for path in ('game/client/cdll_client_int.cpp', 'game/client/cstrike/clientmode_csnormal.cpp',
              'game/client/touch.cpp'):
