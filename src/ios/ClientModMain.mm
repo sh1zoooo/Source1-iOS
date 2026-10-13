@@ -2,6 +2,7 @@
 #include "SDL.h"
 #include "SDL_main.h"
 #import <Foundation/Foundation.h>
+#import <UIKit/UIKit.h>
 #include <dlfcn.h>
 #include <cstdio>
 #include <cstdlib>
@@ -74,8 +75,21 @@ static int runClientMod(int, char **) {
         auto launch = reinterpret_cast<LauncherMain>(dlsym(launcher, "LauncherMain"));
         if (!launch) { std::fprintf(stderr, "Original LauncherMain export missing\n"); return 1; }
         if (![files changeCurrentDirectoryPath:content.path]) return 1;
+        // UIKit display bounds can still be portrait during engine startup.
+        // Render into a landscape canvas with enough room for desktop dialogs;
+        // the final drawable blit and normalized touch coordinates share it.
+        CGSize display = UIScreen.mainScreen.bounds.size;
+        double longSide = MAX(display.width, display.height);
+        double shortSide = MIN(display.width, display.height);
+        int renderHeight = 720;
+        int renderWidth = shortSide > 0 ? int(renderHeight * longSide / shortSide + .5) : 1280;
+        if (renderWidth < 960) renderWidth = 960;
+        std::fprintf(stderr, "iOS landscape canvas: %dx%d display=%.0fx%.0f\n",
+                     renderWidth, renderHeight, display.width, display.height);
         NSArray<NSString *> *arguments = @[@"ClientMod", @"-basedir", content.path,
-            @"-game", @"cm", @"-insecure", @"-noip", @"-windowed"];
+            @"-game", @"cm", @"-insecure", @"-noip", @"-windowed",
+            @"-w", [NSString stringWithFormat:@"%d", renderWidth],
+            @"-h", [NSString stringWithFormat:@"%d", renderHeight]];
         std::vector<char *> argv;
         for (NSString *argument in arguments) argv.push_back(const_cast<char *>(argument.UTF8String));
         argv.push_back(nullptr);

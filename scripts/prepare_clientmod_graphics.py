@@ -169,6 +169,14 @@ for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
     text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
     f.write_text(text)
 replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>\n#ifdef SOURCE_IOS\n#include "SDL_syswm.h"\n#endif')
+# iOS window points are the presentation destination, not the render canvas.
+# Desktop display clamps otherwise reduce a landscape request to portrait width.
+replace('engine/matsys_interface.cpp',
+        '\tconfig.m_VideoMode.m_Width = MIN( videoMode.m_Width, config.m_VideoMode.m_Width );\n\tconfig.m_VideoMode.m_Height = MIN( videoMode.m_Height, config.m_VideoMode.m_Height );',
+        '#ifndef SOURCE_IOS\n\tconfig.m_VideoMode.m_Width = MIN( videoMode.m_Width, config.m_VideoMode.m_Width );\n\tconfig.m_VideoMode.m_Height = MIN( videoMode.m_Height, config.m_VideoMode.m_Height );\n#endif')
+replace('materialsystem/shaderapidx9/shaderdevicedx8.cpp',
+        '\t\tif ( ( info.m_DisplayMode.m_nWidth > displayMode.m_nWidth ) ||\n\t\t\t ( info.m_DisplayMode.m_nHeight > displayMode.m_nHeight ) )\n\t\t\treturn false;',
+        '#ifndef SOURCE_IOS\n\t\tif ( ( info.m_DisplayMode.m_nWidth > displayMode.m_nWidth ) ||\n\t\t\t ( info.m_DisplayMode.m_nHeight > displayMode.m_nHeight ) )\n\t\t\treturn false;\n#endif')
 # UIKit owns a nonzero drawable FBO and requires its color renderbuffer at swap.
 # Keep the original texture resolve; only adapt the final SDL presentation.
 replace('togles/linuxwin/glmgr.cpp', '\t\tif ( (gl_blitmode.GetInt() != 0) )',
