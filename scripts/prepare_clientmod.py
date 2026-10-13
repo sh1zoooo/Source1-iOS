@@ -148,6 +148,18 @@ replace('gameui/BasePanel.cpp', 'void CBasePanel::OnCommand( const char *command
         'void CBasePanel::OnCommand( const char *command )\n{\n#ifdef SOURCE_IOS\n\tWarning("iOS menu command: %s console=%d\\n", command, GameUI().IsConsoleUI());\n#endif')
 
 # The device has no Linux font directory. Supply licensed fallback fonts in
+# Keep desktop proportional dialogs below the mobile viewport height, with
+# space for title bars, footers and the home indicator. Both surfaces must
+# report the same baseline, including scheme normalization's inverse scale.
+for path in ('vguimatsurface/MatSystemSurface.h', 'vgui2/src/Surface.cpp'):
+    replace(path,
+            'void GetProportionalBase( int &width, int &height ) { width = BASE_WIDTH; height = BASE_HEIGHT; }',
+            'void GetProportionalBase( int &width, int &height ) { width = BASE_WIDTH;\n#ifdef SOURCE_IOS\n\theight = 600;\n#else\n\theight = BASE_HEIGHT;\n#endif\n}')
+replace('vguimatsurface/MatSystemSurface.cpp',
+        'void CMatSystemSurface::GetWorkspaceBounds(int &x, int &y, int &iWide, int &iTall)\n{',
+        'void CMatSystemSurface::GetWorkspaceBounds(int &x, int &y, int &iWide, int &iTall)\n{\n#ifdef SOURCE_IOS\n\tif (!m_ScreenSizeOverride.m_bActive) {\n\t\tGetScreenSize(iWide, iTall);\n\t\tx = 24; y = 24;\n\t\tiWide = MAX(1, iWide - 48);\n\t\tiTall = MAX(1, iTall - 72);\n\t\treturn;\n\t}\n#endif')
+
+# The device has no Linux font directory. Supply licensed fallback fonts in
 # the app bundle; custom fonts registered from content retain their own loader.
 replace('vgui2/vgui_surfacelib/linuxfont.cpp', '\tstatic char fontFile[MAX_PATH];',
         '\tstatic char fontFile[MAX_PATH];\n#ifdef SOURCE_IOS\n\tconst char *fontDir = getenv("SOURCE_CLIENTMOD_FONTDIR");\n\tif (!fontDir || !*fontDir) return NULL;\n\tconst char *fontFileName = !strcmp(winFontName, "Courier New") ? "DejaVuSansMono.ttf" : (bBold ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf");\n\tsnprintf(fontFile, sizeof(fontFile), "%s/%s", fontDir, fontFileName);\n\treturn fontFile;\n#endif')
