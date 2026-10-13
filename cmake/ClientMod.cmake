@@ -48,6 +48,7 @@ foreach(module IN ITEMS vgui_controls matsys_controls vgui2 GameUI client vgui_s
     endif()
   endforeach()
   target_include_directories(clientmod_${module} PRIVATE
+    "${CMAKE_CURRENT_SOURCE_DIR}/src/source"
     "${CLIENTMOD_ROOT}/compat"
     "${SOURCE_UPSTREAM}/thirdparty/SDL-src/include" "${CLIENTMOD_ROOT}/game/shared"
     "${CLIENTMOD_ROOT}/common")
