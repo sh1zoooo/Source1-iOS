@@ -164,6 +164,48 @@ replace('vguimatsurface/MatSystemSurface.cpp',
 replace('vgui2/vgui_surfacelib/linuxfont.cpp', '\tstatic char fontFile[MAX_PATH];',
         '\tstatic char fontFile[MAX_PATH];\n#ifdef SOURCE_IOS\n\tconst char *fontDir = getenv("SOURCE_CLIENTMOD_FONTDIR");\n\tif (!fontDir || !*fontDir) return NULL;\n\tconst char *fontFileName = !strcmp(winFontName, "Courier New") ? "DejaVuSansMono.ttf" : (bBold ? "DejaVuSans-Bold.ttf" : "DejaVuSans.ttf");\n\tsnprintf(fontFile, sizeof(fontFile), "%s/%s", fontDir, fontFileName);\n\treturn fontFile;\n#endif')
 
+# Diagnose device-only map loading without changing map/game behavior.
+for path in ('game/client/cdll_client_int.cpp', 'game/client/cstrike/clientmode_csnormal.cpp',
+             'game/client/touch.cpp'):
+    replace(path, '#include "cbase.h"',
+            '#include "IOSLoadDiagnostics.hpp"\n#include "cbase.h"')
+replace('game/client/cstrike/clientmode_csnormal.cpp',
+        '\tCUtlBuffer buf;\n\tif ( !filesystem->ReadFile( szResolvedName, "GAME", buf ) )',
+        '\tIOSLoadCheckpoint("buy file read begin");\n\tCUtlBuffer buf;\n\tif ( !filesystem->ReadFile( szResolvedName, "GAME", buf ) )')
+replace('game/client/cstrike/clientmode_csnormal.cpp', "\tbuf.PutChar('\\0');",
+        '\tIOSLoadCheckpoint("buy file read end");\n#ifdef SOURCE_IOS\n\tWarning("iOS buy file: %s bytes=%d\\n", szResolvedName, buf.TellMaxPut());\n#endif\n'+"\tbuf.PutChar('\\0');")
+replace('game/client/cstrike/clientmode_csnormal.cpp',
+        '\tconst char *pfile = engine->ParseFile( (const char *)buf.Base(), token, sizeof(token) );',
+        '\tIOSLoadCheckpoint("buy parse begin");\n\tconst char *pfile = engine->ParseFile( (const char *)buf.Base(), token, sizeof(token) );')
+replace('game/client/cstrike/clientmode_csnormal.cpp', '\tengine->ClientCmd(buystring);',
+        '\tIOSLoadCheckpoint("buy parse end / command begin");\n\tengine->ClientCmd(buystring);\n\tIOSLoadCheckpoint("buy command end");')
+replace('game/client/touch.cpp', '\t\tt->vtf = CreateVTFTexture();',
+        '#ifdef SOURCE_IOS\n\t\tWarning("iOS touch texture: %s bytes=%d\\n", fullFileName, bytesRead);\n#endif\n\t\tIOSLoadCheckpoint("touch VTF decode begin");\n\t\tt->vtf = CreateVTFTexture();')
+replace('game/client/touch.cpp', '\t\tif (t->vtf->Unserialize(buf))\n\t\t{',
+        '\t\tif (t->vtf->Unserialize(buf))\n\t\t{\n\t\t\tIOSLoadCheckpoint("touch VTF decode end");')
+file = args.output / 'game/client/cdll_client_int.cpp'
+text = file.read_text()
+for marker in ('void CHLClient::LevelInitPreEntity( char const* pMapName )',
+               'void CHLClient::LevelInitPostEntity( )'):
+    start = text.index(marker)
+    end = text.index('\n}\n', start)
+    region = text[start:end]
+    statements = ('input->LevelInit();', 'vieweffects->LevelInit();',
+                  'ParseParticleEffectsMap( pMapName, true );', 'modemanager->LevelInit( pMapName );',
+                  'ParticleMgr()->LevelInit();', 'view->LevelInit();', 'tempents->LevelInit();',
+                  'IGameSystem::LevelInitPreEntityAllSystems(pMapName);', 'gHUD.LevelInit();',
+                  'IGameSystem::LevelInitPostEntityAllSystems();', 'C_PhysPropClientside::RecreateAll();')
+    for statement in statements:
+        if statement in region:
+            if region.count(statement) != 1:
+                raise RuntimeError('Ambiguous client level diagnostic checkpoint')
+            region = region.replace(statement,
+                'IOSLoadCheckpoint("begin '+statement+'");\n\t'+statement+
+                '\n\tIOSLoadCheckpoint("end '+statement+'");')
+    region += '\n\tIOSLoadCheckpoint("'+marker.split('::')[1].split('(')[0]+' complete");'
+    text = text[:start] + region + text[end:]
+file.write_text(text)
+
 # Reconfiguration must not recompile unchanged patched translation units.
 for path, (data, modified) in previous.items():
     file = args.output / path

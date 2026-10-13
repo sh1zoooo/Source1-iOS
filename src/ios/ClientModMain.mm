@@ -8,8 +8,11 @@
 #include <cstdlib>
 #include <cstring>
 #include <vector>
+#include <thread>
+#include <chrono>
 #include <unistd.h>
 #include "../runtime/CrashDiagnostics.hpp"
+#include "../source/IOSLoadDiagnostics.hpp"
 #include <mach-o/dyld.h>
 
 static void reportException(NSException *exception) {
@@ -50,6 +53,22 @@ static int runClientMod(int, char **) {
         }
         std::fprintf(stdout, "Original ClientMod runtime %s; content: %s\n", [[[NSBundle mainBundle] objectForInfoDictionaryKey:@"CFBundleShortVersionString"] UTF8String], content.path.UTF8String);
         InstallClientModCrashDiagnostics();
+        IOSLoadCheckpoint("launcher start");
+        // This sampler continues even if the engine blocks the UIKit thread.
+        std::thread([] {
+            for (;;) {
+                std::this_thread::sleep_for(std::chrono::seconds(5));
+                IOSLoadCheckpoint("memory sampler");
+            }
+        }).detach();
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationDidReceiveMemoryWarningNotification
+            object:nil queue:nil usingBlock:^(NSNotification *) {
+                IOSLoadCheckpoint("UIKit memory warning");
+            }];
+        [[NSNotificationCenter defaultCenter] addObserverForName:UIApplicationWillTerminateNotification
+            object:nil queue:nil usingBlock:^(NSNotification *) {
+                IOSLoadCheckpoint("UIKit will terminate");
+            }];
         NSSetUncaughtExceptionHandler(reportException);
         _dyld_register_func_for_add_image(reportImage);
         // Source's POSIX singleton lock must live in the iOS container. The
