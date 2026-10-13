@@ -169,6 +169,28 @@ for path in ('engine/audio/snd_win.cpp', 'engine/audio/voice.cpp'):
     text = re.sub(r'defined\(\s*OSX\s*\)', '(defined(OSX) && !defined(SOURCE_IOS))', text)
     f.write_text(text)
 replace('appframework/sdlmgr.cpp', '#include "tier1/convar.h"', '#include "tier1/convar.h"\n#include <dlfcn.h>\n#ifdef SOURCE_IOS\n#include "SDL_syswm.h"\n#endif')
+# Device logs show world texture precaching pushes footprint over 1.4 GiB.
+# Select existing smaller VTF mips before file read and GPU decompression.
+replace('materialsystem/ctexture.cpp', '#include "platform.h"',
+        '#include "platform.h"\n#include "MobileTextureMips.hpp"\n#ifdef SOURCE_IOS\n#include <atomic>\n#endif')
+replace('materialsystem/ctexture.cpp',
+        '\tint iHwWidth = HardwareConfig()->MaxTextureWidth();',
+        '''#ifdef SOURCE_IOS
+\tconst unsigned protectedFlags = TEXTUREFLAGS_NOMIP | TEXTUREFLAGS_NOLOD |
+\t\tTEXTUREFLAGS_PROCEDURAL | TEXTUREFLAGS_RENDERTARGET | TEXTUREFLAGS_DEPTHRENDERTARGET;
+\tif (!bIgnorePicmip && pOptVTFTexture && !(nFlags & protectedFlags)) {
+\t\tint skip = MobileTextureMipSkip(nClampX, nClampY, pOptVTFTexture->MipCount());
+\t\tif (skip > 0) {
+\t\t\tint beforeX = nClampX, beforeY = nClampY;
+\t\t\tnClampX >>= skip; nClampY >>= skip;
+\t\t\tstatic std::atomic<unsigned> reducedCount{0};
+\t\t\tunsigned count = reducedCount.fetch_add(1, std::memory_order_relaxed) + 1;
+\t\t\tif (count <= 24 || count % 128 == 0)
+\t\t\t\tWarning("iOS world texture limit: count=%u name=%s %dx%d -> %dx%d\\n", count, pName, beforeX, beforeY, nClampX, nClampY);
+\t\t}
+\t}
+#endif
+\tint iHwWidth = HardwareConfig()->MaxTextureWidth();''')
 # iOS window points are the presentation destination, not the render canvas.
 # Desktop display clamps otherwise reduce a landscape request to portrait width.
 replace('engine/matsys_interface.cpp',
