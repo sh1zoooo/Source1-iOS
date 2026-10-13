@@ -136,6 +136,17 @@ replace(paths[9], '\tvoid OnOpenOptionsDialog();',
 replace(paths[9], '\tvgui::DHANDLE<vgui::PropertyDialog> m_hOptionsDialog;',
         '\tvgui::DHANDLE<vgui::PropertyDialog> m_hOptionsDialog;\n\tvgui::DHANDLE<vgui::PropertyDialog> m_hClientModMenuWindow;')
 
+# VGUI must consume the same float-coordinate ABI as the paired inputsystem.
+replace('vguimatsurface/Input.cpp', '#include "Input.h"',
+        '#include "Input.h"\n#include "TouchMenuCoordinates.hpp"')
+replace('vguimatsurface/Input.cpp',
+        '\t\t\tuint data = (uint)event.m_nData;\n\t\t\tx = w*((double)((data >> 16) & 0xFFFF) / 0xFFFF);\n\t\t\ty = h*((double)(data & 0xFFFF) / 0xFFFF);',
+        '\t\t\tif (!TouchMenuCoordinates(event.m_nData, event.m_nData2, event.m_nData3, w, h, x, y)) return true;', count=3)
+replace('vguimatsurface/Input.cpp', '\t\t\tg_pIInput->SetMouseCodeState( MOUSE_LEFT, vgui::BUTTON_PRESSED );',
+        '#ifdef SOURCE_IOS\n\t\t\tWarning("iOS menu touch down: slot=%d pos=%d,%d viewport=%dx%d\\n", event.m_nData, x, y, w, h);\n#endif\n\t\t\tg_pIInput->SetMouseCodeState( MOUSE_LEFT, vgui::BUTTON_PRESSED );')
+replace('gameui/BasePanel.cpp', 'void CBasePanel::OnCommand( const char *command )\n{',
+        'void CBasePanel::OnCommand( const char *command )\n{\n#ifdef SOURCE_IOS\n\tWarning("iOS menu command: %s console=%d\\n", command, GameUI().IsConsoleUI());\n#endif')
+
 # The device has no Linux font directory. Supply licensed fallback fonts in
 # the app bundle; custom fonts registered from content retain their own loader.
 replace('vgui2/vgui_surfacelib/linuxfont.cpp', '\tstatic char fontFile[MAX_PATH];',
