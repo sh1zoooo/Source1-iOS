@@ -109,6 +109,19 @@ static int runClientMod(int, char **) {
             @"-game", @"cm", @"-insecure", @"-noip", @"-windowed",
             @"-w", [NSString stringWithFormat:@"%d", renderWidth],
             @"-h", [NSString stringWithFormat:@"%d", renderHeight]];
+        // Half-size 3D viewport; the native GameUI/HUD canvas stays full-size.
+        NSArray<NSString *> *performanceArguments = @[
+            @"+mat_viewportscale", @"0.5", @"+mat_viewportupscale", @"1",
+            @"+mat_hdr_level", @"0", @"+mat_reducefillrate", @"1",
+            @"+mat_bumpmap", @"0", @"+mat_specular", @"0", @"+mat_phong", @"0",
+            @"+mat_motion_blur_enabled", @"0", @"+mat_disable_bloom", @"1",
+            @"+r_shadows", @"0", @"+r_shadowrendertotexture", @"0",
+            @"+r_flashlightdepthtexture", @"0", @"+r_3dsky", @"0",
+            @"+r_waterforceexpensive", @"0", @"+r_waterforcereflectentities", @"0",
+            @"+r_rootlod", @"2", @"+mat_forceaniso", @"1",
+            @"+mat_forcehardwaresync", @"0", @"+mat_vsync", @"0", @"+fps_max", @"60"];
+        arguments = [arguments arrayByAddingObjectsFromArray:performanceArguments];
+        std::fprintf(stderr, "iOS performance profile: 3D viewport=50%%; LDR; simplified shaders; shadows/bloom/motion blur off\n");
         std::vector<char *> argv;
         for (NSString *argument in arguments) argv.push_back(const_cast<char *>(argument.UTF8String));
         argv.push_back(nullptr);

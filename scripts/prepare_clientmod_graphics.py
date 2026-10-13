@@ -270,6 +270,35 @@ replace('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{',
 replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
         'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
 # Resource creation happens before BeginFrame too. The upstream CheckCurrent
+# The iOS performance build keeps the material config light even when an
+# imported desktop video profile requests expensive shader permutations.
+replace('materialsystem/cmaterialsystem.cpp',
+        '\tpConfig->SetFlag( MATSYS_VIDCFG_FLAGS_FORCE_HWSYNC, mat_forcehardwaresync.GetBool() );',
+        '''\tpConfig->SetFlag( MATSYS_VIDCFG_FLAGS_FORCE_HWSYNC, mat_forcehardwaresync.GetBool() );
+#ifdef SOURCE_IOS
+\tpConfig->SetFlag(MATSYS_VIDCFG_FLAGS_DISABLE_SPECULAR, true);
+\tpConfig->SetFlag(MATSYS_VIDCFG_FLAGS_DISABLE_BUMPMAP, true);
+\tpConfig->SetFlag(MATSYS_VIDCFG_FLAGS_DISABLE_PHONG, true);
+\tpConfig->SetFlag(MATSYS_VIDCFG_FLAGS_ENABLE_PARALLAX_MAPPING, false);
+\tpConfig->SetFlag(MATSYS_VIDCFG_FLAGS_REDUCE_FILLRATE, true);
+\tpConfig->SetFlag(MATSYS_VIDCFG_FLAGS_FORCE_HWSYNC, false);
+\tpConfig->m_nForceAnisotropicLevel = 1;
+#endif''')
+# Aggregate CPU wall time, including driver waits, instead of logging every draw.
+for path, marker, phase in (
+    ('engine/sys_engine.cpp', 'void CEngine::Frame( void )', 'engine frame'),
+    ('game/client/viewrender.cpp', 'void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatToDraw )', 'view render'),
+    ('appframework/sdlmgr.cpp', 'void CSDLMgr::ShowPixels( CShowPixelsParams *params )', 'present')):
+    f = a.output / path
+    text = f.read_text()
+    text = '#include "IOSFramePerf.hpp"\n' + text
+    entry = marker + '\n{'
+    if text.count(entry) != 1:
+        raise RuntimeError('Frame profiler function context changed: ' + path)
+    text = text.replace(entry, entry + '\n#ifdef SOURCE_IOS\n\tstatic IOSFramePerf iosPerf;\n\tIOSFrameScope iosScope(iosPerf, "' + phase + '");\n#endif')
+    f.write_text(text)
+
+# Resource creation happens before BeginFrame too. The upstream CheckCurrent
 # is a release-build NOP, allowing shader/texture handles to become zero.
 for path in ('public/togles/linuxwin/glmgr.h', 'graphics-compat/togles/linuxwin/glmgr.h'):
     replace(path, 'FORCEINLINE void CheckCurrent( void ) { }',
