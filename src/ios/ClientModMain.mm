@@ -95,15 +95,14 @@ static int runClientMod(int, char **) {
         if (!launch) { std::fprintf(stderr, "Original LauncherMain export missing\n"); return 1; }
         if (![files changeCurrentDirectoryPath:content.path]) return 1;
         // UIKit display bounds can still be portrait during engine startup.
-        // Render at the display point resolution (capped at 480 high).
-        // VGUI proportional scaling and normalized touches share this canvas.
-        CGSize display = UIScreen.mainScreen.bounds.size;
+        // Render at physical display resolution, matching the high-DPI drawable.
+        CGSize display = UIScreen.mainScreen.nativeBounds.size;
         double longSide = MAX(display.width, display.height);
         double shortSide = MIN(display.width, display.height);
-        int renderHeight = shortSide > 0 ? int(MIN(shortSide, 480.0) + .5) : 390;
-        int renderWidth = shortSide > 0 ? int(renderHeight * longSide / shortSide + .5) : 844;
+        int renderHeight = shortSide > 0 ? int(shortSide + .5) : 1170;
+        int renderWidth = longSide > 0 ? int(longSide + .5) : 2532;
         if (renderWidth < renderHeight) renderWidth = renderHeight;
-        std::fprintf(stderr, "iOS landscape canvas: %dx%d display=%.0fx%.0f\n",
+        std::fprintf(stderr, "iOS native canvas 100%%: %dx%d display=%.0fx%.0f\n",
                      renderWidth, renderHeight, display.width, display.height);
         NSArray<NSString *> *arguments = @[@"ClientMod", @"-basedir", content.path,
             @"-game", @"cm", @"-insecure", @"-noip", @"-windowed",

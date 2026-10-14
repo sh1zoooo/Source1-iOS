@@ -4,6 +4,7 @@ import argparse
 from pathlib import Path
 import shutil
 import subprocess
+import sys
 
 p = argparse.ArgumentParser(description=__doc__)
 p.add_argument('upstream', type=Path)
@@ -479,6 +480,7 @@ replace('appframework/sdlmgr.cpp', '#ifdef TOGLES\n\tl_egl = dlopen("libEGL.so",
 replace('gameui/GameUI_Interface.cpp', '\tBasePanel()->RunFrame();', '#ifdef SOURCE_IOS\n\tif (iosFrame <= 3) Warning("iOS GameUI base panel begin: %u\\n", iosFrame);\n#endif\n\tBasePanel()->RunFrame();\n#ifdef SOURCE_IOS\n\tif (iosFrame <= 3) Warning("iOS GameUI base panel end: %u\\n", iosFrame);\n#endif')
 
 # Keep rebuilds incremental when a configure pass produces identical content.
+subprocess.run([sys.executable, str(Path(__file__).with_name('prepare_clientmod_performance.py')), str(a.output)], check=True)
 import os
 for relative, (content, mtime) in previous.items():
     f = a.output / relative
