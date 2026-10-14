@@ -275,9 +275,42 @@ replace('gameui/GameUI_Interface.cpp',
         '\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);',
         '''\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);
 \tif (iosFrame == 1) {
-\t\tengine->ClientCmd_Unrestricted("mat_viewportscale 0.5; mat_viewportupscale 1; mat_hdr_level 0; mat_reducefillrate 1; mat_bumpmap 0; mat_specular 0; mat_phong 0; mat_motion_blur_enabled 0; mat_disable_bloom 1; r_shadows 0; r_shadowrendertotexture 0; r_flashlightdepthtexture 0; r_3dsky 0; r_waterforceexpensive 0; r_waterforcereflectentities 0; r_rootlod 2; mat_forceaniso 1; mat_forcehardwaresync 0; mat_vsync 0; fps_max 60\\n");
+\t\tengine->ClientCmd_Unrestricted("mat_viewportscale 1; mat_viewportupscale 0; mat_hdr_level 0; mat_reducefillrate 1; mat_bumpmap 0; mat_specular 0; mat_phong 0; mat_motion_blur_enabled 0; mat_disable_bloom 1; r_shadows 0; r_shadowrendertotexture 0; r_flashlightdepthtexture 0; r_3dsky 0; r_waterforceexpensive 0; r_waterforcereflectentities 0; r_rootlod 2; mat_forceaniso 1; mat_forcehardwaresync 0; mat_vsync 0; fps_max 60\\n");
 \t\tWarning("iOS recovery performance profile queued after GameUI initialization\\n");
 \t}''')
+# Avoid the desktop postprocess upscale path on GLES. Profile actual frame
+# work using the existing engine clock, independently of the native launcher.
+for path, anchor in (
+    ('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{'),
+    ('game/client/viewrender.cpp', 'void CViewRender::RenderView( const CViewSetup &view, int nClearFlags, int whatToDraw )\n{'),
+    ('appframework/sdlmgr.cpp', 'void CSDLMgr::ShowPixels( CShowPixelsParams *params )\n{'),
+    ('togles/linuxwin/cglmbuffer.cpp', 'void glBufferSubDataMaxSize( GLenum target, GLintptr offset, GLsizeiptr size, const GLvoid *data, uint nMaxSizePerCall )\n{'),
+):
+    f = a.output / path
+    text = f.read_text()
+    text = '#include "IOSRenderTiming.hpp"\n' + text
+    if text.count(anchor) != 1:
+        raise RuntimeError(f'Timing context changed: {path}')
+    phase = {'engine/sys_engine.cpp': 'engine_frame', 'game/client/viewrender.cpp': 'view_render',
+             'appframework/sdlmgr.cpp': 'present', 'togles/linuxwin/cglmbuffer.cpp': 'buffer_upload'}[path]
+    f.write_text(text.replace(anchor, anchor + f'\n\tIOS_RENDER_TIMING("{phase}");'))
+# convert_texture changes BGRA/BGR enums without converting their bytes.
+# Use a temporary full-slice copy, preserving backing data across reuploads.
+replace('togles/linuxwin/cglmtex.cpp', '#include "tier0/icommandline.h"',
+        '#include "tier0/icommandline.h"\n#include "MobileTextureChannels.hpp"\n#include "IOSRenderTiming.hpp"')
+replace('togles/linuxwin/cglmtex.cpp',
+        '\t// set up the client storage now, one way or another',
+        '''#ifdef SOURCE_IOS
+\tMobileTextureChannels iosChannels(
+\t\t!m_mapped && !noDataWrite && (glDataType == GL_UNSIGNED_BYTE || glDataType == GL_UNSIGNED_INT_8_8_8_8_REV) &&
+\t\t(glDataFormat == GL_BGRA || glDataFormat == GL_BGR) ? sliceAddress : NULL,
+\t\tslice->m_storageSize, glDataFormat == GL_BGR ? 3 : 4);
+\tif (iosChannels.data()) sliceAddress = iosChannels.data();
+#endif
+\t// set up the client storage now, one way or another''')
+replace('togles/linuxwin/cglmtex.cpp',
+        'void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,\n                            GLsizei width, GLsizei height, GLint border,\n                            GLsizei imageSize, const GLvoid *data) \n{',
+        'void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,\n                            GLsizei width, GLsizei height, GLint border,\n                            GLsizei imageSize, const GLvoid *data) \n{\n\tIOS_RENDER_TIMING("texture_decompress_upload");')
 # Resource creation happens before BeginFrame too. The upstream CheckCurrent
 # is a release-build NOP, allowing shader/texture handles to become zero.
 for path in ('public/togles/linuxwin/glmgr.h', 'graphics-compat/togles/linuxwin/glmgr.h'):
