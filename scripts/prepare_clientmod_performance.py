@@ -105,3 +105,85 @@ replace('togles/linuxwin/cglmbuffer.cpp', 'void CGLMBuffer::Unlock( int nActualS
 # SDL keeps window dimensions in points; allow a full-density EAGL drawable.
 replace('appframework/sdlmgr.cpp', '\tflags |= SDL_WINDOW_OPENGL;',
         '\tflags |= SDL_WINDOW_OPENGL;\n#ifdef SOURCE_IOS\n\tflags |= SDL_WINDOW_ALLOW_HIGHDPI;\n#endif')
+
+# GLES 3 sampler objects avoid modifying texture objects each time filtering
+# changes. Keep the original texture-state path for unsupported border modes.
+replace('togles/linuxwin/glmgr.cpp',
+        '\tGLMDebugPrintf( "GL sampler object usage: %s\\n", m_bUseSamplerObjects ? "ENABLED" : "DISABLED" );',
+        '''#ifdef SOURCE_IOS
+    m_bUseSamplerObjects = true;
+    Warning("iOS GLES sampler cache enabled; unsupported border states retain texture path\\n");
+#endif
+\tGLMDebugPrintf( "GL sampler object usage: %s\\n", m_bUseSamplerObjects ? "ENABLED" : "DISABLED" );''')
+for path in ('public/togles/linuxwin/glmgr.h', 'graphics-compat/togles/linuxwin/glmgr.h'):
+    p = root / path
+    p.write_text('#ifdef SOURCE_IOS\n#include "IOSSamplerBindingCache.hpp"\n#endif\n' + p.read_text())
+    replace(path, '\t\tFORCEINLINE GLuint FindSamplerObject( const GLMTexSamplingParams &desiredParams );',
+            '''\t\tFORCEINLINE GLuint FindSamplerObject( const GLMTexSamplingParams &desiredParams );
+#ifdef SOURCE_IOS
+        IOSSamplerBindingCache<GLM_SAMPLER_COUNT> m_iosSamplerBindings;
+        FORCEINLINE void IOSBindSampler(unsigned unit, unsigned name) {
+            m_iosSamplerBindings.bind(unit, name,
+                [](unsigned index, unsigned object) { gGL->glBindSampler(index, object); });
+        }
+#endif''')
+replace('togles/linuxwin/glmgr.cpp', '\t\tgGL->glBindSampler( 15, 0 );',
+        '#ifdef SOURCE_IOS\n\t\tIOSBindSampler(15, 0);\n#else\n\t\tgGL->glBindSampler( 15, 0 );\n#endif')
+replace('togles/linuxwin/glmgr_flush.inl',
+        '\t\t\tgGL->glBindSampler( nSamplerIndex, FindSamplerObject( m_samplers[nSamplerIndex].m_samp ) );',
+        '''#ifdef SOURCE_IOS
+            const GLMTexSamplingParams &desired = m_samplers[nSamplerIndex].m_samp;
+            if (desired.m_packed.m_addressU >= D3DTADDRESS_BORDER ||
+                desired.m_packed.m_addressV >= D3DTADDRESS_BORDER ||
+                desired.m_packed.m_addressW >= D3DTADDRESS_BORDER) {
+                IOSBindSampler(nSamplerIndex, 0);
+                CGLMTex *texture = m_samplers[nSamplerIndex].m_pBoundTex;
+                if (texture && !(texture->m_SamplingParams == desired)) {
+                    SelectTMU(nSamplerIndex);
+                    m_samplers[nSamplerIndex].m_samp.DeltaSetToTarget(texture->m_texGLTarget, texture->m_SamplingParams);
+                    texture->m_SamplingParams = desired;
+                }
+            } else {
+                IOSBindSampler(nSamplerIndex, FindSamplerObject(desired));
+            }
+#else
+\t\t\tgGL->glBindSampler( nSamplerIndex, FindSamplerObject( m_samplers[nSamplerIndex].m_samp ) );
+#endif''')
+for path in ('public/togles/linuxwin/cglmtex.h', 'graphics-compat/togles/linuxwin/cglmtex.h'):
+    replace(path,
+            '\t\tgGL->glSamplerParameterfv( nSamplerObject, GL_TEXTURE_BORDER_COLOR, flBorderColor ); // <-- this crashes ATI\'s driver, remark it out',
+            '#ifndef SOURCE_IOS\n\t\tgGL->glSamplerParameterfv( nSamplerObject, GL_TEXTURE_BORDER_COLOR, flBorderColor ); // <-- this crashes ATI\'s driver, remark it out\n#endif')
+
+# CPU wall timings include time spent inside the GL driver. These are not
+# timestamp-query GPU measurements and must not be interpreted as such.
+def time_function(path, signature, phase, count=1):
+    p = root / path
+    text = p.read_text()
+    marker = signature
+    starts = []
+    position = 0
+    while True:
+        position = text.find(marker, position)
+        if position < 0: break
+        starts.append(text.index('\n{', position) + 2)
+        position += len(marker)
+    assert len(starts) == count, (path, signature, starts)
+    for position in reversed(starts):
+        text = text[:position] + '\n\tIOS_RENDER_TIMING("' + phase + '");' + text[position:]
+    if '#include "IOSRenderTiming.hpp"' not in text:
+        text = '#include "IOSRenderTiming.hpp"\n' + text
+    p.write_text(text)
+
+for signature, phase in (
+    ('void CRendering3dView::BuildWorldRenderLists(', 'world_list_build'),
+    ('void CRendering3dView::BuildRenderableRenderLists(', 'entity_list_build'),
+    ('void CRendering3dView::DrawWorld(', 'world_draw'),
+    ('void CRendering3dView::DrawOpaqueRenderables(', 'opaque_models'),
+    ('void CRendering3dView::DrawTranslucentRenderables(', 'translucent_draw'),
+    ('void CViewRender::DrawViewModels(', 'viewmodel_draw'),
+):
+    time_function('game/client/viewrender.cpp', signature, phase)
+time_function('game/client/viewpostprocess.cpp', 'void DoEnginePostProcessing(', 'postprocessing')
+time_function('togles/linuxwin/dxabstract.cpp', 'HRESULT IDirect3DDevice9::DrawIndexedPrimitive(', 'backend_indexed_draw', 2)
+time_function('togles/linuxwin/glmgr_flush.inl', 'FORCEINLINE void GLMContext::FlushDrawStates(', 'backend_draw_state')
+time_function('togles/linuxwin/cglmquery.cpp', 'void\tCGLMQuery::Complete(', 'query_complete')
