@@ -95,14 +95,14 @@ static int runClientMod(int, char **) {
         if (!launch) { std::fprintf(stderr, "Original LauncherMain export missing\n"); return 1; }
         if (![files changeCurrentDirectoryPath:content.path]) return 1;
         // UIKit display bounds can still be portrait during engine startup.
-        // Render into a landscape canvas with enough room for desktop dialogs;
-        // the final drawable blit and normalized touch coordinates share it.
+        // Render at the display point resolution (capped at 480 high).
+        // VGUI proportional scaling and normalized touches share this canvas.
         CGSize display = UIScreen.mainScreen.bounds.size;
         double longSide = MAX(display.width, display.height);
         double shortSide = MIN(display.width, display.height);
-        int renderHeight = 720;
-        int renderWidth = shortSide > 0 ? int(renderHeight * longSide / shortSide + .5) : 1280;
-        if (renderWidth < 960) renderWidth = 960;
+        int renderHeight = shortSide > 0 ? int(MIN(shortSide, 480.0) + .5) : 390;
+        int renderWidth = shortSide > 0 ? int(renderHeight * longSide / shortSide + .5) : 844;
+        if (renderWidth < renderHeight) renderWidth = renderHeight;
         std::fprintf(stderr, "iOS landscape canvas: %dx%d display=%.0fx%.0f\n",
                      renderWidth, renderHeight, display.width, display.height);
         NSArray<NSString *> *arguments = @[@"ClientMod", @"-basedir", content.path,

@@ -294,18 +294,23 @@ for path, anchor in (
     phase = {'engine/sys_engine.cpp': 'engine_frame', 'game/client/viewrender.cpp': 'view_render',
              'appframework/sdlmgr.cpp': 'present', 'togles/linuxwin/cglmbuffer.cpp': 'buffer_upload'}[path]
     f.write_text(text.replace(anchor, anchor + f'\n\tIOS_RENDER_TIMING("{phase}");'))
-# convert_texture changes BGRA/BGR enums without converting their bytes.
-# Use a temporary full-slice copy, preserving backing data across reuploads.
+# convert_texture relabels BGR(A) bytes as RGB(A). Texture-object swizzling
+# fixes CPU and PBO uploads alike, without modifying source or mapped memory.
 replace('togles/linuxwin/cglmtex.cpp', '#include "tier0/icommandline.h"',
         '#include "tier0/icommandline.h"\n#include "MobileTextureChannels.hpp"\n#include "IOSRenderTiming.hpp"')
 replace('togles/linuxwin/cglmtex.cpp',
         '\t// set up the client storage now, one way or another',
         '''#ifdef SOURCE_IOS
-\tMobileTextureChannels iosChannels(
-\t\t!m_mapped && !noDataWrite && (glDataType == GL_UNSIGNED_BYTE || glDataType == GL_UNSIGNED_INT_8_8_8_8_REV) &&
-\t\t(glDataFormat == GL_BGRA || glDataFormat == GL_BGR) ? sliceAddress : NULL,
-\t\tslice->m_storageSize, glDataFormat == GL_BGR ? 3 : 4);
-\tif (iosChannels.data()) sliceAddress = iosChannels.data();
+\tif (desc->m_req.m_mip == 0) {
+\t\tconst MobileTextureChannels channels(glDataFormat == GL_BGRA || glDataFormat == GL_BGR,
+\t\t\t(m_layout->m_key.m_texFlags & kGLMTexRenderable) != 0);
+\t\tgGL->glTexParameteri(target, GL_TEXTURE_SWIZZLE_R, channels.red);
+\t\tgGL->glTexParameteri(target, GL_TEXTURE_SWIZZLE_B, channels.blue);
+\t\tstatic unsigned iosChannelReports = 0;
+\t\tif (channels.red == GL_BLUE && ++iosChannelReports <= 16)
+\t\t\tWarning("iOS texture channels: name=%s dynamic=%d pbo=%d red=blue blue=red\\n",
+\t\t\t\tm_debugLabel ? m_debugLabel : "-", (m_layout->m_key.m_texFlags & kGLMTexDynamic) != 0, m_mapped != NULL);
+\t}
 #endif
 \t// set up the client storage now, one way or another''')
 replace('togles/linuxwin/cglmtex.cpp',
