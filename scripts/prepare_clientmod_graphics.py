@@ -269,6 +269,15 @@ replace('engine/sys_engine.cpp', 'void CEngine::Frame( void )\n{',
         'void CEngine::Frame( void )\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS engine frame: %u\\n", iosFrame);\n#endif')
 replace('gameui/GameUI_Interface.cpp', 'void CGameUI::RunFrame()\n{',
         'void CGameUI::RunFrame()\n{\n#ifdef SOURCE_IOS\n\tstatic unsigned iosFrame = 0;\n\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);\n#endif')
+# Keep the proven 0.46.14 launcher and native libraries. Apply only existing
+# cvars after GameUI/client registration, with no new clock/profiler imports.
+replace('gameui/GameUI_Interface.cpp',
+        '\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);',
+        '''\tif (++iosFrame <= 3 || iosFrame == 120) Warning("iOS GameUI frame: %u\\n", iosFrame);
+\tif (iosFrame == 1) {
+\t\tengine->ClientCmd_Unrestricted("mat_viewportscale 0.5; mat_viewportupscale 1; mat_hdr_level 0; mat_reducefillrate 1; mat_bumpmap 0; mat_specular 0; mat_phong 0; mat_motion_blur_enabled 0; mat_disable_bloom 1; r_shadows 0; r_shadowrendertotexture 0; r_flashlightdepthtexture 0; r_3dsky 0; r_waterforceexpensive 0; r_waterforcereflectentities 0; r_rootlod 2; mat_forceaniso 1; mat_forcehardwaresync 0; mat_vsync 0; fps_max 60\\n");
+\t\tWarning("iOS recovery performance profile queued after GameUI initialization\\n");
+\t}''')
 # Resource creation happens before BeginFrame too. The upstream CheckCurrent
 # is a release-build NOP, allowing shader/texture handles to become zero.
 for path in ('public/togles/linuxwin/glmgr.h', 'graphics-compat/togles/linuxwin/glmgr.h'):
