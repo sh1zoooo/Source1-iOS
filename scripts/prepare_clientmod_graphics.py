@@ -316,6 +316,41 @@ replace('togles/linuxwin/cglmtex.cpp',
 replace('togles/linuxwin/cglmtex.cpp',
         'void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,\n                            GLsizei width, GLsizei height, GLint border,\n                            GLsizei imageSize, const GLvoid *data) \n{',
         'void CompressedTexImage2D(GLenum target, GLint level, GLenum internalformat,\n                            GLsizei width, GLsizei height, GLint border,\n                            GLsizei imageSize, const GLvoid *data) \n{\n\tIOS_RENDER_TIMING("texture_decompress_upload");')
+# GLES has no desktop GL_FRAMEBUFFER_SRGB enable. Keep render targets in
+# linear GL formats containing shader-encoded display values. Otherwise the
+# final blit into UIKit's linear-format drawable can discard the encoding.
+replace('appframework/glmdisplaydb_linuxwin.inl',
+        'm_info.m_hasGammaWrites = true;',
+        'm_info.m_hasGammaWrites = true;\n#ifdef SOURCE_IOS\n\t\tm_info.m_hasGammaWrites = false;\n#endif')
+replace('appframework/glmdisplaydb_linuxwin.inl',
+        'm_info.m_cantAttachSRGB = false;',
+        'm_info.m_cantAttachSRGB = false;\n#ifdef SOURCE_IOS\n\t\tm_info.m_cantAttachSRGB = true;\n\t\tWarning("iOS color pipeline: shader sRGB writes, linear-format render targets\\n");\n#endif')
+replace('togles/linuxwin/dxabstract.cpp',
+        '\tpCaps->CanDoSRGBReadFromRTs\t\t=\ttrue;//!glmRendererInfo.m_cantAttachSRGB;',
+        '#ifdef SOURCE_IOS\n\tpCaps->CanDoSRGBReadFromRTs = false;\n#else\n\tpCaps->CanDoSRGBReadFromRTs\t\t=\ttrue;//!glmRendererInfo.m_cantAttachSRGB;\n#endif')
+replace('togles/linuxwin/glmgr.cpp',
+        '\tm_BlendEnableSRGB.Flush();',
+        '#ifdef SOURCE_IOS\n\tif (m_caps.m_hasGammaWrites)\n#endif\n\tm_BlendEnableSRGB.Flush();')
+replace('togles/linuxwin/glmgr.cpp',
+        'GLMContext::GLMContext( IDirect3DDevice9 *pDevice, GLMDisplayParams *params )\n{',
+        'GLMContext::GLMContext( IDirect3DDevice9 *pDevice, GLMDisplayParams *params )\n{\n#ifdef SOURCE_IOS\n\tm_FakeBlendEnableSRGB = false;\n#endif')
+replace('togles/linuxwin/glmgr_flush.inl',
+        '\tm_pBoundPair->UpdateScreenUniform( m_ViewportBox.GetData().widthheight );',
+        '''#ifdef SOURCE_IOS
+\t// Set after program binding; cache per linked pair, including location 0.
+\tif (!m_caps.m_hasGammaWrites && m_pBoundPair->m_locFragmentFakeSRGBEnable >= 0) {
+\t\tconst float srgb = m_FakeBlendEnableSRGB ? 1.0f : 0.0f;
+\t\tif (m_pBoundPair->m_fakeSRGBEnableValue != srgb) {
+\t\t\tgGL->glUniform1f(m_pBoundPair->m_locFragmentFakeSRGBEnable, srgb);
+\t\t\tm_pBoundPair->m_fakeSRGBEnableValue = srgb;
+\t\t}
+\t}
+#endif
+\tm_pBoundPair->UpdateScreenUniform( m_ViewportBox.GetData().widthheight );''')
+# Avoid log(0)/negative values propagating NaNs through mix when disabled.
+replace('togles/linuxwin/dx9asmtogl2.cpp',
+        'sRGBFragData.xyz = log( gl_FragData[0].xyz );',
+        'sRGBFragData.xyz = log( max(gl_FragData[0].xyz, vec3(1.0e-8)) );')
 # Resource creation happens before BeginFrame too. The upstream CheckCurrent
 # is a release-build NOP, allowing shader/texture handles to become zero.
 for path in ('public/togles/linuxwin/glmgr.h', 'graphics-compat/togles/linuxwin/glmgr.h'):
