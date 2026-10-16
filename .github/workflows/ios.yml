@@ -24,6 +24,21 @@ jobs:
       - run: cmake --build build --parallel 4
       - run: python3 scripts/verify_cstrike_archives.py build --linked
       - run: ctest --test-dir build --output-on-failure
+      - name: Prepare and verify iOS GLES optimization paths
+        env:
+          EGL_PLATFORM: surfaceless
+          LIBGL_ALWAYS_SOFTWARE: '1'
+        run: |
+          sudo apt-get install -y libegl1 libgl1-mesa-dri
+          python3 scripts/prepare_clientmod.py third_party/clientmod build/clientmod-regression third_party/source
+          python3 scripts/prepare_clientmod_graphics.py third_party/clientmod build/clientmod-regression third_party/source build/source-port
+          python3 tests/ios_model_validation_cache.py
+          python3 tests/ios_fence_polling.py build/clientmod-regression
+          python3 tests/gles_vertex_submission.py build/clientmod-regression
+          python3 tests/gles_fence_polling.py
+          python3 tests/gles_srgb_writes.py build/clientmod-regression/togles/linuxwin/dx9asmtogl2.cpp
+          python3 tests/gles_streaming_and_cache.py
+          python3 tests/gles_sampler_objects.py
   ios:
     name: Original ClientMod iOS ARM64 IPA
     runs-on: macos-15
