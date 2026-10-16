@@ -481,7 +481,8 @@ replace('gameui/GameUI_Interface.cpp', '\tBasePanel()->RunFrame();', '#ifdef SOU
 
 # Keep rebuilds incremental when a configure pass produces identical content.
 subprocess.run([sys.executable, str(Path(__file__).with_name('prepare_clientmod_performance.py')), str(a.output)], check=True)
-for patch in ('prepare_ios_vertex_submission.py', 'prepare_ios_model_validation_cache.py', 'prepare_ios_fence_polling.py'):
+for patch in ('prepare_ios_vertex_submission.py', 'prepare_ios_model_validation_cache.py', 'prepare_ios_fence_polling.py',
+              'prepare_ios_indexed_draw.py', 'prepare_ios_driver_work.py', 'prepare_ios_native_vao.py'):
     subprocess.run([sys.executable, str(Path(__file__).with_name(patch)), str(a.output)], check=True)
 import os
 for relative, (content, mtime) in previous.items():
