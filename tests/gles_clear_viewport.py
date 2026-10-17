@@ -81,7 +81,9 @@ constexpr unsigned D3DRS_SCISSORTESTENABLE=0;
 #define RECORD_FLOAT(...)
 #define DX8_CLEAR 0
 unsigned warningCalls=0;void Warning(const char*,...){++warningCalls;}
+unsigned capturedCount=99;bool captureOnly=false;
 struct DeviceBridge {void Clear(unsigned count,const D3DRECT *rect,unsigned mask,unsigned color,float z,unsigned stencil){
+ capturedCount=count;if(captureOnly)return;
  GLScissorBox_t box;
  if(count)box={rect->x1,rect->y1,rect->x2-rect->x1,rect->y2-rect->y1};
  context.Clear(mask&1,color,mask&2,z,mask&4,stencil,count?&box:nullptr);
@@ -117,6 +119,11 @@ void clear(bool box){GLScissorBox_t rect={3,2,2,2};
 void partialClear(){dispatch(false,8,8);}
 void genericNullClear(){context.Clear(true,0xFF0000FF,true,1.f,true,0,nullptr);}
 unsigned warningCount(){return warningCalls;}
+unsigned captureDispatch(int width,int height,int targetWidth,int targetHeight){
+ m_DesiredState.m_Viewport={0,0,(unsigned)width,(unsigned)height};
+ capturedCount=99;captureOnly=true;dispatch(true,targetWidth,targetHeight);captureOnly=false;
+ return capturedCount;
+}
 void depthClear(){dispatch(true,m_DesiredState.m_Viewport.Width,m_DesiredState.m_Viewport.Height);}
 }
 '''
@@ -251,5 +258,14 @@ with tempfile.TemporaryDirectory() as tmp:
   for i in range(48):
    bridge.configure(i%4,0,2,2,0,0,1,1,True);bridge.clear(False)
   assert bridge.warningCount()==(32 if label=='fixed' else 0)
+  bridge.captureDispatch.argtypes=[gl.I]*4;bridge.captureDispatch.restype=gl.U
+  # Capture only: placeholders and empty views must not reach glScissor with
+  # an invalid rectangle. Preserve Count=0 for original full/unknown targets.
+  for width,height,targetW,targetH in [(-1,-1,-1,-1),(-1,-1,8,8),
+      (0,0,0,0),(0,8,0,8),(8,0,8,0),(0,8,-1,-1)]:
+   assert bridge.captureDispatch(width,height,targetW,targetH)==0,(label,width,height)
+  # Concrete full and partial views still choose their intended dispatch.
+  assert bridge.captureDispatch(8,8,8,8)==(1 if label=='fixed' else 0)
+  assert bridge.captureDispatch(4,5,8,8)==1
 
 print('Production Source clear dispatch: full/partial viewports, masks, color/depth/stencil, 40 temporal depth-only frames passed; generic D3D Clear unchanged')

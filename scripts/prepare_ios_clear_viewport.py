@@ -18,7 +18,10 @@ new='''#ifdef SOURCE_IOS
         // Source intends to clear the current view (rectangle above). Always
         // use its existing rectangle path on iOS, including a full-size view;
         // the generic D3D Clear scissor semantics remain unchanged.
-        bRenderTargetMatchesViewport = false;
+        // Preserve the original placeholder/empty viewport fallback until a
+        // concrete valid viewport exists (Width/Height can be DWORD(-1)).
+        if (clear.x2 > clear.x1 && clear.y2 > clear.y1)
+            bRenderTargetMatchesViewport = false;
         // Input-state diagnostics only: no GL queries or per-draw logging.
         // A hard cap prevents alternating render targets from flooding logs.
         static unsigned iosClearLogs = 0;
