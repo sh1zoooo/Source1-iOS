@@ -40,6 +40,8 @@ jobs:
           python3 tests/gles_driver_work.py build/clientmod-regression
           python3 tests/ios_native_vao_cache.py
           python3 tests/gles_native_vao.py build/clientmod-regression
+          python3 tests/gles_clear_viewport.py build/clientmod-regression
+          python3 tests/gles_state_writes.py build/clientmod-regression
           python3 tests/gles_srgb_writes.py build/clientmod-regression/togles/linuxwin/dx9asmtogl2.cpp
           python3 tests/gles_streaming_and_cache.py
           python3 tests/gles_sampler_objects.py
