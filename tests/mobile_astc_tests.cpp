@@ -7,6 +7,7 @@
 #include <cstring>
 #include <fstream>
 #include <iterator>
+#include <random>
 #include <vector>
 
 class IFileSystem;
@@ -70,6 +71,14 @@ int main(int argc, char **argv) {
             assert(parsed->ImageData()[0]==201 && parsed->ImageData()[2]==17);
             DestroyVTFTexture(skipped);DestroyVTFTexture(parsed);DestroyVTFTexture(a);
         }
+    }
+    // Malformed ASTC blocks must decode to error pixels without reading outside
+    // their 16-byte block. Also run this corpus in the standalone ASan check.
+    std::mt19937 rng(123);
+    for(int i=0;i<10000;++i) {
+        unsigned char input[16];for(auto &v:input) v=static_cast<unsigned char>(rng());
+        unsigned char pixels[6*6*4];
+        assert(MobileASTC::decodeBGRA(input,16,6,6,47,pixels,sizeof(pixels)));
     }
     // Optional actual CM2 files, kept outside the repository.
     for(int n=1;n<argc;++n) {

@@ -24,8 +24,9 @@ an FPS gain on the device has not been measured.
 ASTC staging does not use PBO mapping. Both native and fallback uploads preserve
 the previous unpack-buffer binding; fallback also preserves unpack pixel state.
 ASTC objects bypass the desktop DXT garbage-data texture recycling path.
-The scalar fallback is MIT-licensed AssetStudio code, pinned in
-third_party/astc_decoder, with its FP16 dependencies and notices.
+The fallback is Arm's Apache-2.0-licensed astcenc 5.0.0, pinned in
+third_party/astcenc and built in decompression-only mode. Its license is bundled
+in the IPA. Per-thread 4x4/6x6 contexts reuse block tables across uploads.
 
 Validation includes synthetic ASTC constant-color blocks, alpha/channel checks,
 6x6 ceiling division, block-row pitch, VTF mip/frame/cube round trips and mip

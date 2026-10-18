@@ -119,7 +119,7 @@ static bool MobileASTCUpload(GLenum target, GLint level, GLenum internalformat,
     pixels.EnsureCapacity(int(pixelBytes));
     if (data) {
         if (!MobileASTC::decodeBGRA(data, imageSize, width, height, format,
-                                   pixels.Base(), size_t(pixelBytes))) return true;
+                                   pixels.Base(), size_t(pixelBytes), MobileASTC::srgbGL(internalformat))) return true;
         // Decoder's BGRA output -> RGBA. ASTC descriptors do not use the old
         // DXT/BGR swizzle; alpha and the existing sRGB selection are preserved.
         for (size_t p = 0; p < size_t(pixelBytes); p += 4) {

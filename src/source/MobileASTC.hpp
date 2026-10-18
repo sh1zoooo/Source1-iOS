@@ -11,8 +11,8 @@ inline int bytes(int width, int height, int depth, int format) {
     const int b = block(format);
     if (!b || width <= 0 || height <= 0 || depth <= 0) return 0;
     const uint64_t n = ((uint64_t(width) + b - 1) / b) *
-                       ((uint64_t(height) + b - 1) / b) * 16 * uint64_t(depth);
-    return n <= INT_MAX ? int(n) : 0;
+                       ((uint64_t(height) + b - 1) / b) * 16;
+    return n <= uint64_t(INT_MAX) / uint64_t(depth) ? int(n * depth) : 0;
 }
 inline unsigned glFormat(int format, bool srgb) {
     return format == 43 ? (srgb ? 0x93D0 : 0x93B0) :
@@ -24,5 +24,5 @@ inline int fromGL(unsigned format) {
 }
 inline bool srgbGL(unsigned format) { return format == 0x93D0 || format == 0x93D4; }
 bool decodeBGRA(const void *data, size_t size, int width, int height, int format,
-                void *pixels, size_t pixelBytes);
+                void *pixels, size_t pixelBytes, bool srgb = false);
 }

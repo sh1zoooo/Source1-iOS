@@ -44,8 +44,8 @@ extern "C" void context(unsigned long long value){currentContext=(void*)value;}
 with tempfile.TemporaryDirectory() as folder:
     p=Path(folder);(p/'bridge.cpp').write_text(source)
     subprocess.run(['c++','-std=c++17','-O2','-fPIC','-shared','-Isrc/source',
-        '-Ithird_party/astc_decoder',str(p/'bridge.cpp'),'src/source/MobileASTC.cpp',
-        'third_party/astc_decoder/astc.cpp','-o',str(p/'bridge.so')],check=True)
+        '-Ithird_party/astcenc','-DASTCENC_DECOMPRESS_ONLY=1',str(p/'bridge.cpp'),'src/source/MobileASTC.cpp',
+        *map(str, sorted(Path('third_party/astcenc').glob('astcenc_*.cpp'))),'-o',str(p/'bridge.so')],check=True)
     bridge=c.CDLL(str(p/'bridge.so'))
     get=gl.fn('glGetIntegerv',None,[gl.U,c.POINTER(gl.I)])
     forced=False;calls=[];queries=[]

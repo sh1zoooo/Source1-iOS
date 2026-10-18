@@ -72,7 +72,7 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(SOURCE_NOTICES third_party/SOURCE1_LICENSE.txt third_party/SOURCE1_THIRD_PARTY_NOTICES.txt)
   set_source_files_properties(${SOURCE_NOTICES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
   target_sources(Source1IOS PRIVATE ${SOURCE_NOTICES})
-  set(ASTC_NOTICE third_party/astc_decoder/LICENSE third_party/astc_decoder/FP16_LICENSE.txt)
+  set(ASTC_NOTICE third_party/astcenc/LICENSE.txt)
   set_source_files_properties(${ASTC_NOTICE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/ASTCDecoder)
   target_sources(Source1IOS PRIVATE ${ASTC_NOTICE})
   target_link_libraries(Source1IOS PRIVATE
