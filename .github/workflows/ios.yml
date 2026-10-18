@@ -32,6 +32,7 @@ jobs:
           sudo apt-get install -y libegl1 libgl1-mesa-dri
           python3 scripts/prepare_clientmod.py third_party/clientmod build/clientmod-regression third_party/source
           python3 scripts/prepare_clientmod_graphics.py third_party/clientmod build/clientmod-regression third_party/source build/source-port
+          python3 tests/gles_astc_upload.py build/clientmod-regression
           python3 tests/ios_model_validation_cache.py
           python3 tests/ios_fence_polling.py build/clientmod-regression
           python3 tests/gles_vertex_submission.py build/clientmod-regression

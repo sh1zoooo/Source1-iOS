@@ -72,6 +72,9 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   set(SOURCE_NOTICES third_party/SOURCE1_LICENSE.txt third_party/SOURCE1_THIRD_PARTY_NOTICES.txt)
   set_source_files_properties(${SOURCE_NOTICES} PROPERTIES MACOSX_PACKAGE_LOCATION Resources)
   target_sources(Source1IOS PRIVATE ${SOURCE_NOTICES})
+  set(ASTC_NOTICE third_party/astcenc/LICENSE.txt)
+  set_source_files_properties(${ASTC_NOTICE} PROPERTIES MACOSX_PACKAGE_LOCATION Resources/ASTCDecoder)
+  target_sources(Source1IOS PRIVATE ${ASTC_NOTICE})
   target_link_libraries(Source1IOS PRIVATE
     "-framework UIKit" "-framework Foundation" "-framework CoreGraphics"
     "-framework QuartzCore" "-framework Metal" "-framework MetalKit")
@@ -89,6 +92,10 @@ if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
 else()
   include(CTest)
   if(BUILD_TESTING)
+    add_executable(mobile_astc_tests tests/mobile_astc_tests.cpp)
+    target_link_libraries(mobile_astc_tests PRIVATE source_settings
+      "$<LINK_GROUP:RESCAN,source_vtf,source_bitmap,source_tier1,source_mathlib,source_vstdlib,source_tier0>" dl pthread)
+    add_test(NAME mobile_astc_vtf_formats COMMAND mobile_astc_tests)
     if(SOURCE_BUILD_CLIENTMOD_RUNTIME)
       add_executable(clientmod_module_lifecycle tests/clientmod_module_lifecycle.cpp)
       target_link_libraries(clientmod_module_lifecycle PRIVATE source_settings
