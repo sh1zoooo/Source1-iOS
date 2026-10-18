@@ -8,6 +8,7 @@ import shutil
 import subprocess
 import os
 import fcntl
+import sys
 
 PIN = "ed8209cc35c61fbd8ddff8480962a01c981eef2f"
 parser = argparse.ArgumentParser()
@@ -23,6 +24,8 @@ fcntl.flock(prepare_lock, fcntl.LOCK_EX)
 # unchanged. Remember previously prepared files before copying original input.
 patched_paths = set(re.findall(r'replace(?:_all)?\("([^"\n]+)"', Path(__file__).read_text()))
 patched_paths.update(("public/dispcoll_preview.h", "public/dispcoll_preview.cpp",
+                      "public/bitmap/imageformat.h", "public/bitmap/mobile_astc.h",
+                      "bitmap/imageformat.cpp", "bitmap/colorconversion.cpp", "vtf/vtf.cpp",
                       "public/appframework/ilaunchermgr.h",
                       "tier2/tier2.cpp", "tier3/tier3.cpp",
                       "game/shared/gamemovement.cpp", "game/shared/weapon_parse.cpp",
@@ -352,6 +355,7 @@ for suffix in ("h", "cpp"):
     text = text.replace('"dispcoll_common.h"', '"dispcoll_preview.h"')
     (args.output / f"public/dispcoll_preview.{suffix}").write_text(text)
 (args.output / "port-revision.json").write_text(json.dumps({"upstream": PIN, "patches": patch_count}, indent=2))
+subprocess.run([sys.executable, str(Path(__file__).with_name('prepare_mobile_astc.py')), str(args.output)], check=True)
 for path, (content, modified) in previous.items():
     file = args.output / path
     if file.is_file() and file.read_bytes() == content:

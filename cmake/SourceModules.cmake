@@ -113,6 +113,10 @@ foreach(module IN ITEMS tier0 tier1 mathlib vstdlib filesystem vpklib tier2 appf
   # Retain upstream code; suppress its legacy warnings without weakening host checks.
   target_compile_options(source_${module} PRIVATE -w)
 endforeach()
+target_sources(source_bitmap PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/source/MobileASTC.cpp"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/astc_decoder/astc.cpp")
+target_include_directories(source_bitmap PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/src/source"
+  "${CMAKE_CURRENT_SOURCE_DIR}/third_party/astc_decoder")
 add_library(source_offline STATIC "${CMAKE_CURRENT_SOURCE_DIR}/src/source/SteamOffline.cpp")
 target_link_libraries(source_offline PUBLIC source_settings)
 add_library(source_dispcoll_preview STATIC "${SOURCE_ROOT}/public/dispcoll_preview.cpp")
