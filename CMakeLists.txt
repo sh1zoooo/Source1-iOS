@@ -45,8 +45,10 @@ endif()
 if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
   enable_language(OBJCXX)
   if(SOURCE_CLIENTMOD_IOS_APP)
-    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm src/runtime/CrashDiagnostics.cpp)
+    add_executable(Source1IOS MACOSX_BUNDLE src/ios/ClientModMain.mm src/ios/StartupOverlay.mm src/runtime/CrashDiagnostics.cpp)
     target_compile_definitions(Source1IOS PRIVATE SOURCE_IOS=1)
+    # dlsym bridge used by independently loaded GameUI/engine modules.
+    target_link_options(Source1IOS PRIVATE "LINKER:-export_dynamic")
     target_link_libraries(Source1IOS PRIVATE SDL2)
     set(clientmod_fonts resources/fonts/DejaVuSans.ttf resources/fonts/DejaVuSans-Bold.ttf
       resources/fonts/DejaVuSansMono.ttf resources/fonts/LICENSE.txt)
