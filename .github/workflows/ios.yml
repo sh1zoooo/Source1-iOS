@@ -33,6 +33,7 @@ jobs:
           python3 scripts/prepare_clientmod.py third_party/clientmod build/clientmod-regression third_party/source
           python3 scripts/prepare_clientmod_graphics.py third_party/clientmod build/clientmod-regression third_party/source build/source-port
           python3 tests/gles_astc_upload.py build/clientmod-regression
+          python3 tests/ios_content_compat.py
           python3 tests/ios_model_validation_cache.py
           python3 tests/ios_fence_polling.py build/clientmod-regression
           python3 tests/gles_vertex_submission.py build/clientmod-regression
@@ -66,7 +67,7 @@ jobs:
           -DSOURCE_BUILD_CLIENTMOD_RUNTIME=ON -DSOURCE_CLIENTMOD_IOS_APP=ON
       - name: Compile app sources and link UIKit context adapter first
         run: |
-          cmake --build build-ios --target src/ios/ClientModMain.mm.o src/runtime/CrashDiagnostics.cpp.o --parallel 2
+          cmake --build build-ios --target src/ios/ClientModMain.mm.o src/ios/StartupOverlay.mm.o src/runtime/CrashDiagnostics.cpp.o --parallel 2
           cmake --build build-ios --target clientmod_runtime_launcher --parallel 4
       - name: Build original client app and modules
         run: cmake --build build-ios --target Source1IOS --parallel 4

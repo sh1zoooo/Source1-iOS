@@ -48,6 +48,9 @@ for binary in binaries:
 launcher_symbols = subprocess.check_output(['xcrun', 'nm', '-gU', str(libraries / 'liblauncher.dylib')], text=True)
 if not any(line.split()[-1] == '_LauncherMain' for line in launcher_symbols.splitlines() if line.split()):
     raise SystemExit('Original LauncherMain export missing')
+main_symbols = subprocess.check_output(['xcrun', 'nm', '-gU', str(executable)], text=True)
+if not any(line.split()[-1] == '_ClientModIOSStartupSignal' for line in main_symbols.splitlines() if line.split()):
+    raise SystemExit('UIKit startup bridge export missing')
 main_commands = subprocess.check_output(['xcrun', 'otool', '-l', str(executable)], text=True)
 if '@executable_path/Frameworks' not in main_commands:
     raise SystemExit('App loader lacks the bundled library search path')

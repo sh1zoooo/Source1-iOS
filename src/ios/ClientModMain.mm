@@ -12,6 +12,7 @@
 #include <chrono>
 #include <unistd.h>
 #include "../runtime/CrashDiagnostics.hpp"
+#include "StartupOverlay.hpp"
 #include "../source/IOSLoadDiagnostics.hpp"
 #include <mach-o/dyld.h>
 
@@ -35,6 +36,7 @@ static void reportImage(const struct mach_header *header, intptr_t) {
 // original launcher/engine/client modules, with no preview runtime linked here.
 static int runClientMod(int, char **) {
     @autoreleasepool {
+        ClientModShowStartup();
         NSFileManager *files = [NSFileManager defaultManager];
         NSURL *documents = [files URLsForDirectory:NSDocumentDirectory inDomains:NSUserDomainMask].firstObject;
         NSURL *content = [documents URLByAppendingPathComponent:@"Source1IOS/content" isDirectory:YES];
@@ -87,6 +89,7 @@ static int runClientMod(int, char **) {
         SDL_SetHint(SDL_HINT_ORIENTATIONS, "LandscapeLeft LandscapeRight");
         // The original inputsystem already consumes SDL_FINGER events.
         SDL_SetHint(SDL_HINT_TOUCH_MOUSE_EVENTS, "0");
+        ClientModStartupPhase("Загрузка библиотек движка…");
         NSString *launcherPath = [libraries stringByAppendingPathComponent:@"liblauncher.dylib"];
         void *launcher = dlopen(launcherPath.fileSystemRepresentation, RTLD_NOW | RTLD_LOCAL);
         if (!launcher) { std::fprintf(stderr, "ClientMod launcher load failed: %s\n", dlerror()); return 1; }
@@ -112,6 +115,7 @@ static int runClientMod(int, char **) {
         for (NSString *argument in arguments) argv.push_back(const_cast<char *>(argument.UTF8String));
         argv.push_back(nullptr);
         NSLog(@"Starting original ClientMod LauncherMain; content %@", content.path);
+        ClientModStartupPhase("Инициализация движка и ресурсов…");
         const int result = launch(static_cast<int>(arguments.count), argv.data());
         std::fprintf(stderr, "Original ClientMod LauncherMain returned: %d\n", result);
         return result;
